@@ -3,27 +3,15 @@
 #include "mystring.c"
 #include "array.c"
 #include <stdbool.h>
+#include "token_stuff.c"
 
 
-typedef enum TokenType {
-    KEYWORD,
-    NAME, // Either a variable or a function (which is maybe also a variable)
-    STRING_LITERAL,
-    INTEGER,
-    FLOAT,
-    EXPRESSION,
-    SYMBOL,
-    UNRESOLVED,
-    INVALID
-} TokenType;
 
 const char SYMBOLS[] = {
     ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!'
 };
 
 char *KEYWORDS[] = {
-    "var",
-    "func",
     "if",
     "while",
     "for",
@@ -31,16 +19,14 @@ char *KEYWORDS[] = {
 };
 
 
-typedef struct Token {
-    TokenType type;
-    union {
-        String text;
-        struct Token *unresolved_tokens;
-        double double_val;
-        int int_val;
-        char symbol;
-    };
-} Token;
+
+
+typedef struct ASTNode {
+    Token token;
+    struct ASTNode *children;
+} ASTNode;
+
+void print_token(Token token, int level);
 
 bool is_char_alpha(char c) {
     return (c >= 'a' && c <= 'z');
@@ -148,8 +134,8 @@ int get_token_priority(Token tk) {
     // arithmetic -> 3,4,5
     // assignment -> 0
     if (tk.type == SYMBOL) {
-        if (tk.symbol == '+' || tk.symbol == '-') return 3;
-        if (tk.symbol == '*' || tk.symbol == '/') return 4;
+        if (tk.symbol == '+' || tk.symbol == '-') return 10;
+        if (tk.symbol == '*' || tk.symbol == '/') return 20;
         if (tk.symbol == '=') return 0;
     }
 
@@ -206,6 +192,104 @@ void free_tokens(Token *tokens) {
     array_free(tokens);
 }
 
+ASTNode create_ast_node(Token tk) {
+    ASTNode node = {0};
+    node.children = array(ASTNode, 2);
+    node.token = tk;
+    
+    return node;
+}
+
+#define free_ast(ast) do { \
+    _free_ast(ast); \
+    ast = (ASTNode){0}; \
+} while (0)
+
+void _free_ast(ASTNode ast) {
+    
+    if (ast.children == NULL) {
+        print_err("Tried to free an AST with null children!");
+        return;
+    }
+
+    for (int i = 0; i < array_length(ast.children); i++) {
+        free_ast(ast.children[i]);
+    }
+
+    array_free(ast.children);
+}
+
+ASTNode create_ast_from_tokens(Token *tokens) {
+    ASTNode global = create_ast_node((Token){.type = SCOPE});
+    
+    TokenNode *unresolved_tokens = NULL;
+    
+    int scope_level = 0;
+
+    for (int i = 0; i < array_length(tokens); i++) {
+
+        if (tokens[i].type == SYMBOL) {
+
+            if (tokens[i].symbol == ';' && scope_level == 0) {
+                if (unresolved_tokens != NULL) {
+                    Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
+                    array_append(global.children, create_ast_node(tk));
+                    unresolved_tokens = NULL;
+                }
+                continue;
+            } else if (tokens[i].symbol == '{') {
+                scope_level += 1;
+                printf("scope level: %d \n", scope_level);
+                
+            } else if (tokens[i].symbol == '}') {
+                scope_level -= 1;
+                printf("scope level: %d \n", scope_level);
+                if (scope_level < 0) {
+                    print_err("Closing curly bracket doesn't have an opening curly bracket!");
+                }
+                if (scope_level == 0) {
+                    if (unresolved_tokens != NULL) {
+                        list_append(unresolved_tokens, TokenNode_create(tokens[i]));
+                        Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
+                        array_append(global.children, create_ast_node(tk));
+                        unresolved_tokens = NULL;
+                        continue;
+                    }
+                }
+                
+            } 
+        }
+
+        
+        if (unresolved_tokens == NULL) {
+            printf("UT was null but here anyways: ");
+            print_token(tokens[i], 0);
+            unresolved_tokens = TokenNode_create(tokens[i]);
+        } else {
+            print_token(tokens[i], 0);
+            list_append(unresolved_tokens, TokenNode_create(tokens[i]));
+        }
+    }
+
+    if (scope_level > 0) {
+        print_err("Opening curly bracket doesn't have a closing curly bracket!");
+    }
+
+
+    return global;
+}
+
+void print_ast(ASTNode node, int level) {
+    if (level) {
+        printf("----AST---- %d\n", level);
+    } else {
+        printf("----AST----\n");
+    }
+    print_token(node.token, level);
+    for (int i = 0; i < array_length(node.children); i++) {
+        print_ast(node.children[i], level + 1);
+    }
+}
 
 
 bool is_stop_char(char c) {
@@ -252,7 +336,10 @@ String *lex(StringRef text) {
 
 }
 
-void print_token(Token token) {
+void print_token(Token token, int level) {
+    for (int i = 0; i < level; i++) {
+        printf("\t");
+    }
     printf("[");
     switch (token.type) {
         case INTEGER:
@@ -270,6 +357,16 @@ void print_token(Token token) {
         case KEYWORD:
             printf("KEYWORD, %s", token.text.data);
             break;
+        case UNRESOLVED:
+            printf("UNRESOLVED:\n");
+            for (TokenNode *node = token.unresolved_tokens; node != NULL; node = node->next) {
+
+                print_token(node->token, level + 1);
+            }
+        case SCOPE:
+            printf("SCOPE");
+            break;
+
         default:
             printf("INVALID");
             break;
@@ -280,7 +377,7 @@ void print_token(Token token) {
 
 void print_tokens(Token *tokens) {
     for (int i = 0; i < array_length(tokens); i++) {
-        print_token(tokens[i]);
+        print_token(tokens[i], 0);
     }
 }
 
@@ -316,7 +413,11 @@ int main() {
 
         Token *tokens = tokenize_parts(parts);
 
+        ASTNode ast = create_ast_from_tokens(tokens);
+
         print_tokens(tokens);
+        
+        print_ast(ast, 0);
 
         free_tokens(tokens);
 
