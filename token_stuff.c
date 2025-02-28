@@ -3,19 +3,55 @@
 #include <stdlib.h>
 #include "utils.c"
 
+
+#define thingamabob(...)
+
+#define TOKEN_TYPES \
+    X(KEYWORD) \
+    X(NAME) \
+    X(VARIABLE) \
+    X(STRING_LITERAL) \
+    X(INTEGER) \
+    X(FLOAT) \
+    X(OP_EQ) \
+    X(OP_NOTEQ) \
+    X(OP_GREATER) \
+    X(OP_GREATEREQ) \
+    X(OP_LESS) \
+    X(OP_LESSEQ) \
+    X(OP_ASSIGN) \
+    X(OP_AND) \
+    X(OP_OR) \
+    X(OP_NOT) \
+    X(OP_ADD) \
+    X(OP_SUB) \
+    X(OP_MUL) \
+    X(OP_DIV) \
+    X(LPAREN) \
+    X(RPAREN) \
+    X(LCURLY) \
+    X(RCURLY) \
+    X(TYPE) \
+    X(STMT_END) \
+    X(EXPRESSION) \
+    X(COMMA) \
+    X(UNRESOLVED) \
+    X(INVALID) \
+    X(SCOPE)
+
+// Generate the enum
 typedef enum TokenType {
-    KEYWORD,
-    NAME, // Either a variable or a function (which is maybe also a variable)
-    STRING_LITERAL,
-    INTEGER,
-    FLOAT,
-    EXPRESSION,
-    SYMBOL,
-    UNRESOLVED,
-    INVALID,
-    SCOPE
+    #define X(name) name,
+    TOKEN_TYPES
+    #undef X
 } TokenType;
 
+// Generate the string table
+const char* token_type_names[] = {
+    #define X(name) #name,
+    TOKEN_TYPES
+    #undef X
+};
 struct TokenNode;
 
 typedef struct Token {

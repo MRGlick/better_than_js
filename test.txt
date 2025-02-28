@@ -1,9 +1,69 @@
-var x = 2;
-var y = 3;
-if (x < 9) {
-    print x, y, x + y;
+Rules:
+<if-stmt> -> if ( <cond> ) <stmt> | if ( <cond> ) <stmt> else <stmt>
+<while-stmt> -> while ( <cond> ) <stmt>
+
+<declare-stmt> -> <typename> <name>
+<typename> -> one of a list of allowed types
+<name> -> sequence of characters which is NOT defined as a variable, doesnt start with [0-9], allowed characters: [a-z][A-Z]_[0-9]
+<assign-stmt> -> <variable> = <expr>
+<declare-and-assign-stmt> -> <typename> <name> = <expr>
+
+<stmt> -> <if-stmt> | <while-stmt> | ... | <block>
+<block> -> { <stmt-seq> }
+<stmt-seq> -> <stmt> <'stmt-seq>
+<'stmt-seq> -> <stmt> <'stmt-seq> | epsilon
+<cond> -> <bool> <'cond> | !<bool> <'cond>
+<'cond> -> && <bool> <'cond> | || <bool> <'cond> | epsilon
+<bool> -> <expr> == <expr> | <expr> != <expr> ...
+<expr> -> <value> <'expr>
+<'expr> -> + <value> <'expr> | - <value> <'expr> | epsilon
+<value> -> true | false | <literal> | <variable> | <int> | <float>
+
+int a; -> [TYPE: "int", 4] [NAME: "a"] [STMT_END]
+int b;
+a = 3; -> [VAR: "a", type: "int"] [OP_ASSIGN] [INT: 3]
+b = 1;
+Example program:
+if (1 + a < b + a) {
+    print a, b
 }
-x = x + y;
-y = x - y;
-x = x - y;
-print x, y;
+
+check stmt
+    check if stmt
+        match if
+        match (
+        check cond
+            check bool
+                check expr
+                    match 1
+                    match +, a
+                terminate expr
+                match <
+                check expr
+                    match b
+                    check 'expr
+                        match +, a
+                    terminate 'expr
+                terminate expr
+            terminate bool
+            check 'cond:
+                match nothing with epsilon
+            terminate 'cond
+        terminate cond
+        match )
+        check stmt:
+            check block:
+                match {
+                check stmt-seq:
+                    check stmt:
+                        match print a, b
+                    terminate stmt
+                terminate stmt-seq
+                match }
+            terminate block
+        terminate stmt
+    terminate if-stmt
+terminate stmt
+
+
+HURRAY!

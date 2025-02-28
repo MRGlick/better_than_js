@@ -8,7 +8,7 @@
 
 
 const char SYMBOLS[] = {
-    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!'
+    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|'
 };
 
 char *KEYWORDS[] = {
@@ -133,11 +133,7 @@ int parse_int(String number) {
 int get_token_priority(Token tk) {
     // arithmetic -> 3,4,5
     // assignment -> 0
-    if (tk.type == SYMBOL) {
-        if (tk.symbol == '+' || tk.symbol == '-') return 10;
-        if (tk.symbol == '*' || tk.symbol == '/') return 20;
-        if (tk.symbol == '=') return 0;
-    }
+    
 
 
 
@@ -148,7 +144,9 @@ int get_token_priority(Token tk) {
 Token *tokenize_parts(String *parts) {
     Token *tokens = array(Token, 10);
 
-    for (int i = 0; i < array_length(parts); i++) {
+    int len = array_length(parts);
+
+    for (int i = 0; i < len; i++) {
         if (is_keyword(parts[i])) {
             Token tk = {.type = KEYWORD, .text = parts[i]};
             array_append(tokens, tk);
@@ -170,11 +168,104 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
-        if (is_symbol(parts[i])) {
-            Token tk = {.type = SYMBOL, .symbol = parts[i].data[0]};
+
+        if (String_equal(parts[i], StringRef("=="))) {
+            Token tk = {.type = OP_EQ};
             array_append(tokens, tk);
             continue;
         }
+        if (String_equal(parts[i], StringRef("!"))) {
+            Token tk = {.type = OP_NOT};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("!="))) {
+            Token tk = {.type = OP_NOTEQ};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef(">="))) {
+            Token tk = {.type = OP_GREATEREQ};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef(">"))) {
+            Token tk = {.type = OP_GREATER};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("<="))) {
+            Token tk = {.type = OP_LESSEQ};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("<"))) {
+            Token tk = {.type = OP_LESS};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("&&"))) {
+            Token tk = {.type = OP_AND};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("||"))) {
+            Token tk = {.type = OP_OR};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("+"))) {
+            Token tk = {.type = OP_ADD};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("-"))) {
+            Token tk = {.type = OP_SUB};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("/"))) {
+            Token tk = {.type = OP_DIV};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("*"))) {
+            Token tk = {.type = OP_MUL};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("("))) {
+            Token tk = {.type = LPAREN};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef(")"))) {
+            Token tk = {.type = RPAREN};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("{"))) {
+            Token tk = {.type = LCURLY};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("}"))) {
+            Token tk = {.type = RCURLY};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef(","))) {
+            Token tk = {.type = COMMA};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef(";"))) {
+            Token tk = {.type = STMT_END};
+            array_append(tokens, tk);
+            continue;
+        }
+        
+        
         
 
         Token invalid_token = {.type = INVALID};
@@ -219,65 +310,137 @@ void _free_ast(ASTNode ast) {
     array_free(ast.children);
 }
 
-ASTNode create_ast_from_tokens(Token *tokens) {
-    ASTNode global = create_ast_node((Token){.type = SCOPE});
-    
-    TokenNode *unresolved_tokens = NULL;
-    
-    int scope_level = 0;
+typedef struct ParseResult {
+    bool success;
+    ASTNode node;
+} ParseResult;
 
-    for (int i = 0; i < array_length(tokens); i++) {
+#define PARSE_FAILED ((ParseResult){0})
 
-        if (tokens[i].type == SYMBOL) {
+int parse_idx = 0;
+Token *parse_tokens = NULL;
 
-            if (tokens[i].symbol == ';' && scope_level == 0) {
-                if (unresolved_tokens != NULL) {
-                    Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
-                    array_append(global.children, create_ast_node(tk));
-                    unresolved_tokens = NULL;
-                }
-                continue;
-            } else if (tokens[i].symbol == '{') {
-                scope_level += 1;
-                printf("scope level: %d \n", scope_level);
-                
-            } else if (tokens[i].symbol == '}') {
-                scope_level -= 1;
-                printf("scope level: %d \n", scope_level);
-                if (scope_level < 0) {
-                    print_err("Closing curly bracket doesn't have an opening curly bracket!");
-                }
-                if (scope_level == 0) {
-                    if (unresolved_tokens != NULL) {
-                        list_append(unresolved_tokens, TokenNode_create(tokens[i]));
-                        Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
-                        array_append(global.children, create_ast_node(tk));
-                        unresolved_tokens = NULL;
-                        continue;
-                    }
-                }
-                
-            } 
+void set_parse_tokens(Token *tokens) {
+    parse_tokens = tokens;
+    parse_idx = 0;
+}
+
+bool match_token(Token token, bool verbose) {
+    if (parse_tokens == NULL) {
+        print_err("Tried to match tokens, but there aren't any!");
+    }
+    if (parse_idx >= array_length(parse_tokens)) {
+        print_err("Tried to match token, but reachd end of tokens!");
+    }
+
+    Token curr_token = parse_tokens[parse_idx];
+    if (memcmp(&curr_token, &token, sizeof(Token)) == 0) {
+        parse_idx += 1;
+        return true;
+    } else {
+        if (verbose) {
+            print_err("Failed to match token!");
+            printf("Expected:\n\t");
+            print_token(curr_token, 0);
+            printf("Instead got: \n\t");
+            print_token(token, 0);
         }
+        
+        return false;
+    }
+}
+
+void parse_value() {
+    
+}
+
+/*
+Rules:
+<if-stmt> -> if ( <cond> ) <stmt> | if ( <cond> ) <stmt> else <stmt>
+<while-stmt> -> while ( <cond> ) <stmt>
+
+<declare-stmt> -> <typename> <name>
+<typename> -> one of a list of allowed types
+<name> -> sequence of characters which is NOT defined as a variable, doesnt start with [0-9], allowed characters: [a-z][A-Z]_[0-9]
+<assign-stmt> -> <variable> = <expr>
+<declare-and-assign-stmt> -> <typename> <name> = <expr>
+
+<stmt> -> <if-stmt> | <while-stmt> | ... | <block>
+<block> -> { <stmt-seq> }
+<stmt-seq> -> <stmt> <'stmt-seq>
+<'stmt-seq> -> <stmt> <'stmt-seq> | epsilon
+<cond> -> <bool> <'cond> | !<bool> <'cond>
+<'cond> -> && <bool> <'cond> | || <bool> <'cond> | epsilon
+<bool> -> <expr> == <expr> | <expr> != <expr> ...
+<expr> -> <term> <'expr>
+<'expr> -> + <term> <'expr> | - <term> <'expr> | epsilon
+<term> -> <factor> <'term>
+<'term> -> * <factor> <'term> | / <factor> <'term> | epsilon
+<factor> -> <value> | ( <expr> )
+<value> -> true | false | <literal> | <variable> | <int> | <float>
+
+1 * (2 * 3)
+
+*/
+// ASTNode create_ast_from_tokens(Token *tokens) {
+//     ASTNode global = create_ast_node((Token){.type = SCOPE});
+    
+//     // TokenNode *unresolved_tokens = NULL;
+    
+//     // int scope_level = 0;
+
+//     // for (int i = 0; i < array_length(tokens); i++) {
+
+//     //     if (tokens[i].type == SYMBOL) {
+
+//     //         if (tokens[i].symbol == ';' && scope_level == 0) {
+//     //             if (unresolved_tokens != NULL) {
+//     //                 Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
+//     //                 array_append(global.children, create_ast_node(tk));
+//     //                 unresolved_tokens = NULL;
+//     //             }
+//     //             continue;
+//     //         } else if (tokens[i].symbol == '{') {
+//     //             scope_level += 1;
+//     //             printf("scope level: %d \n", scope_level);
+                
+//     //         } else if (tokens[i].symbol == '}') {
+//     //             scope_level -= 1;
+//     //             printf("scope level: %d \n", scope_level);
+//     //             if (scope_level < 0) {
+//     //                 print_err("Closing curly bracket doesn't have an opening curly bracket!");
+//     //             }
+//     //             if (scope_level == 0) {
+//     //                 if (unresolved_tokens != NULL) {
+//     //                     list_append(unresolved_tokens, TokenNode_create(tokens[i]));
+//     //                     Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
+//     //                     array_append(global.children, create_ast_node(tk));
+//     //                     unresolved_tokens = NULL;
+//     //                     continue;
+//     //                 }
+//     //             }
+                
+//     //         } 
+//     //     }
 
         
-        if (unresolved_tokens == NULL) {
-            printf("UT was null but here anyways: ");
-            print_token(tokens[i], 0);
-            unresolved_tokens = TokenNode_create(tokens[i]);
-        } else {
-            print_token(tokens[i], 0);
-            list_append(unresolved_tokens, TokenNode_create(tokens[i]));
-        }
-    }
+//     //     if (unresolved_tokens == NULL) {
+//     //         printf("UT was null but here anyways: ");
+//     //         print_token(tokens[i], 0);
+//     //         unresolved_tokens = TokenNode_create(tokens[i]);
+//     //     } else {
+//     //         print_token(tokens[i], 0);
+//     //         list_append(unresolved_tokens, TokenNode_create(tokens[i]));
+//     //     }
+//     // }
 
-    if (scope_level > 0) {
-        print_err("Opening curly bracket doesn't have a closing curly bracket!");
-    }
+//     // if (scope_level > 0) {
+//     //     print_err("Opening curly bracket doesn't have a closing curly bracket!");
+//     // }
 
 
-    return global;
-}
+//     // return global;
+// }
 
 void print_ast(ASTNode node, int level) {
     if (level) {
@@ -310,10 +473,11 @@ String *lex(StringRef text) {
     char buf[1024] = {0};
     int pos = 0;
 
-    for (int i = 0; i < text.len; i++) {
+    for (int i = 0; i < text.len - 1; i++) {
         
         char c = text.data[i];
         bool stop_char = is_stop_char(c);
+        
 
         if (stop_char && pos > 0) {
             array_append(parts, String_ncopy_from_literal(buf, pos));
@@ -325,12 +489,31 @@ String *lex(StringRef text) {
 
         buf[pos++] = c;
 
+        bool part_of_double_symbol = (stop_char && i + 1 < text.len) && (
+            (c == '=' && text.data[i + 1] == '=')
+            || (c == '>' && text.data[i + 1] == '=')
+            || (c == '<' && text.data[i + 1] == '=')
+            || (c == '!' && text.data[i + 1] == '=')
+            || (c == '&' && text.data[i + 1] == '&')
+            || (c == '|' && text.data[i + 1] == '|')
+        );
+
         if (stop_char) {
+
+            if (part_of_double_symbol) {
+                buf[pos++] = text.data[i + 1];
+                i++;
+            }
+
             array_append(parts, String_ncopy_from_literal(buf, pos));
             pos = 0;
         }
     }
 
+    if (pos > 0) {
+        array_append(parts, String_ncopy_from_literal(buf, pos));
+        pos = 0;
+    }
 
     return parts;
 
@@ -340,35 +523,28 @@ void print_token(Token token, int level) {
     for (int i = 0; i < level; i++) {
         printf("\t");
     }
-    printf("[");
+    printf("[%s", token_type_names[token.type]);
     switch (token.type) {
         case INTEGER:
-            printf("INTEGER, %d", token.int_val);
+            printf(", %d", token.int_val);
             break;
         case FLOAT:
-            printf("FLOAT, %.2f", token.double_val);
+            printf(", %.2f", token.double_val);
             break;
         case NAME:
-            printf("NAME, %s", token.text.data);
-            break;
-        case SYMBOL:
-            printf("SYMBOL, %c", token.symbol);
+            printf(", %s", token.text.data);
             break;
         case KEYWORD:
-            printf("KEYWORD, %s", token.text.data);
+            printf(", %s", token.text.data);
             break;
         case UNRESOLVED:
-            printf("UNRESOLVED:\n");
+            printf(":\n");
             for (TokenNode *node = token.unresolved_tokens; node != NULL; node = node->next) {
 
                 print_token(node->token, level + 1);
             }
-        case SCOPE:
-            printf("SCOPE");
             break;
-
         default:
-            printf("INVALID");
             break;
     }
 
@@ -383,7 +559,7 @@ void print_tokens(Token *tokens) {
 
 void print_str_parts(String *parts) {
     for (int i = 0; i < array_length(parts); i++) {
-        printf("> %s \n", parts[i].data);
+        printf("> '%s' len: %d\n", parts[i].data, parts[i].len);
     }
 }
 
@@ -413,13 +589,11 @@ int main() {
 
         Token *tokens = tokenize_parts(parts);
 
-        ASTNode ast = create_ast_from_tokens(tokens);
-
         print_tokens(tokens);
-        
-        print_ast(ast, 0);
 
         free_tokens(tokens);
+
+        print_str_parts(parts);
 
         free_parts(parts);
     }
