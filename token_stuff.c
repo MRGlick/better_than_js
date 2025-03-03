@@ -37,7 +37,9 @@
     X(COMMA) \
     X(UNRESOLVED) \
     X(INVALID) \
-    X(SCOPE)
+    X(SCOPE) \
+    X(TRUE) \
+    X(FALSE)
 
 // Generate the enum
 typedef enum TokenType {

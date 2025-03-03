@@ -163,6 +163,7 @@ String String_from_int(int num) {
 
 
 bool String_equal(StringRef a, StringRef b) {
+    if (a.len != b.len) return false;
     return strncmp(a.data, b.data, a.len) == 0;
 }
 
@@ -189,7 +190,7 @@ String String_cslice(StringRef a, int start, int end) {
     
     String new = String_new(end - start);
 
-    memcpy(new.data, a.data + start, a.len);
+    memcpy(new.data, a.data + start, new.len);
 
     return new;
 }

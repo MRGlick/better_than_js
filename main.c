@@ -130,23 +130,22 @@ int parse_int(String number) {
     return res;
 }
 
-int get_token_priority(Token tk) {
-    // arithmetic -> 3,4,5
-    // assignment -> 0
-    
-
-
-
-
-    return 999999;
-}
-
 Token *tokenize_parts(String *parts) {
     Token *tokens = array(Token, 10);
 
     int len = array_length(parts);
 
     for (int i = 0; i < len; i++) {
+        if (String_equal(parts[i], StringRef("true"))) {
+            Token tk = {.type = TRUE};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("false"))) {
+            Token tk = {.type = FALSE};
+            array_append(tokens, tk);
+            continue;
+        }
         if (is_keyword(parts[i])) {
             Token tk = {.type = KEYWORD, .text = parts[i]};
             array_append(tokens, tk);
@@ -200,6 +199,7 @@ Token *tokenize_parts(String *parts) {
             continue;
         }
         if (String_equal(parts[i], StringRef("<"))) {
+            printf("bruh \n");
             Token tk = {.type = OP_LESS};
             array_append(tokens, tk);
             continue;
@@ -264,7 +264,12 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
-        
+        if (parts[i].data[0] == '"') { // only need to check the first because at this point it's guranteed to be a valid literal
+            Token tk = {.type = STRING_LITERAL, .text = String_cslice(parts[i], 1, parts[i].len - 1)};
+            printf("%s \n", tk.text.data);
+            array_append(tokens, tk);
+            continue;
+        }
         
         
 
@@ -315,9 +320,12 @@ typedef struct ParseResult {
     ASTNode node;
 } ParseResult;
 
+#define create_parse_result(s, n) ((ParseResult){.success = s, .node = n})
+
 #define PARSE_FAILED ((ParseResult){0})
 
 int parse_idx = 0;
+int parse_anchor = 0;
 Token *parse_tokens = NULL;
 
 void set_parse_tokens(Token *tokens) {
@@ -325,7 +333,25 @@ void set_parse_tokens(Token *tokens) {
     parse_idx = 0;
 }
 
-bool match_token(Token token, bool verbose) {
+Token get_curr_token() {
+    if (parse_tokens == NULL) {
+        print_err("Tried to match tokens, but there aren't any!");
+    }
+    if (parse_idx >= array_length(parse_tokens)) {
+        print_err("Tried to match token, but reachd end of tokens!");
+    }
+    return parse_tokens[parse_idx];
+}
+
+void start_match() {
+    parse_anchor = parse_idx;
+}
+
+void reset_match() {
+    parse_idx = parse_anchor;
+}
+
+void match() {
     if (parse_tokens == NULL) {
         print_err("Tried to match tokens, but there aren't any!");
     }
@@ -333,25 +359,22 @@ bool match_token(Token token, bool verbose) {
         print_err("Tried to match token, but reachd end of tokens!");
     }
 
-    Token curr_token = parse_tokens[parse_idx];
-    if (memcmp(&curr_token, &token, sizeof(Token)) == 0) {
-        parse_idx += 1;
-        return true;
-    } else {
-        if (verbose) {
-            print_err("Failed to match token!");
-            printf("Expected:\n\t");
-            print_token(curr_token, 0);
-            printf("Instead got: \n\t");
-            print_token(token, 0);
-        }
-        
-        return false;
-    }
+    parse_idx++;
 }
 
-void parse_value() {
-    
+ParseResult parse_value() {
+    start_match();
+    if (get_curr_token().type == TRUE) {
+        match();
+        return create_parse_result(true, create_ast_node((Token){.type = TRUE}));
+    }
+    if (get_curr_token().type == FALSE) {
+        match();
+        return create_parse_result(true, create_ast_node((Token){.type = FALSE}));
+    }
+
+
+    return (ParseResult){0};
 }
 
 /*
@@ -473,9 +496,34 @@ String *lex(StringRef text) {
     char buf[1024] = {0};
     int pos = 0;
 
+    bool in_literal = false;
+
+
     for (int i = 0; i < text.len - 1; i++) {
         
         char c = text.data[i];
+
+        if (c == '"') {
+            if (!in_literal) {
+                if (pos > 0) {
+                    array_append(parts, String_ncopy_from_literal(buf, pos));
+                    pos = 0;
+                }
+                in_literal = true;
+            } else {
+                buf[pos++] = c;
+                array_append(parts, String_ncopy_from_literal(buf, pos));
+                pos = 0;
+                in_literal = false;
+                continue;
+            }
+        }
+
+        if (in_literal) {
+            buf[pos++] = c;
+            continue;
+        }
+
         bool stop_char = is_stop_char(c);
         
 
@@ -510,9 +558,19 @@ String *lex(StringRef text) {
         }
     }
 
+    
+
+
     if (pos > 0) {
+        for (int i = 0; i < pos; i++) {
+            if (buf[pos] == '"') in_literal = !in_literal;
+        }
         array_append(parts, String_ncopy_from_literal(buf, pos));
         pos = 0;
+    }
+
+    if (in_literal) {
+        print_err("Missing closing quotes in string literal!");
     }
 
     return parts;
@@ -531,6 +589,9 @@ void print_token(Token token, int level) {
         case FLOAT:
             printf(", %.2f", token.double_val);
             break;
+        case STRING_LITERAL:
+            printf(", \"%s\"", token.text.data);
+            break;
         case NAME:
             printf(", %s", token.text.data);
             break;
@@ -544,11 +605,12 @@ void print_token(Token token, int level) {
                 print_token(node->token, level + 1);
             }
             break;
+
         default:
             break;
     }
 
-    printf("] Priority: %d\n", get_token_priority(token));
+    printf("] \n");
 }
 
 void print_tokens(Token *tokens) {
