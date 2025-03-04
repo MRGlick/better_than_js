@@ -409,22 +409,19 @@ ParseResult parse_term_h(int idx) {
             if (term_h_res.success) {
 
                 idx = term_h_res.endpos;
-
                 ASTNode node = create_ast_node(get_token(op_idx));
                 
-                // 1 * 2 * 3
-                // 1
-                // *:
-                // - 2
-                //
+                array_append(node.children, factor_res.node);
 
                 if (!is_null_ast(term_h_res.node)) {
-                    array_insert(term_h_res.node.children, factor_res.node, 0);
-                    array_append(node.children, term_h_res.node);
-                } else {
-                    array_append(node.children, factor_res.node);
+                    ASTNode leaf = term_h_res.node;
+                    while (leaf.children[0].token.type == OP_MUL || leaf.children[0].token.type == OP_DIV) {
+                        leaf = leaf.children[0];
+                    }
+                    array_insert(leaf.children, node, 0);
+                    return create_parse_result(true, term_h_res.node, idx);
                 }
-                
+
                 return create_parse_result(true, node, idx);
             }
             free_ast(factor_res.node);
@@ -448,7 +445,11 @@ ParseResult parse_term(int idx) {
             if (is_null_ast(term_h_res.node)) {
                 return create_parse_result(true, factor_res.node, idx);
             } else {
-                array_insert(term_h_res.node.children, factor_res.node, 0);
+                ASTNode leaf = term_h_res.node;
+                while (leaf.children[0].token.type == OP_MUL || leaf.children[0].token.type == OP_DIV) {
+                    leaf = leaf.children[0];
+                }
+                array_insert(leaf.children, factor_res.node, 0);
                 return create_parse_result(true, term_h_res.node, idx);
             }
         }
@@ -473,12 +474,15 @@ ParseResult parse_expr_h(int idx) {
                 idx = expr_h_result.endpos;
                 ASTNode node = create_ast_node(get_token(op_idx));
                 
+                array_append(node.children, term_res.node);
 
                 if (!is_null_ast(expr_h_result.node)) {
-                    array_insert(expr_h_result.node.children, term_res.node, 0);
-                    array_append(node.children, expr_h_result.node);
-                } else {
-                    array_append(node.children, term_res.node);
+                    ASTNode leaf = expr_h_result.node;
+                    while (leaf.children[0].token.type == OP_ADD || leaf.children[0].token.type == OP_SUB) {
+                        leaf = leaf.children[0];
+                    }
+                    array_insert(leaf.children, node, 0);
+                    return create_parse_result(true, expr_h_result.node, idx);
                 }
 
                 return create_parse_result(true, node, idx);
@@ -494,6 +498,7 @@ ParseResult parse_expr_h(int idx) {
     return create_parse_result(true, null(ASTNode), idx);
 }
 
+
 ParseResult parse_expr(int idx) {
     ParseResult term_res = parse_term(idx);
     
@@ -505,7 +510,11 @@ ParseResult parse_expr(int idx) {
             if (is_null_ast(expr_h_res.node)) {
                 return create_parse_result(true, term_res.node, idx);
             } else {
-                array_insert(expr_h_res.node.children, term_res.node, 0);
+                ASTNode leaf = expr_h_res.node;
+                while (leaf.children[0].token.type == OP_ADD || leaf.children[0].token.type == OP_SUB) {
+                    leaf = leaf.children[0];
+                }
+                array_insert(leaf.children, term_res.node, 0);
                 return create_parse_result(true, expr_h_res.node, idx);
             }
         }
