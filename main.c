@@ -317,10 +317,11 @@ void _free_ast(ASTNode ast) {
 
 typedef struct ParseResult {
     bool success;
+    int endpos;
     ASTNode node;
 } ParseResult;
 
-#define create_parse_result(s, n) ((ParseResult){.success = s, .node = n})
+#define create_parse_result(s, n, e) ((ParseResult){.success = s, .node = n, .endpos = e})
 
 #define PARSE_FAILED ((ParseResult){0})
 
@@ -333,48 +334,187 @@ void set_parse_tokens(Token *tokens) {
     parse_idx = 0;
 }
 
-Token get_curr_token() {
+Token get_token(int idx) {
     if (parse_tokens == NULL) {
         print_err("Tried to match tokens, but there aren't any!");
+        return null(Token);
     }
-    if (parse_idx >= array_length(parse_tokens)) {
-        print_err("Tried to match token, but reachd end of tokens!");
+    if (idx >= array_length(parse_tokens)) {
+        print_err("Tried to match token, but reached end of tokens!");
+        return null(Token);
     }
-    return parse_tokens[parse_idx];
+    return parse_tokens[idx];
 }
 
-void start_match() {
-    parse_anchor = parse_idx;
+ParseResult parse_expr(int idx);
+
+void print_ast(ASTNode node, int level);
+
+
+ParseResult parse_value(int idx) {
+
+    if (get_token(idx).type == TRUE
+        || get_token(idx).type == FALSE
+        || get_token(idx).type == STRING_LITERAL
+        || get_token(idx).type == INTEGER
+        || get_token(idx).type == FLOAT
+        //|| get_token(idx).type == NAME
+    ) { 
+        int token_idx = idx;
+        idx += 1;
+        return create_parse_result(true, create_ast_node(get_token(token_idx)), idx);
+    }
+
+    return null(ParseResult);
 }
 
-void reset_match() {
-    parse_idx = parse_anchor;
+ParseResult parse_factor(int idx) {
+    ParseResult value_res = parse_value(idx);
+
+    if (value_res.success) {
+        return value_res;
+    }
+
+    if (get_token(idx).type == LPAREN) {
+        idx += 1;
+        ParseResult expr_res = parse_expr(idx);
+        if (expr_res.success) {
+            idx = expr_res.endpos;
+            if (get_token(idx).type == RPAREN) {
+                idx += 1;
+                return create_parse_result(true, expr_res.node, idx);
+            }
+            free_ast(expr_res.node);
+            return null(ParseResult);
+            
+        }
+        return null(ParseResult);
+        
+    }
+
+    return null(ParseResult);
 }
 
-void match() {
-    if (parse_tokens == NULL) {
-        print_err("Tried to match tokens, but there aren't any!");
-    }
-    if (parse_idx >= array_length(parse_tokens)) {
-        print_err("Tried to match token, but reachd end of tokens!");
+#define is_null_ast(ast) (ast.children == NULL)
+
+ParseResult parse_term_h(int idx) {
+
+    if (get_token(idx).type == OP_MUL || get_token(idx).type == OP_DIV) {
+        int op_idx = idx;
+        idx += 1;
+        ParseResult factor_res = parse_factor(idx);
+        if (factor_res.success) {
+            idx = factor_res.endpos;
+            ParseResult term_h_res = parse_term_h(idx);
+            if (term_h_res.success) {
+
+                idx = term_h_res.endpos;
+
+                ASTNode node = create_ast_node(get_token(op_idx));
+                
+                // 1 * 2 * 3
+                // 1
+                // *:
+                // - 2
+                //
+
+                if (!is_null_ast(term_h_res.node)) {
+                    array_insert(term_h_res.node.children, factor_res.node, 0);
+                    array_append(node.children, term_h_res.node);
+                } else {
+                    array_append(node.children, factor_res.node);
+                }
+                
+                return create_parse_result(true, node, idx);
+            }
+            free_ast(factor_res.node);
+            return null(ParseResult);
+        }
+
+        return null(ParseResult);
     }
 
-    parse_idx++;
+    return create_parse_result(true, null(ASTNode), idx);
 }
 
-ParseResult parse_value() {
-    start_match();
-    if (get_curr_token().type == TRUE) {
-        match();
-        return create_parse_result(true, create_ast_node((Token){.type = TRUE}));
-    }
-    if (get_curr_token().type == FALSE) {
-        match();
-        return create_parse_result(true, create_ast_node((Token){.type = FALSE}));
+ParseResult parse_term(int idx) {
+    ParseResult factor_res = parse_factor(idx);
+    if (factor_res.success) {
+        idx = factor_res.endpos;
+        ParseResult term_h_res = parse_term_h(idx);
+        if (term_h_res.success) {
+
+            idx = term_h_res.endpos;
+            if (is_null_ast(term_h_res.node)) {
+                return create_parse_result(true, factor_res.node, idx);
+            } else {
+                array_insert(term_h_res.node.children, factor_res.node, 0);
+                return create_parse_result(true, term_h_res.node, idx);
+            }
+        }
+
+        free_ast(factor_res.node);
+        return null(ParseResult);
     }
 
+    return null(ParseResult);
+}
 
-    return (ParseResult){0};
+ParseResult parse_expr_h(int idx) {
+
+    if (get_token(idx).type == OP_ADD || get_token(idx).type == OP_SUB) {
+        int op_idx = idx;
+        idx += 1;
+        ParseResult term_res = parse_term(idx);
+        if (term_res.success) {
+            idx = term_res.endpos;
+            ParseResult expr_h_result = parse_expr_h(idx);
+            if (expr_h_result.success) {
+                idx = expr_h_result.endpos;
+                ASTNode node = create_ast_node(get_token(op_idx));
+                
+
+                if (!is_null_ast(expr_h_result.node)) {
+                    array_insert(expr_h_result.node.children, term_res.node, 0);
+                    array_append(node.children, expr_h_result.node);
+                } else {
+                    array_append(node.children, term_res.node);
+                }
+
+                return create_parse_result(true, node, idx);
+            }
+
+            free_ast(term_res.node);
+            return null(ParseResult);
+
+        }
+        return null(ParseResult);
+    }
+
+    return create_parse_result(true, null(ASTNode), idx);
+}
+
+ParseResult parse_expr(int idx) {
+    ParseResult term_res = parse_term(idx);
+    
+    if (term_res.success) {
+        idx = term_res.endpos;
+        ParseResult expr_h_res = parse_expr_h(idx);
+        if (expr_h_res.success) {
+            idx = expr_h_res.endpos;
+            if (is_null_ast(expr_h_res.node)) {
+                return create_parse_result(true, term_res.node, idx);
+            } else {
+                array_insert(expr_h_res.node.children, term_res.node, 0);
+                return create_parse_result(true, expr_h_res.node, idx);
+            }
+        }
+
+        free_ast(term_res.node);
+        return null(ParseResult);
+    }
+
+    return null(ParseResult);
 }
 
 /*
@@ -466,6 +606,10 @@ Rules:
 // }
 
 void print_ast(ASTNode node, int level) {
+    if (is_null_ast(node)) {
+        printf("---NULL AST--- \n");
+        return;
+    }
     if (level) {
         printf("----AST---- %d\n", level);
     } else {
@@ -652,6 +796,24 @@ int main() {
         Token *tokens = tokenize_parts(parts);
 
         print_tokens(tokens);
+
+        set_parse_tokens(tokens);
+        ParseResult expr_res = parse_expr(0);
+        if (expr_res.endpos < array_length(tokens)) {
+            expr_res.success = false;
+        } else {
+            print_ast(expr_res.node, 0);
+        }
+        printf("Is valid expression: %s \n", expr_res.success ? "true" : "false");
+
+
+        // ParseResult term_res = parse_term(0);
+        // printf("Term parsing result: \n");
+        // print_ast(term_res.node, 0);
+
+        // ParseResult value_res = parse_value(0);
+        // printf("Value parsing result: \n");
+        // print_ast(value_res.node, 0);
 
         free_tokens(tokens);
 

@@ -7,6 +7,7 @@
 #define thingamabob(...)
 
 #define TOKEN_TYPES \
+    X(NULL_TOKEN) \ 
     X(KEYWORD) \
     X(NAME) \
     X(VARIABLE) \
