@@ -7,6 +7,7 @@
 #define thingamabob(...)
 
 #define TOKEN_TYPES \
+    X(NULL_TOKEN) \ 
     X(KEYWORD) \
     X(NAME) \
     X(VARIABLE) \
@@ -37,7 +38,10 @@
     X(COMMA) \
     X(UNRESOLVED) \
     X(INVALID) \
-    X(SCOPE)
+    X(SCOPE) \
+    X(TRUE) \
+    X(FALSE) \
+    X(TOKEN_TYPE_COUNT) \
 
 // Generate the enum
 typedef enum TokenType {
