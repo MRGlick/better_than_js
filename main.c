@@ -24,6 +24,7 @@ char *KEYWORDS[] = {
 typedef struct ASTNode {
     Token token;
     struct ASTNode *children;
+    bool complete;
 } ASTNode;
 
 void print_token(Token token, int level);
@@ -288,10 +289,11 @@ void free_tokens(Token *tokens) {
     array_free(tokens);
 }
 
-ASTNode create_ast_node(Token tk) {
+ASTNode create_ast_node(Token tk, bool complete) {
     ASTNode node = {0};
     node.children = array(ASTNode, 2);
     node.token = tk;
+    node.complete = complete;
     
     return node;
 }
@@ -340,11 +342,24 @@ Token get_token(int idx) {
         return null(Token);
     }
     if (idx >= array_length(parse_tokens)) {
-        print_err("Tried to match token, but reached end of tokens!");
+        //print_err("Tried to match token, but reached end of tokens!");
         return null(Token);
     }
     return parse_tokens[idx];
 }
+
+// 1 + 2 + 3
+// +: [3]
+// +: [+: [2], 3]
+// +: [+: [1, 2], 3]
+
+// 1 + (2 + 3)
+// in brackets:
+// +: [3]
+// +: [2, 3]
+// +: [+: [2, 3]]
+// +: [1, +: [2, 3]]
+
 
 ParseResult parse_expr(int idx);
 
@@ -362,7 +377,7 @@ ParseResult parse_value(int idx) {
     ) { 
         int token_idx = idx;
         idx += 1;
-        return create_parse_result(true, create_ast_node(get_token(token_idx)), idx);
+        return create_parse_result(true, create_ast_node(get_token(token_idx), true), idx);
     }
 
     return null(ParseResult);
@@ -376,12 +391,17 @@ ParseResult parse_factor(int idx) {
     }
 
     if (get_token(idx).type == LPAREN) {
+        printf("Parsing brackets \n");
         idx += 1;
         ParseResult expr_res = parse_expr(idx);
         if (expr_res.success) {
             idx = expr_res.endpos;
             if (get_token(idx).type == RPAREN) {
+                printf("Reached ) \n");
                 idx += 1;
+                printf("read parentheses, result ast: \n");
+                print_ast(expr_res.node, 0);
+                expr_res.node.complete = true;
                 return create_parse_result(true, expr_res.node, idx);
             }
             free_ast(expr_res.node);
@@ -409,16 +429,17 @@ ParseResult parse_term_h(int idx) {
             if (term_h_res.success) {
 
                 idx = term_h_res.endpos;
-                ASTNode node = create_ast_node(get_token(op_idx));
+                ASTNode node = create_ast_node(get_token(op_idx), false);
                 
                 array_append(node.children, factor_res.node);
 
                 if (!is_null_ast(term_h_res.node)) {
                     ASTNode leaf = term_h_res.node;
-                    while (leaf.children[0].token.type == OP_MUL || leaf.children[0].token.type == OP_DIV) {
+                    while (!leaf.children[0].complete) {
                         leaf = leaf.children[0];
                     }
                     array_insert(leaf.children, node, 0);
+                    node.complete = true;
                     return create_parse_result(true, term_h_res.node, idx);
                 }
 
@@ -446,10 +467,12 @@ ParseResult parse_term(int idx) {
                 return create_parse_result(true, factor_res.node, idx);
             } else {
                 ASTNode leaf = term_h_res.node;
-                while (leaf.children[0].token.type == OP_MUL || leaf.children[0].token.type == OP_DIV) {
+                while (!leaf.children[0].complete) {
                     leaf = leaf.children[0];
                 }
                 array_insert(leaf.children, factor_res.node, 0);
+
+                term_h_res.node.complete = true;
                 return create_parse_result(true, term_h_res.node, idx);
             }
         }
@@ -462,7 +485,7 @@ ParseResult parse_term(int idx) {
 }
 
 ParseResult parse_expr_h(int idx) {
-
+    
     if (get_token(idx).type == OP_ADD || get_token(idx).type == OP_SUB) {
         int op_idx = idx;
         idx += 1;
@@ -470,21 +493,33 @@ ParseResult parse_expr_h(int idx) {
         if (term_res.success) {
             idx = term_res.endpos;
             ParseResult expr_h_result = parse_expr_h(idx);
+            
             if (expr_h_result.success) {
                 idx = expr_h_result.endpos;
-                ASTNode node = create_ast_node(get_token(op_idx));
+                ASTNode node = create_ast_node(get_token(op_idx), false);
                 
                 array_append(node.children, term_res.node);
 
+                
+
                 if (!is_null_ast(expr_h_result.node)) {
                     ASTNode leaf = expr_h_result.node;
-                    while (leaf.children[0].token.type == OP_ADD || leaf.children[0].token.type == OP_SUB) {
+                    while (!leaf.children[0].complete) {
                         leaf = leaf.children[0];
                     }
                     array_insert(leaf.children, node, 0);
+                    
+                    // printf("expr h current tree: \n");
+                    // print_ast(expr_h_result.node, 0);
+
+                    expr_h_result.node.complete = true;
+
                     return create_parse_result(true, expr_h_result.node, idx);
                 }
 
+
+                // printf("expr h current tree: \n");
+                // print_ast(node, 0);
                 return create_parse_result(true, node, idx);
             }
 
@@ -498,6 +533,7 @@ ParseResult parse_expr_h(int idx) {
     return create_parse_result(true, null(ASTNode), idx);
 }
 
+// 1 + (1 + 1)
 
 ParseResult parse_expr(int idx) {
     ParseResult term_res = parse_term(idx);
@@ -511,10 +547,11 @@ ParseResult parse_expr(int idx) {
                 return create_parse_result(true, term_res.node, idx);
             } else {
                 ASTNode leaf = expr_h_res.node;
-                while (leaf.children[0].token.type == OP_ADD || leaf.children[0].token.type == OP_SUB) {
+                while (!leaf.children[0].complete) {
                     leaf = leaf.children[0];
                 }
                 array_insert(leaf.children, term_res.node, 0);
+                expr_h_res.node.complete = true;
                 return create_parse_result(true, expr_h_res.node, idx);
             }
         }
@@ -619,12 +656,10 @@ void print_ast(ASTNode node, int level) {
         printf("---NULL AST--- \n");
         return;
     }
-    if (level) {
-        printf("----AST---- %d\n", level);
-    } else {
-        printf("----AST----\n");
+    for (int i = 0; i < level; i++) {
+        printf("|---");
     }
-    print_token(node.token, level);
+    print_token(node.token, 0);
     for (int i = 0; i < array_length(node.children); i++) {
         print_ast(node.children[i], level + 1);
     }
@@ -734,6 +769,12 @@ void print_token(Token token, int level) {
     for (int i = 0; i < level; i++) {
         printf("\t");
     }
+
+    if (token.type < 0 || token.type >= TOKEN_TYPE_COUNT) {
+        printf("[UNDEFINED TOKEN, %d] \n", token.type);
+        return;
+    }
+
     printf("[%s", token_type_names[token.type]);
     switch (token.type) {
         case INTEGER:
@@ -811,6 +852,7 @@ int main() {
         if (expr_res.endpos < array_length(tokens)) {
             expr_res.success = false;
         } else {
+            printf("final ast: \n");
             print_ast(expr_res.node, 0);
         }
         printf("Is valid expression: %s \n", expr_res.success ? "true" : "false");

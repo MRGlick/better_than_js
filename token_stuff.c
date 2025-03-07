@@ -40,7 +40,8 @@
     X(INVALID) \
     X(SCOPE) \
     X(TRUE) \
-    X(FALSE)
+    X(FALSE) \
+    X(TOKEN_TYPE_COUNT) \
 
 // Generate the enum
 typedef enum TokenType {
