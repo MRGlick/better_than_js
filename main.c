@@ -15,7 +15,8 @@ char *KEYWORDS[] = {
     "if",
     "while",
     "for",
-    "print"
+    "print",
+    "else"
 };
 
 
@@ -395,6 +396,9 @@ ParseResult parse_base_rule(int idx) {
     if (value_res.success) {
         return value_res;
     }
+
+    printf("debug printing token: ");
+    print_token(get_token(idx), 0);
 
     if (get_token(idx).type == OP_NOT) {
         int op_idx = idx;
@@ -821,11 +825,118 @@ ParseResult parse_expr(int idx) {
     return null(ParseResult);
 }
 
+#define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
+
+
+ParseResult parse_stmt(int idx);
+
+ParseResult parse_if_stmt(int idx) {
+
+    printf("entered parse if stmt \n");
+
+    if (!check_keyword(get_token(idx), "if")) {
+        return null(ParseResult);
+    }
+    
+    idx += 1;
+
+    if (get_token(idx).type != LPAREN) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (!expr_res.success) {
+        return null(ParseResult);
+    }
+    
+    idx = expr_res.endpos;
+
+    if (get_token(idx).type != RPAREN) {
+        free_ast(expr_res.node);
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult stmt_res = parse_stmt(idx);
+
+    if (!stmt_res.success) {
+        free_ast(expr_res.node);
+        return null(ParseResult);
+    }
+    printf("parsed statement, got \n");
+    print_ast(stmt_res.node, 0);
+    printf("endpos at \n");
+    print_token(get_token(stmt_res.endpos), 0);
+
+    
+    idx = stmt_res.endpos;
+
+    if (check_keyword(get_token(idx), "else")) {
+        printf("reached else \n");
+        idx += 1;
+
+        ParseResult stmt2_res = parse_stmt(idx);
+
+        if (stmt2_res.success) {
+            idx = stmt2_res.endpos;
+
+            ASTNode node = create_ast_node((Token){.type = IF_ELSE_STMT}, true);
+
+            array_append(node.children, expr_res.node);
+            array_append(node.children, stmt_res.node);
+            array_append(node.children, stmt2_res.node);
+
+            return create_parse_result(true, node, idx);
+        }
+
+        free_ast(expr_res.node);
+        free_ast(stmt_res.node);
+        return null(ParseResult);
+
+    } else {
+        ASTNode node = create_ast_node((Token){.type = IF_STMT}, true);
+        array_append(node.children, expr_res.node);
+        array_append(node.children, stmt_res.node);
+
+        return create_parse_result(true, node, idx);
+    }
+}
+
+ParseResult parse_stmt(int idx) {
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (expr_res.success) {
+
+        idx = expr_res.endpos;
+
+        if (get_token(idx).type == STMT_END) {
+            idx += 1;
+
+            return create_parse_result(true, expr_res.node, idx);
+        }
+
+        return null(ParseResult);
+        
+    }
+
+    ParseResult if_stmt_res = parse_if_stmt(idx);
+
+    if (if_stmt_res.success) {
+        return create_parse_result(true, if_stmt_res.node, if_stmt_res.endpos);
+    }
+
+    return null(ParseResult);
+}
 
 /*
 Rules:
-<if-stmt> -> if ( <cond> ) <stmt> | if ( <cond> ) <stmt> else <stmt>
-<while-stmt> -> while ( <cond> ) <stmt>
+<if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
+<while-stmt> -> while ( <expr> ) <stmt>
 
 <declare-stmt> -> <typename> <name>
 <typename> -> one of a list of allowed types
@@ -837,8 +948,6 @@ Rules:
 <block> -> { <stmt-seq> }
 <stmt-seq> -> <stmt> <'stmt-seq>
 <'stmt-seq> -> <stmt> <'stmt-seq> | epsilon
-<cond> -> <bool> <'cond> | !<bool> <'cond>
-<'cond> -> && <bool> <'cond> | || <bool> <'cond> | epsilon
 
 
 <expr> -> <and_rule> <'expr>
@@ -1125,14 +1234,14 @@ int main() {
         print_tokens(tokens);
 
         set_parse_tokens(tokens);
-        ParseResult expr_res = parse_expr(0);
-        if (expr_res.endpos < array_length(tokens)) {
-            expr_res.success = false;
+        ParseResult stmt_res = parse_stmt(0);
+        if (stmt_res.endpos < array_length(tokens)) {
+            stmt_res.success = false;
         } else {
             printf("final ast: \n");
-            print_ast(expr_res.node, 0);
+            print_ast(stmt_res.node, 0);
         }
-        printf("Is valid expression: %s \n", expr_res.success ? "true" : "false");
+        printf("Is valid expression: %s \n", stmt_res.success ? "true" : "false");
 
 
         // ParseResult term_res = parse_mul_rule(0);

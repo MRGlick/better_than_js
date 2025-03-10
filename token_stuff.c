@@ -41,6 +41,10 @@
     X(INVALID) \
     X(SCOPE) \
     X(BOOL) \
+    X(IF_STMT) \
+    X(IF_ELSE_STMT) \
+    X(WHILE_STMT) \
+    X(DECL_STMT) \
     X(TOKEN_TYPE_COUNT) \
 
 // Generate the enum
