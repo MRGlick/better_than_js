@@ -580,13 +580,31 @@ Rules:
 <'stmt-seq> -> <stmt> <'stmt-seq> | epsilon
 <cond> -> <bool> <'cond> | !<bool> <'cond>
 <'cond> -> && <bool> <'cond> | || <bool> <'cond> | epsilon
-<bool> -> <expr> == <expr> | <expr> != <expr> ...
-<expr> -> <term> <'expr>
-<'expr> -> + <term> <'expr> | - <term> <'expr> | epsilon
-<term> -> <factor> <'term>
-<'term> -> * <factor> <'term> | / <factor> <'term> | epsilon
-<factor> -> <value> | ( <expr> )
-<value> -> true | false | <literal> | <variable> | <int> | <float>
+
+
+<expr> -> <and_rule> <'expr>
+<'expr> -> || <and_rule> <'expr> | epsilon
+<and_rule> -> <rel_rule> <'and_rule>
+<'and_rule> -> && <rel_rule> <'and_rule> | epsilon
+<rel_rule> -> <arith_expr> <'rel_rule>
+<'rel_rule> -> (== | != | > | ...) <expr> <'rel_rule>
+<arith_expr> -> <arith_term> <'arith_expr>
+<'arith_expr> -> + <arith_term> <'arith_expr> | - <arith_term> <'arith_expr> | epsilon
+<arith_term> -> <arith_factor> <'arith_term>
+<'arith_term> -> * <arith_factor> <'arith_term> | / <arith_factor> <'arith_term> | epsilon
+<arith_factor> -> !<arith_factor> | <value> | ( <expr> )
+<value> -> <bool> | <literal> | <variable> | <int> | <float>
+<bool> -> true | false
+
+
+
+()
+!
+* /
++ -
+== != > >= < <=
+&&
+||
 
 1 * (2 * 3)
 
