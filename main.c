@@ -138,12 +138,12 @@ Token *tokenize_parts(String *parts) {
 
     for (int i = 0; i < len; i++) {
         if (String_equal(parts[i], StringRef("true"))) {
-            Token tk = {.type = TRUE};
+            Token tk = {.type = BOOL, .bool_val = true};
             array_append(tokens, tk);
             continue;
         }
         if (String_equal(parts[i], StringRef("false"))) {
-            Token tk = {.type = FALSE};
+            Token tk = {.type = BOOL, .bool_val = false};
             array_append(tokens, tk);
             continue;
         }
@@ -265,6 +265,11 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
+        if (String_equal(parts[i], StringRef("%"))) {
+            Token tk = {.type = OP_MOD};
+            array_append(tokens, tk);
+            continue;
+        }
         if (parts[i].data[0] == '"') { // only need to check the first because at this point it's guranteed to be a valid literal
             Token tk = {.type = STRING_LITERAL, .text = String_cslice(parts[i], 1, parts[i].len - 1)};
             printf("%s \n", tk.text.data);
@@ -363,13 +368,14 @@ Token get_token(int idx) {
 
 ParseResult parse_expr(int idx);
 
+ParseResult parse_add_rule(int idx);
+
 void print_ast(ASTNode node, int level);
 
 
 ParseResult parse_value(int idx) {
 
-    if (get_token(idx).type == TRUE
-        || get_token(idx).type == FALSE
+    if (get_token(idx).type == BOOL
         || get_token(idx).type == STRING_LITERAL
         || get_token(idx).type == INTEGER
         || get_token(idx).type == FLOAT
@@ -383,23 +389,39 @@ ParseResult parse_value(int idx) {
     return null(ParseResult);
 }
 
-ParseResult parse_factor(int idx) {
+ParseResult parse_base_rule(int idx) {
     ParseResult value_res = parse_value(idx);
 
     if (value_res.success) {
         return value_res;
     }
 
+    if (get_token(idx).type == OP_NOT) {
+        int op_idx = idx;
+        idx += 1;
+
+        ParseResult base_rule_res = parse_base_rule(idx);
+        if (base_rule_res.success) {
+            idx = base_rule_res.endpos;
+
+            ASTNode node = create_ast_node(get_token(op_idx), true);
+
+            array_append(node.children, base_rule_res.node);
+
+            return create_parse_result(true, node, idx);
+        }
+
+        return null(ParseResult);
+
+    }
+
     if (get_token(idx).type == LPAREN) {
-        printf("Parsing brackets \n");
         idx += 1;
         ParseResult expr_res = parse_expr(idx);
         if (expr_res.success) {
             idx = expr_res.endpos;
             if (get_token(idx).type == RPAREN) {
-                printf("Reached ) \n");
                 idx += 1;
-                printf("read parentheses, result ast: \n");
                 print_ast(expr_res.node, 0);
                 expr_res.node.complete = true;
                 return create_parse_result(true, expr_res.node, idx);
@@ -417,15 +439,17 @@ ParseResult parse_factor(int idx) {
 
 #define is_null_ast(ast) (ast.children == NULL)
 
-ParseResult parse_term_h(int idx) {
+ParseResult parse_mul_rule_h(int idx) {
 
-    if (get_token(idx).type == OP_MUL || get_token(idx).type == OP_DIV) {
+    if (get_token(idx).type == OP_MUL 
+        || get_token(idx).type == OP_DIV
+        || get_token(idx).type == OP_MOD) {
         int op_idx = idx;
         idx += 1;
-        ParseResult factor_res = parse_factor(idx);
+        ParseResult factor_res = parse_base_rule(idx);
         if (factor_res.success) {
             idx = factor_res.endpos;
-            ParseResult term_h_res = parse_term_h(idx);
+            ParseResult term_h_res = parse_mul_rule_h(idx);
             if (term_h_res.success) {
 
                 idx = term_h_res.endpos;
@@ -455,11 +479,11 @@ ParseResult parse_term_h(int idx) {
     return create_parse_result(true, null(ASTNode), idx);
 }
 
-ParseResult parse_term(int idx) {
-    ParseResult factor_res = parse_factor(idx);
+ParseResult parse_mul_rule(int idx) {
+    ParseResult factor_res = parse_base_rule(idx);
     if (factor_res.success) {
         idx = factor_res.endpos;
-        ParseResult term_h_res = parse_term_h(idx);
+        ParseResult term_h_res = parse_mul_rule_h(idx);
         if (term_h_res.success) {
 
             idx = term_h_res.endpos;
@@ -484,15 +508,15 @@ ParseResult parse_term(int idx) {
     return null(ParseResult);
 }
 
-ParseResult parse_expr_h(int idx) {
+ParseResult parse_add_rule_h(int idx) {
     
     if (get_token(idx).type == OP_ADD || get_token(idx).type == OP_SUB) {
         int op_idx = idx;
         idx += 1;
-        ParseResult term_res = parse_term(idx);
+        ParseResult term_res = parse_mul_rule(idx);
         if (term_res.success) {
             idx = term_res.endpos;
-            ParseResult expr_h_result = parse_expr_h(idx);
+            ParseResult expr_h_result = parse_add_rule_h(idx);
             
             if (expr_h_result.success) {
                 idx = expr_h_result.endpos;
@@ -535,12 +559,12 @@ ParseResult parse_expr_h(int idx) {
 
 // 1 + (1 + 1)
 
-ParseResult parse_expr(int idx) {
-    ParseResult term_res = parse_term(idx);
+ParseResult parse_add_rule(int idx) {
+    ParseResult term_res = parse_mul_rule(idx);
     
     if (term_res.success) {
         idx = term_res.endpos;
-        ParseResult expr_h_res = parse_expr_h(idx);
+        ParseResult expr_h_res = parse_add_rule_h(idx);
         if (expr_h_res.success) {
             idx = expr_h_res.endpos;
             if (is_null_ast(expr_h_res.node)) {
@@ -562,6 +586,241 @@ ParseResult parse_expr(int idx) {
 
     return null(ParseResult);
 }
+
+ParseResult parse_rel_rule_h(int idx) {
+    if (get_token(idx).type == OP_EQ 
+        || get_token(idx).type == OP_NOTEQ 
+        || get_token(idx).type == OP_GREATER 
+        || get_token(idx).type == OP_GREATEREQ
+        || get_token(idx).type == OP_LESS
+        || get_token(idx).type == OP_LESSEQ
+        ) {
+        int op_idx = idx;
+        idx += 1;
+        ParseResult add_rule_res = parse_add_rule(idx);
+        if (add_rule_res.success) {
+            idx = add_rule_res.endpos;
+            ParseResult rel_rule_h_result = parse_rel_rule_h(idx);
+            
+            if (rel_rule_h_result.success) {
+                idx = rel_rule_h_result.endpos;
+                ASTNode node = create_ast_node(get_token(op_idx), false);
+                
+                array_append(node.children, add_rule_res.node);
+
+                
+
+                if (!is_null_ast(rel_rule_h_result.node)) {
+                    ASTNode leaf = rel_rule_h_result.node;
+                    while (!leaf.children[0].complete) {
+                        leaf = leaf.children[0];
+                    }
+                    array_insert(leaf.children, node, 0);
+                    
+                    // printf("expr h current tree: \n");
+                    // print_ast(expr_h_result.node, 0);
+
+                    rel_rule_h_result.node.complete = true;
+
+                    return create_parse_result(true, rel_rule_h_result.node, idx);
+                }
+
+
+                // printf("expr h current tree: \n");
+                // print_ast(node, 0);
+                return create_parse_result(true, node, idx);
+            }
+
+            free_ast(add_rule_res.node);
+            return null(ParseResult);
+
+        }
+        return null(ParseResult);
+    }
+
+    return create_parse_result(true, null(ASTNode), idx);
+}
+
+ParseResult parse_rel_rule(int idx) {
+    ParseResult add_rule_res = parse_add_rule(idx);
+    
+    if (add_rule_res.success) {
+        idx = add_rule_res.endpos;
+        ParseResult rel_rule_h_res = parse_rel_rule_h(idx);
+        if (rel_rule_h_res.success) {
+            idx = rel_rule_h_res.endpos;
+            if (is_null_ast(rel_rule_h_res.node)) {
+                return create_parse_result(true, add_rule_res.node, idx);
+            } else {
+                ASTNode leaf = rel_rule_h_res.node;
+                while (!leaf.children[0].complete) {
+                    leaf = leaf.children[0];
+                }
+                array_insert(leaf.children, add_rule_res.node, 0);
+                rel_rule_h_res.node.complete = true;
+                return create_parse_result(true, rel_rule_h_res.node, idx);
+            }
+        }
+
+        free_ast(add_rule_res.node);
+        return null(ParseResult);
+    }
+
+    return null(ParseResult);
+}
+
+ParseResult parse_and_rule_h(int idx) {
+    if (get_token(idx).type == OP_AND) {
+        int op_idx = idx;
+        idx += 1;
+        ParseResult rel_rule_res = parse_rel_rule(idx);
+        if (rel_rule_res.success) {
+            idx = rel_rule_res.endpos;
+            ParseResult and_rule_h_res = parse_and_rule_h(idx);
+            
+            if (and_rule_h_res.success) {
+                idx = and_rule_h_res.endpos;
+                ASTNode node = create_ast_node(get_token(op_idx), false);
+                
+                array_append(node.children, rel_rule_res.node);
+
+                
+
+                if (!is_null_ast(and_rule_h_res.node)) {
+                    ASTNode leaf = and_rule_h_res.node;
+                    while (!leaf.children[0].complete) {
+                        leaf = leaf.children[0];
+                    }
+                    array_insert(leaf.children, node, 0);
+                    
+                    // printf("expr h current tree: \n");
+                    // print_ast(expr_h_result.node, 0);
+
+                    and_rule_h_res.node.complete = true;
+
+                    return create_parse_result(true, and_rule_h_res.node, idx);
+                }
+
+
+                // printf("expr h current tree: \n");
+                // print_ast(node, 0);
+                return create_parse_result(true, node, idx);
+            }
+
+            free_ast(rel_rule_res.node);
+            return null(ParseResult);
+
+        }
+        return null(ParseResult);
+    }
+
+    return create_parse_result(true, null(ASTNode), idx);
+}
+
+ParseResult parse_and_rule(int idx) {
+    ParseResult rel_rule_res = parse_rel_rule(idx);
+    
+    if (rel_rule_res.success) {
+        idx = rel_rule_res.endpos;
+        ParseResult and_rule_h_res = parse_and_rule_h(idx);
+        if (and_rule_h_res.success) {
+            idx = and_rule_h_res.endpos;
+            if (is_null_ast(and_rule_h_res.node)) {
+                return create_parse_result(true, rel_rule_res.node, idx);
+            } else {
+                ASTNode leaf = and_rule_h_res.node;
+                while (!leaf.children[0].complete) {
+                    leaf = leaf.children[0];
+                }
+                array_insert(leaf.children, rel_rule_res.node, 0);
+                and_rule_h_res.node.complete = true;
+                return create_parse_result(true, and_rule_h_res.node, idx);
+            }
+        }
+
+        free_ast(rel_rule_res.node);
+        return null(ParseResult);
+    }
+
+    return null(ParseResult);
+}
+
+ParseResult parse_expr_h(int idx) {
+    if (get_token(idx).type == OP_OR) {
+        int op_idx = idx;
+        idx += 1;
+        ParseResult and_rule_res = parse_and_rule(idx);
+        if (and_rule_res.success) {
+            idx = and_rule_res.endpos;
+            ParseResult expr_h_res = parse_expr_h(idx);
+            
+            if (expr_h_res.success) {
+                idx = expr_h_res.endpos;
+                ASTNode node = create_ast_node(get_token(op_idx), false);
+                
+                array_append(node.children, and_rule_res.node);
+
+                
+
+                if (!is_null_ast(expr_h_res.node)) {
+                    ASTNode leaf = expr_h_res.node;
+                    while (!leaf.children[0].complete) {
+                        leaf = leaf.children[0];
+                    }
+                    array_insert(leaf.children, node, 0);
+                    
+                    // printf("expr h current tree: \n");
+                    // print_ast(expr_h_result.node, 0);
+
+                    expr_h_res.node.complete = true;
+
+                    return create_parse_result(true, expr_h_res.node, idx);
+                }
+
+
+                // printf("expr h current tree: \n");
+                // print_ast(node, 0);
+                return create_parse_result(true, node, idx);
+            }
+
+            free_ast(and_rule_res.node);
+            return null(ParseResult);
+
+        }
+        return null(ParseResult);
+    }
+
+    return create_parse_result(true, null(ASTNode), idx);
+}
+
+ParseResult parse_expr(int idx) {
+    ParseResult and_rule_res = parse_and_rule(idx);
+    
+    if (and_rule_res.success) {
+        idx = and_rule_res.endpos;
+        ParseResult expr_h_res = parse_expr_h(idx);
+        if (expr_h_res.success) {
+            idx = expr_h_res.endpos;
+            if (is_null_ast(expr_h_res.node)) {
+                return create_parse_result(true, and_rule_res.node, idx);
+            } else {
+                ASTNode leaf = expr_h_res.node;
+                while (!leaf.children[0].complete) {
+                    leaf = leaf.children[0];
+                }
+                array_insert(leaf.children, and_rule_res.node, 0);
+                expr_h_res.node.complete = true;
+                return create_parse_result(true, expr_h_res.node, idx);
+            }
+        }
+
+        free_ast(and_rule_res.node);
+        return null(ParseResult);
+    }
+
+    return null(ParseResult);
+}
+
 
 /*
 Rules:
@@ -586,13 +845,13 @@ Rules:
 <'expr> -> || <and_rule> <'expr> | epsilon
 <and_rule> -> <rel_rule> <'and_rule>
 <'and_rule> -> && <rel_rule> <'and_rule> | epsilon
-<rel_rule> -> <arith_expr> <'rel_rule>
-<'rel_rule> -> (== | != | > | ...) <expr> <'rel_rule>
-<arith_expr> -> <arith_term> <'arith_expr>
-<'arith_expr> -> + <arith_term> <'arith_expr> | - <arith_term> <'arith_expr> | epsilon
-<arith_term> -> <arith_factor> <'arith_term>
-<'arith_term> -> * <arith_factor> <'arith_term> | / <arith_factor> <'arith_term> | epsilon
-<arith_factor> -> !<arith_factor> | <value> | ( <expr> )
+<rel_rule> -> <add_rule> <'rel_rule>
+<'rel_rule> -> (== | != | > | ...) <add_rule> <'rel_rule> | epsilon
+<add_rule> -> <mul_rule> <'add_rule>
+<'add_rule> -> + <mul_rule> <'add_rule> | - <mul_rule> <'add_rule> | epsilon
+<mul_rule> -> <base_rule> <'mul_rule>
+<'mul_rule> -> * <base_rule> <'mul_rule> | / <base_rule> <'mul_rule> | epsilon
+<base_rule> -> !<base_rule> | <value> | ( <expr> )
 <value> -> <bool> | <literal> | <variable> | <int> | <float>
 <bool> -> true | false
 
@@ -876,7 +1135,7 @@ int main() {
         printf("Is valid expression: %s \n", expr_res.success ? "true" : "false");
 
 
-        // ParseResult term_res = parse_term(0);
+        // ParseResult term_res = parse_mul_rule(0);
         // printf("Term parsing result: \n");
         // print_ast(term_res.node, 0);
 

@@ -28,6 +28,7 @@
     X(OP_SUB) \
     X(OP_MUL) \
     X(OP_DIV) \
+    X(OP_MOD) \
     X(LPAREN) \
     X(RPAREN) \
     X(LCURLY) \
@@ -39,8 +40,7 @@
     X(UNRESOLVED) \
     X(INVALID) \
     X(SCOPE) \
-    X(TRUE) \
-    X(FALSE) \
+    X(BOOL) \
     X(TOKEN_TYPE_COUNT) \
 
 // Generate the enum
@@ -66,6 +66,7 @@ typedef struct Token {
         double double_val;
         int int_val;
         char symbol;
+        bool bool_val;
     };
 } Token;
 
