@@ -46,6 +46,7 @@
     X(DECL_STMT) \
     X(PRINT_STMT) \
     X(STMT_SEQ) \
+    X(VAL_SEQ) \
     X(TOKEN_TYPE_COUNT) \
 
 // Generate the enum

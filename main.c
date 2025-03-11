@@ -201,7 +201,6 @@ Token *tokenize_parts(String *parts) {
             continue;
         }
         if (String_equal(parts[i], StringRef("<"))) {
-            printf("bruh \n");
             Token tk = {.type = OP_LESS};
             array_append(tokens, tk);
             continue;
@@ -273,7 +272,6 @@ Token *tokenize_parts(String *parts) {
         }
         if (parts[i].data[0] == '"') { // only need to check the first because at this point it's guranteed to be a valid literal
             Token tk = {.type = STRING_LITERAL, .text = String_cslice(parts[i], 1, parts[i].len - 1)};
-            printf("%s \n", tk.text.data);
             array_append(tokens, tk);
             continue;
         }
@@ -397,9 +395,6 @@ ParseResult parse_base_rule(int idx) {
         return value_res;
     }
 
-    printf("debug printing token: ");
-    print_token(get_token(idx), 0);
-
     if (get_token(idx).type == OP_NOT) {
         int op_idx = idx;
         idx += 1;
@@ -426,7 +421,6 @@ ParseResult parse_base_rule(int idx) {
             idx = expr_res.endpos;
             if (get_token(idx).type == RPAREN) {
                 idx += 1;
-                print_ast(expr_res.node, 0);
                 expr_res.node.complete = true;
                 return create_parse_result(true, expr_res.node, idx);
             }
@@ -832,8 +826,6 @@ ParseResult parse_stmt(int idx);
 
 ParseResult parse_if_stmt(int idx) {
 
-    printf("entered parse if stmt \n");
-
     if (!check_keyword(get_token(idx), "if")) {
         return null(ParseResult);
     }
@@ -867,16 +859,12 @@ ParseResult parse_if_stmt(int idx) {
         free_ast(expr_res.node);
         return null(ParseResult);
     }
-    printf("parsed statement, got \n");
-    print_ast(stmt_res.node, 0);
-    printf("endpos at \n");
     print_token(get_token(stmt_res.endpos), 0);
 
     
     idx = stmt_res.endpos;
 
     if (check_keyword(get_token(idx), "else")) {
-        printf("reached else \n");
         idx += 1;
 
         ParseResult stmt2_res = parse_stmt(idx);
@@ -908,6 +896,10 @@ ParseResult parse_if_stmt(int idx) {
 
 ParseResult parse_block(int idx);
 
+ParseResult parse_print_stmt(int idx);
+
+ParseResult parse_while_stmt(int idx);
+
 ParseResult parse_stmt(int idx) {
 
     ParseResult expr_res = parse_expr(idx);
@@ -936,6 +928,18 @@ ParseResult parse_stmt(int idx) {
 
     if (block_res.success) {
         return create_parse_result(true, block_res.node, block_res.endpos);
+    }
+
+    ParseResult print_res = parse_print_stmt(idx);
+
+    if (print_res.success) {
+        return create_parse_result(true, print_res.node, print_res.endpos);
+    }
+
+    ParseResult while_res = parse_while_stmt(idx);
+
+    if (while_res.success) {
+        return create_parse_result(true, while_res.node, while_res.endpos);
     }
 
     return null(ParseResult);
@@ -989,16 +993,125 @@ ParseResult parse_block(int idx) {
     return create_parse_result(true, stmt_seq_res.node, idx);
 }
 
+ParseResult parse_val_seq(int idx) {
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (!expr_res.success) {
+        return null(ParseResult);
+    }
+
+    ASTNode node = create_ast_node((Token){.type = VAL_SEQ}, true);
+
+    do {
+
+        
+        idx = expr_res.endpos;
+        
+        array_append(node.children, expr_res.node);
+        
+        if (get_token(idx).type != COMMA) {
+            return create_parse_result(true, node, idx);
+        }
+        
+        idx += 1;
+        
+        expr_res = parse_expr(idx);
+    } while(expr_res.success);
+    
+    
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_print_stmt(int idx) {
+
+    if (!check_keyword(get_token(idx), "print")) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult val_seq = parse_val_seq(idx);
+
+    if (!val_seq.success) {
+        printf("couldnt handle the vals!! \n");
+        return null(ParseResult);
+    }
+
+    idx = val_seq.endpos;
+
+    if (get_token(idx).type != STMT_END) {
+        print_err("forgor semi colon on print?");
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    val_seq.node.token.type = PRINT_STMT;
+
+    return create_parse_result(true, val_seq.node, idx);
+}
+
+ParseResult parse_while_stmt(int idx) {
+
+    if (!check_keyword(get_token(idx), "while")) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+
+    if (get_token(idx).type != LPAREN) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (!expr_res.success) {
+        return null(ParseResult);
+    }
+
+    idx = expr_res.endpos;
+
+    if (get_token(idx).type != RPAREN) {
+        free_ast(expr_res.node);
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult stmt_res = parse_stmt(idx);
+
+    if (!stmt_res.success) {
+        free_ast(expr_res.node);
+        return null(ParseResult);
+    }
+
+    idx = stmt_res.endpos;
+
+    ASTNode node = create_ast_node((Token){.type =  WHILE_STMT}, true);
+
+    array_append(node.children, expr_res.node);
+
+    array_append(node.children, stmt_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
 /*
 Rules:
 <if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
-<while-stmt> -> while ( <expr> ) <stmt>
 
+<while-stmt> -> while ( <expr> ) <stmt>
+<declare-and-assign-stmt> -> <typename> <name> = <expr>
 <declare-stmt> -> <typename> <name>
+
 <typename> -> one of a list of allowed types
 <name> -> sequence of characters which is NOT defined as a variable, doesnt start with [0-9], allowed characters: [a-z][A-Z]_[0-9]
 <assign-stmt> -> <variable> = <expr>
-<declare-and-assign-stmt> -> <typename> <name> = <expr>
 
 <stmt> -> <if-stmt> | <while-stmt> | ... | <block>
 <block> -> { <stmt-seq> }
@@ -1034,67 +1147,7 @@ Rules:
 ||
 
 1 * (2 * 3)
-
 */
-// ASTNode create_ast_from_tokens(Token *tokens) {
-//     ASTNode global = create_ast_node((Token){.type = SCOPE});
-    
-//     // TokenNode *unresolved_tokens = NULL;
-    
-//     // int scope_level = 0;
-
-//     // for (int i = 0; i < array_length(tokens); i++) {
-
-//     //     if (tokens[i].type == SYMBOL) {
-
-//     //         if (tokens[i].symbol == ';' && scope_level == 0) {
-//     //             if (unresolved_tokens != NULL) {
-//     //                 Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
-//     //                 array_append(global.children, create_ast_node(tk));
-//     //                 unresolved_tokens = NULL;
-//     //             }
-//     //             continue;
-//     //         } else if (tokens[i].symbol == '{') {
-//     //             scope_level += 1;
-//     //             printf("scope level: %d \n", scope_level);
-                
-//     //         } else if (tokens[i].symbol == '}') {
-//     //             scope_level -= 1;
-//     //             printf("scope level: %d \n", scope_level);
-//     //             if (scope_level < 0) {
-//     //                 print_err("Closing curly bracket doesn't have an opening curly bracket!");
-//     //             }
-//     //             if (scope_level == 0) {
-//     //                 if (unresolved_tokens != NULL) {
-//     //                     list_append(unresolved_tokens, TokenNode_create(tokens[i]));
-//     //                     Token tk = {.type = UNRESOLVED, .unresolved_tokens = unresolved_tokens};
-//     //                     array_append(global.children, create_ast_node(tk));
-//     //                     unresolved_tokens = NULL;
-//     //                     continue;
-//     //                 }
-//     //             }
-                
-//     //         } 
-//     //     }
-
-        
-//     //     if (unresolved_tokens == NULL) {
-//     //         printf("UT was null but here anyways: ");
-//     //         print_token(tokens[i], 0);
-//     //         unresolved_tokens = TokenNode_create(tokens[i]);
-//     //     } else {
-//     //         print_token(tokens[i], 0);
-//     //         list_append(unresolved_tokens, TokenNode_create(tokens[i]));
-//     //     }
-//     // }
-
-//     // if (scope_level > 0) {
-//     //     print_err("Opening curly bracket doesn't have a closing curly bracket!");
-//     // }
-
-
-//     // return global;
-// }
 
 void print_ast(ASTNode node, int level) {
     if (is_null_ast(node)) {
@@ -1290,8 +1343,6 @@ int main() {
 
         Token *tokens = tokenize_parts(parts);
 
-        print_tokens(tokens);
-
         set_parse_tokens(tokens);
         ParseResult res = parse_stmt_seq(0);
         if (res.endpos < array_length(tokens)) {
@@ -1312,8 +1363,6 @@ int main() {
         // print_ast(value_res.node, 0);
 
         free_tokens(tokens);
-
-        print_str_parts(parts);
 
         free_parts(parts);
     }
