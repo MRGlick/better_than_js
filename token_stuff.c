@@ -7,7 +7,7 @@
 #define thingamabob(...)
 
 #define TOKEN_TYPES \
-    X(NULL_TOKEN) \ 
+    X(NULL_TOKEN) \
     X(KEYWORD) \
     X(NAME) \
     X(VARIABLE) \
@@ -35,16 +35,17 @@
     X(RCURLY) \
     X(TYPE) \
     X(STMT_END) \
-    X(EXPRESSION) \
     X(COMMA) \
     X(UNRESOLVED) \
     X(INVALID) \
-    X(SCOPE) \
+    X(BLOCK) \
     X(BOOL) \
     X(IF_STMT) \
     X(IF_ELSE_STMT) \
     X(WHILE_STMT) \
     X(DECL_STMT) \
+    X(PRINT_STMT) \
+    X(STMT_SEQ) \
     X(TOKEN_TYPE_COUNT) \
 
 // Generate the enum

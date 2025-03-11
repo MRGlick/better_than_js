@@ -906,6 +906,8 @@ ParseResult parse_if_stmt(int idx) {
     }
 }
 
+ParseResult parse_block(int idx);
+
 ParseResult parse_stmt(int idx) {
 
     ParseResult expr_res = parse_expr(idx);
@@ -930,7 +932,61 @@ ParseResult parse_stmt(int idx) {
         return create_parse_result(true, if_stmt_res.node, if_stmt_res.endpos);
     }
 
+    ParseResult block_res = parse_block(idx);
+
+    if (block_res.success) {
+        return create_parse_result(true, block_res.node, block_res.endpos);
+    }
+
     return null(ParseResult);
+}
+
+ParseResult parse_stmt_seq(int idx) {
+    ParseResult stmt_res = parse_stmt(idx);
+
+    if (!stmt_res.success) {
+        return null(ParseResult);
+    }
+
+    ASTNode node = create_ast_node((Token){.type = STMT_SEQ}, true);
+
+    do {
+        idx = stmt_res.endpos;
+
+        array_append(node.children, stmt_res.node);
+
+        stmt_res = parse_stmt(idx);
+    } while(stmt_res.success);
+
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_block(int idx) {
+
+    if (get_token(idx).type != LCURLY) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult stmt_seq_res = parse_stmt_seq(idx);
+
+    if (!stmt_seq_res.success) {
+        return null(ParseResult);
+    }
+
+    idx = stmt_seq_res.endpos;
+
+    if (get_token(idx).type != RCURLY) {
+        free_ast(stmt_seq_res.node);
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    stmt_seq_res.node.token.type = BLOCK;
+    return create_parse_result(true, stmt_seq_res.node, idx);
 }
 
 /*
@@ -946,8 +1002,11 @@ Rules:
 
 <stmt> -> <if-stmt> | <while-stmt> | ... | <block>
 <block> -> { <stmt-seq> }
-<stmt-seq> -> <stmt> <'stmt-seq>
-<'stmt-seq> -> <stmt> <'stmt-seq> | epsilon
+<stmt-seq> -> <stmt> | <stmt> <stmt-seq>
+
+<val-seq> -> <expr> | <expr>, <val-seq>
+
+<print-stmt> -> print <val-seq>;
 
 
 <expr> -> <and_rule> <'expr>
@@ -1234,14 +1293,14 @@ int main() {
         print_tokens(tokens);
 
         set_parse_tokens(tokens);
-        ParseResult stmt_res = parse_stmt(0);
-        if (stmt_res.endpos < array_length(tokens)) {
-            stmt_res.success = false;
+        ParseResult res = parse_stmt_seq(0);
+        if (res.endpos < array_length(tokens)) {
+            res.success = false;
         } else {
             printf("final ast: \n");
-            print_ast(stmt_res.node, 0);
+            print_ast(res.node, 0);
         }
-        printf("Is valid expression: %s \n", stmt_res.success ? "true" : "false");
+        printf("Is valid expression: %s \n", res.success ? "true" : "false");
 
 
         // ParseResult term_res = parse_mul_rule(0);

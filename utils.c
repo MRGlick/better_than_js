@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-#define PRINT_NULLS
+//#define PRINT_NULLS
 
 #ifdef PRINT_NULLS
 
