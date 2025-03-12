@@ -44,10 +44,33 @@
     X(IF_ELSE_STMT) \
     X(WHILE_STMT) \
     X(DECL_STMT) \
+    X(ASSIGN_STMT) \
+    X(DECL_ASSIGN_STMT) \
     X(PRINT_STMT) \
     X(STMT_SEQ) \
     X(VAL_SEQ) \
     X(TOKEN_TYPE_COUNT) \
+
+#define VAR_TYPES \
+    X(T_INT) \
+    X(T_FLOAT) \
+    X(T_STRING) \
+    X(T_BOOL) \
+    X(T_STRUCT)
+
+typedef enum VarType {
+    #define X(a) a, 
+    VAR_TYPES
+    #undef X
+} VarType;
+
+const char *var_type_names[] = {
+    "int",
+    "float",
+    "string",
+    "bool",
+    "struct"
+};
 
 // Generate the enum
 typedef enum TokenType {
@@ -73,6 +96,7 @@ typedef struct Token {
         int int_val;
         char symbol;
         bool bool_val;
+        VarType var_type; 
     };
 } Token;
 

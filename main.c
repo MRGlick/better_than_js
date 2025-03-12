@@ -38,6 +38,18 @@ bool is_char_num(char c) {
     return (c >= '0' && c <= '9');
 }
 
+VarType check_vartype(String str) {
+    int len = sizeof(var_type_names) / sizeof(char *);
+
+    for (int i = 0; i < len; i++) {
+        if (String_equal(str, StringRef(var_type_names[i]))) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 int is_num(String part) {
 
     if (part.len == 0) return 0;
@@ -99,6 +111,20 @@ bool is_keyword(String part) {
     return false;
 }
 
+bool is_vartype(String part) {
+    if (part.len == 0) return false;
+
+    int len = sizeof(var_type_names) / sizeof (char *);
+
+    for (int i = 0; i < len; i++) {
+        if (String_equal(part, StringRef(var_type_names[i]))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // ASSUMES A VALID NUMBER!
 double parse_double(String number) {
     bool frac = false;
@@ -153,6 +179,14 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
+
+        if (is_vartype(parts[i])) {
+            Token tk = {.type = TYPE, .var_type = check_vartype(parts[i])};
+            array_append(tokens, tk);
+
+            continue;
+        }
+
         if (is_name(parts[i])) {
             Token tk = {.type = NAME, .text = parts[i]};
             array_append(tokens, tk);
@@ -170,6 +204,11 @@ Token *tokenize_parts(String *parts) {
             continue;
         }
 
+        if (String_equal(parts[i], StringRef("="))) {
+            Token tk = {.type = OP_ASSIGN};
+            array_append(tokens, tk);
+            continue;
+        }
         if (String_equal(parts[i], StringRef("=="))) {
             Token tk = {.type = OP_EQ};
             array_append(tokens, tk);
@@ -378,7 +417,7 @@ ParseResult parse_value(int idx) {
         || get_token(idx).type == STRING_LITERAL
         || get_token(idx).type == INTEGER
         || get_token(idx).type == FLOAT
-        //|| get_token(idx).type == NAME
+        || get_token(idx).type == NAME
     ) { 
         int token_idx = idx;
         idx += 1;
@@ -859,7 +898,6 @@ ParseResult parse_if_stmt(int idx) {
         free_ast(expr_res.node);
         return null(ParseResult);
     }
-    print_token(get_token(stmt_res.endpos), 0);
 
     
     idx = stmt_res.endpos;
@@ -900,10 +938,17 @@ ParseResult parse_print_stmt(int idx);
 
 ParseResult parse_while_stmt(int idx);
 
+ParseResult parse_vardecl_stmt(int idx);
+
+ParseResult parse_assign_stmt(int idx);
+
+ParseResult parse_vardecl_assign_stmt(int idx);
+
 ParseResult parse_stmt(int idx) {
 
-    ParseResult expr_res = parse_expr(idx);
+    int start_idx = idx;
 
+    ParseResult expr_res = parse_expr(idx);
     if (expr_res.success) {
 
         idx = expr_res.endpos;
@@ -914,32 +959,44 @@ ParseResult parse_stmt(int idx) {
             return create_parse_result(true, expr_res.node, idx);
         }
 
-        return null(ParseResult);
+        free_ast(expr_res.node);
+        idx = start_idx;
         
     }
 
     ParseResult if_stmt_res = parse_if_stmt(idx);
-
     if (if_stmt_res.success) {
         return create_parse_result(true, if_stmt_res.node, if_stmt_res.endpos);
     }
 
     ParseResult block_res = parse_block(idx);
-
     if (block_res.success) {
         return create_parse_result(true, block_res.node, block_res.endpos);
     }
 
     ParseResult print_res = parse_print_stmt(idx);
-
     if (print_res.success) {
         return create_parse_result(true, print_res.node, print_res.endpos);
     }
 
     ParseResult while_res = parse_while_stmt(idx);
-
     if (while_res.success) {
         return create_parse_result(true, while_res.node, while_res.endpos);
+    }
+
+    ParseResult vardecl_res = parse_vardecl_stmt(idx);
+    if (vardecl_res.success) {
+        return create_parse_result(true, vardecl_res.node, vardecl_res.endpos);
+    }
+
+    ParseResult assign_res = parse_assign_stmt(idx);
+    if (assign_res.success) {
+        return create_parse_result(true, assign_res.node, assign_res.endpos);
+    }
+
+    ParseResult vardecl_assign_res = parse_vardecl_assign_stmt(idx);
+    if (vardecl_assign_res.success) {
+        return create_parse_result(true, vardecl_assign_res.node, vardecl_assign_res.endpos);
     }
 
     return null(ParseResult);
@@ -1101,17 +1158,153 @@ ParseResult parse_while_stmt(int idx) {
     return create_parse_result(true, node, idx);
 }
 
+ParseResult parse_vardecl_stmt(int idx) {
+
+    if (get_token(idx).type != TYPE) {
+        return null(ParseResult);
+    }
+
+    int type_idx = idx;
+
+    idx += 1;
+
+    if (get_token(idx).type != NAME) {
+        return null(ParseResult);
+    }
+
+    int name_idx = idx;
+
+    idx += 1;
+
+    if (get_token(idx).type != STMT_END) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = DECL_STMT}, true);
+
+    array_append(node.children, create_ast_node(get_token(type_idx), true));
+
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+
+
+    return create_parse_result(true, node, idx);
+}
+
+#define check_semicolon() do { \
+    if (get_token(idx).type != STMT_END) { \
+        print_err("forgot semicolon!"); \
+        return null(ParseResult); \
+    } \
+} while (0)
+
+ParseResult parse_assign_stmt(int idx) {
+    
+    if (get_token(idx).type != NAME) {
+        return null(ParseResult);
+    }
+
+    int name_idx = idx;
+
+    idx += 1;
+
+    if (get_token(idx).type != OP_ASSIGN) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (!expr_res.success) {
+        return null(ParseResult);
+    }
+
+    idx = expr_res.endpos;
+
+
+    if (get_token(idx).type != STMT_END) {
+        free_ast(expr_res.node);
+        print_err("forgot semicolon!");
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = ASSIGN_STMT}, true);
+
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+
+    array_append(node.children, expr_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_vardecl_assign_stmt(int idx) {
+    if (get_token(idx).type != TYPE) {
+        return null(ParseResult);
+    }
+
+    
+
+    int type_idx = idx;
+
+    idx += 1;
+
+    if (get_token(idx).type != NAME) {
+        return null(ParseResult);
+    }
+
+    int name_idx = idx;
+
+    idx += 1;
+
+    if (get_token(idx).type != OP_ASSIGN) {
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (!expr_res.success) {
+        return null(ParseResult);
+    }
+
+    idx = expr_res.endpos;
+
+
+    if (get_token(idx).type != STMT_END) {
+        free_ast(expr_res.node);
+        print_err("forgot semicolon!");
+        return null(ParseResult);
+    }
+
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = DECL_ASSIGN_STMT}, true);
+
+    array_append(node.children, create_ast_node(get_token(type_idx), true));
+
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+
+    array_append(node.children, expr_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
 /*
 Rules:
 <if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
 
 <while-stmt> -> while ( <expr> ) <stmt>
-<declare-and-assign-stmt> -> <typename> <name> = <expr>
-<declare-stmt> -> <typename> <name>
+<declare-and-assign-stmt> -> <typename> <name> = <expr>;
+<declare-stmt> -> <typename> <name>;
 
 <typename> -> one of a list of allowed types
 <name> -> sequence of characters which is NOT defined as a variable, doesnt start with [0-9], allowed characters: [a-z][A-Z]_[0-9]
-<assign-stmt> -> <variable> = <expr>
+<assign-stmt> -> <variable> = <expr>;
 
 <stmt> -> <if-stmt> | <while-stmt> | ... | <block>
 <block> -> { <stmt-seq> }
@@ -1290,12 +1483,8 @@ void print_token(Token token, int level) {
         case KEYWORD:
             printf(", %s", token.text.data);
             break;
-        case UNRESOLVED:
-            printf(":\n");
-            for (TokenNode *node = token.unresolved_tokens; node != NULL; node = node->next) {
-
-                print_token(node->token, level + 1);
-            }
+        case TYPE:
+            printf(", %s", var_type_names[token.var_type]);
             break;
 
         default:
@@ -1348,7 +1537,7 @@ int main() {
         if (res.endpos < array_length(tokens)) {
             res.success = false;
         } else {
-            printf("final ast: \n");
+            printf(">>> RESULT AST <<<\n");
             print_ast(res.node, 0);
         }
         printf("Is valid expression: %s \n", res.success ? "true" : "false");
