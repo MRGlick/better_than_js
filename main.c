@@ -366,7 +366,7 @@ typedef struct ParseResult {
     ASTNode node;
 } ParseResult;
 
-#define create_parse_result(s, n, e) ((ParseResult){.success = s, .node = n, .endpos = e})
+#define create_parse_result(s, n, e) ({ASTNode abcdef = n; (ParseResult){.success = s, .node = abcdef, .endpos = e};})
 
 #define PARSE_FAILED ((ParseResult){0})
 
@@ -421,7 +421,7 @@ ParseResult parse_value(int idx) {
     ) { 
         int token_idx = idx;
         idx += 1;
-        return create_parse_result(true, create_ast_node(get_token(token_idx), true), idx);
+        return ((ParseResult){.success = 1, .node = create_ast_node(get_token(token_idx), 1), .endpos = idx});
     }
 
     return null(ParseResult);
@@ -1342,6 +1342,47 @@ Rules:
 1 * (2 * 3)
 */
 
+// just an experiment
+// void run_ast(ASTNode root) {
+//     char stack[1024] = {0};
+
+
+// }
+
+// IR:
+/*
+>int x = (9 + 7.31 * 2.71828) - (3 - 9.0);
+>>> RESULT AST <<<
+[STMT_SEQ]
+|---[DECL_ASSIGN_STMT]
+|---|---[TYPE, int]
+|---|---[NAME, x]
+|---|---[OP_SUB]
+|---|---|---[OP_ADD]
+|---|---|---|---[INTEGER, 9]
+|---|---|---|---[OP_MUL]
+|---|---|---|---|---[FLOAT, 7.31]
+|---|---|---|---|---[FLOAT, 2.72]
+|---|---|---[OP_SUB]
+|---|---|---|---[INTEGER, 3]
+|---|---|---|---[FLOAT, 9.00]
+
+push 4 // which is the size of an int in bytes
+
+push (9, int)
+push (7.31, float)
+push (2.72, float)
+mul (float multiplication)
+add (float addition, convert 9 to 9.0 somehow)
+push (3, int)
+push (9.0, float)
+sub (float sub, convert 3 to 3.0 somehow)
+sub (float sub, no problems)
+store (have to convert result to int somehow)
+
+*/
+
+
 void print_ast(ASTNode node, int level) {
     if (is_null_ast(node)) {
         printf("---NULL AST--- \n");
@@ -1412,7 +1453,7 @@ String *lex(StringRef text) {
 
         }
         
-        if (c == ' ') continue;
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' ) continue;
 
         buf[pos++] = c;
 
@@ -1521,12 +1562,65 @@ void _free_parts(String *parts) {
 
 
 int main() {
-    
-    while (true) {
-        printf("Paste the program here:\n>");
-        char buf[1024] = {0};
 
-        fgets(buf, sizeof(buf), stdin);
+    while (true) {
+
+        start_label: printf("File or raw code? ('file' for file, 'code' for code)\n");
+        char buf[4096] = {0};
+        char answer[20] = {0};
+        fgets(answer, sizeof(answer), stdin);
+
+        if (!strncmp(answer, "file", 4)) {
+
+            printf("Enter relative path: ");
+
+            char filepath[100] = {0};
+
+            filepath[0] = '.'; filepath[1] = '.'; filepath[2] = '/';
+
+            fgets((char *)filepath + 3, sizeof(filepath) - 3, stdin);
+
+            filepath[strlen(filepath) - 1] = 0;
+
+            printf("Reading from file: '%s' \n", filepath);
+
+            FILE *file = fopen(filepath, "r");
+
+            if (file == NULL) {
+                print_err("Couldn't open file!");
+                printf("%d \n", errno);
+                
+                exit(1);
+            }
+
+            char *buf_ptr = buf;
+
+            while (fgets(buf_ptr, sizeof(buf) - (buf_ptr - buf), file)) {
+                int len = strlen(buf_ptr);
+                if (len > 0 && buf_ptr[len - 1] == '\n') {
+                    buf_ptr[len - 1] = ' '; // get rid of \n
+                    buf_ptr += len;
+                }
+            }
+
+            buf[strlen(buf)] = 10; // dont ask, it works
+
+
+            fclose(file);
+
+            printf("result: '%s' \n", buf);
+
+        } else if (!strncmp(answer, "code", 4)) {
+            printf("Write the program here:\n>");
+
+            fgets(buf, sizeof(buf), stdin);
+
+        } else {
+            goto start_label;
+        }
+
+
+        
 
         String *parts = lex(StringRef(buf));
 
@@ -1540,16 +1634,7 @@ int main() {
             printf(">>> RESULT AST <<<\n");
             print_ast(res.node, 0);
         }
-        printf("Is valid expression: %s \n", res.success ? "true" : "false");
-
-
-        // ParseResult term_res = parse_mul_rule(0);
-        // printf("Term parsing result: \n");
-        // print_ast(term_res.node, 0);
-
-        // ParseResult value_res = parse_value(0);
-        // printf("Value parsing result: \n");
-        // print_ast(value_res.node, 0);
+        printf(" %s \n", res.success ? "" : "INVALID EXPRESSION");
 
         free_tokens(tokens);
 

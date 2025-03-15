@@ -64,7 +64,7 @@ typedef enum VarType {
     #undef X
 } VarType;
 
-const char *var_type_names[] = {
+char *var_type_names[] = {
     "int",
     "float",
     "string",
