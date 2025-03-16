@@ -5,3 +5,11 @@ int z = x + y;
 while (z > x) {
     z = z - x;
 }
+
+if (z < 0) {
+    print y;
+} else if (z == 0) {
+    print x;
+} else {
+    print "Oh well.";
+}

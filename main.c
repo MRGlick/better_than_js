@@ -1366,21 +1366,285 @@ Rules:
 |---|---|---[OP_SUB]
 |---|---|---|---[INTEGER, 3]
 |---|---|---|---[FLOAT, 9.00]
+x: 0
 
-push 4 // which is the size of an int in bytes
+STACK_ALLOC 4
+PUSH (0, int) // x pos
+PUSH (9, int)
+PUSH (7.31, float)
+PUSH (2.72, float)
+MUL
+ADD
+PUSH (3, int)
+PUSH (9.0, float)
+SUB
+SUB
+STACK_STORE
 
-push (9, int)
-push (7.31, float)
-push (2.72, float)
-mul (float multiplication)
-add (float addition, convert 9 to 9.0 somehow)
-push (3, int)
-push (9.0, float)
-sub (float sub, convert 3 to 3.0 somehow)
-sub (float sub, no problems)
-store (have to convert result to int somehow)
 
 */
+
+#define INSTRUCTIONS\
+    X(I_PUSH) \
+    X(I_READ) \
+    X(I_ADD) \
+    X(I_SUB) \
+    X(I_MUL) \
+    X(I_DIV) \
+    X(I_MOD) \
+    X(I_GREATER) \
+    X(I_GREATER_EQUAL) \
+    X(I_LESS) \
+    X(I_LESS_EQUAL) \
+    X(I_EQUAL) \
+    X(I_NOT_EQUAL) \
+    X(I_LABEL) \
+    X(I_JUMP) \
+    X(I_JUMP_IF) \
+    X(I_JUMP_NOT) \
+    X(I_CONVERT) \
+    X(I_STACK_ALLOC) \
+    X(I_STACK_STORE) \
+    X(I_STORE_STACK_PTR) \
+    X(I_SET_STACK_PTR) \
+
+typedef enum InstType {
+    #define X(i) i, 
+    INSTRUCTIONS
+    #undef X
+} InstType;
+
+char *inst_names[] = {
+    #define X(i) #i,
+    INSTRUCTIONS
+    #undef X
+};
+
+typedef struct Val {
+    VarType type;
+    union {
+        int i_val;
+        double f_val;
+        bool b_val;
+        char *s_val;
+    };
+} Val;
+
+typedef struct Inst {
+    InstType type;
+    Val arg;
+
+} Inst;
+
+
+Inst create_inst(VarType type, Val arg) {
+    return (Inst){.type = type, .arg = arg};
+}
+
+void print_val(Val val) {
+    printf("(%s, ", var_type_names[val.type]);
+    switch (val.type) {
+        case T_INT:
+            printf("%d", val.i_val);
+            break;
+        case T_FLOAT:
+            printf("%.2f", val.f_val);
+            break;
+        case T_BOOL:
+            printf("%s", val.b_val ? "true" : "false");
+            break;
+        default:
+            printf("dunno");
+            break;
+    }
+    printf(")");
+}
+
+void print_instruction(Inst inst) {
+    printf("[%s", inst_names[inst.type]);
+
+    switch (inst.type) {
+
+        case I_PUSH:
+            printf(", ");
+            print_val(inst.arg);
+            break;
+        case I_STACK_ALLOC:
+        case I_READ:
+            printf(", %d", inst.arg.i_val);
+            break;
+        case I_CONVERT:
+            printf(", ");
+            print_val(inst.arg);
+            break;
+        case I_LABEL:
+        case I_JUMP:
+        case I_JUMP_IF:
+        case I_JUMP_NOT:
+            printf(", %s", inst.arg.s_val);
+            break;
+
+
+        default:
+            break;
+    }
+    printf("] \n");
+}
+
+void print_instructions(Inst *arr) {
+    for (int i = 0; i < array_length(arr); i++) {
+        print_instruction(arr[i]);
+    }
+}
+
+int get_vartype_size(VarType t) {
+    switch (t) {
+        case T_INT:
+            return 4;
+            break;
+        case T_FLOAT:
+            return 4;
+            break;
+        case T_BOOL:
+            return 1;
+            break;
+        case T_STRING:
+            return 8;
+            break;
+        default:
+            print_err("i dunno the size!");
+            return -1;
+            break;
+    }
+}
+
+int gi_stack_pos = 0;
+int gi_stack_size = 0;
+
+void generate_instructions_for_node(ASTNode ast, Inst *instructions);
+
+void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions) {
+    if (ast.children[0].token.type != TYPE) {
+        print_err("Invalid variable declaration!");
+        exit(1);
+    }
+
+    int size = get_vartype_size(ast.children[0].token.var_type);
+
+    array_append(instructions, create_inst(I_STACK_ALLOC, (Val){.type = T_INT, .i_val = size}));
+    gi_stack_size += size;
+    array_append(instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
+    gi_stack_pos += size;
+    if (gi_stack_pos > gi_stack_size) {
+        print_err("exceeded current stack!");
+    }
+    generate_instructions_for_node(ast.children[2], instructions);
+    array_append(instructions, create_inst(I_STACK_STORE, null(Val)));
+}
+
+void generate_instructions_for_node(ASTNode ast, Inst *instructions) {
+    
+    // independently defined operators
+    if (ast.token.type == DECL_ASSIGN_STMT) {
+        generate_instructions_for_vardecl(ast, instructions);
+        return;
+    }
+
+    int temp_stack_ptr;
+
+    // pre children operators
+    switch (ast.token.type) {
+        case STMT_SEQ:
+        case BLOCK:
+            temp_stack_ptr = gi_stack_pos;
+            array_append(instructions, create_inst(I_STORE_STACK_PTR, null(Val)));
+            break;
+        
+        default:
+            break;
+    }
+    
+    
+    
+    for (int i = 0; i < array_length(ast.children); i++) {
+        generate_instructions_for_node(ast.children[i], instructions);
+    }
+
+    Val val;
+
+
+    // post children operators
+    switch (ast.token.type) {
+        case INTEGER:
+            val = (Val){.type = T_INT, .i_val = ast.token.int_val};
+            array_append(instructions, create_inst(I_PUSH, val));
+            break;
+        case FLOAT:
+            val = (Val){.type = T_FLOAT, .f_val = ast.token.double_val};
+            array_append(instructions, create_inst(I_PUSH, val));
+            break;
+        case BOOL:
+            val = (Val){.type = T_BOOL, .b_val = ast.token.bool_val};
+            array_append(instructions, create_inst(I_PUSH, val));
+            break;
+        case OP_ADD:
+            array_append(instructions, create_inst(I_ADD, null(Val)));
+            break;
+        case OP_SUB:
+            array_append(instructions, create_inst(I_SUB, null(Val)));
+            break;
+        case OP_MUL:
+            array_append(instructions, create_inst(I_MUL, null(Val)));
+            break;
+        case OP_DIV:
+            array_append(instructions, create_inst(I_DIV, null(Val)));
+            break;
+        case OP_MOD:
+            array_append(instructions, create_inst(I_MOD, null(Val)));
+            break;
+        case OP_GREATER:
+            array_append(instructions, create_inst(I_GREATER, null(Val)));
+            break;
+        case OP_GREATEREQ:
+            array_append(instructions, create_inst(I_GREATER_EQUAL, null(Val)));
+            break;
+        case OP_LESS:
+            array_append(instructions, create_inst(I_LESS, null(Val)));
+            break;
+        case OP_LESSEQ:
+            array_append(instructions, create_inst(I_LESS_EQUAL, null(Val)));
+            break;
+        case OP_EQ:
+            array_append(instructions, create_inst(I_EQUAL, null(Val)));
+            break;
+        case OP_NOTEQ:
+            array_append(instructions, create_inst(I_NOT_EQUAL, null(Val)));
+            break;
+        case NAME:
+            array_append(instructions, create_inst(I_READ, (Val){.s_val = ast.token.text.data}));
+            break;
+        case STMT_SEQ:
+        case BLOCK:
+            gi_stack_pos = temp_stack_ptr;
+            array_append(instructions, create_inst(I_SET_STACK_PTR, null(Val)));
+            break;
+    
+        default:
+            break;
+            //     print_err("Unhandled case!");
+            //     print_token(ast.token, 0);
+    }
+}
+
+Inst *generate_instructions(ASTNode ast) {
+    Inst *res = array(Inst, 20);
+
+    gi_stack_pos = 0;
+    gi_stack_size = 0;
+    generate_instructions_for_node(ast, res);
+
+    return res;
+}
 
 
 void print_ast(ASTNode node, int level) {
@@ -1515,6 +1779,9 @@ void print_token(Token token, int level) {
         case FLOAT:
             printf(", %.2f", token.double_val);
             break;
+        case BOOL:
+            printf(", %s", token.bool_val ? "true" : "false");
+            break;
         case STRING_LITERAL:
             printf(", \"%s\"", token.text.data);
             break;
@@ -1634,7 +1901,16 @@ int main() {
             printf(">>> RESULT AST <<<\n");
             print_ast(res.node, 0);
         }
-        printf(" %s \n", res.success ? "" : "INVALID EXPRESSION");
+
+        if (!res.success) {
+            printf("INVALID EXPRESSION \n");
+        }
+
+        Inst *instructions = generate_instructions(res.node);
+
+        print_instructions(instructions);
+
+        array_free(instructions);
 
         free_tokens(tokens);
 
