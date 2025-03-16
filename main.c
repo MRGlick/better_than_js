@@ -4,6 +4,7 @@
 #include "array.c"
 #include <stdbool.h>
 #include "token_stuff.c"
+#include "hashtable.c"
 
 
 
@@ -1521,15 +1522,27 @@ int get_vartype_size(VarType t) {
 int gi_stack_pos = 0;
 int gi_stack_size = 0;
 
-void generate_instructions_for_node(ASTNode ast, Inst *instructions);
+void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var_map);
 
-void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions) {
+void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions, HashMap var_map) {
     if (ast.children[0].token.type != TYPE) {
         print_err("Invalid variable declaration!");
         exit(1);
     }
 
-    int size = get_vartype_size(ast.children[0].token.var_type);
+    String var_name = ast.children[1].token.text;
+
+    if (HM_has_key(var_map, var_name)) {
+        print_err("I'm too lazy for variable shadowing! (for now, atleast)");
+        exit(1);
+    }
+
+    HM_put(var_map, var_name, gi_stack_pos);
+
+
+    VarType var_type = ast.children[0].token.var_type;
+
+    int size = get_vartype_size(var_type);
 
     array_append(instructions, create_inst(I_STACK_ALLOC, (Val){.type = T_INT, .i_val = size}));
     gi_stack_size += size;
@@ -1538,15 +1551,21 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions) {
     if (gi_stack_pos > gi_stack_size) {
         print_err("exceeded current stack!");
     }
-    generate_instructions_for_node(ast.children[2], instructions);
+    if (ast.token.type == DECL_ASSIGN_STMT) {
+        generate_instructions_for_node(ast.children[2], instructions, var_map);
+    } else {
+        Val val = null(Val);
+        val.type = var_type;
+        array_append(instructions, create_inst(I_PUSH, val));
+    }
     array_append(instructions, create_inst(I_STACK_STORE, null(Val)));
 }
 
-void generate_instructions_for_node(ASTNode ast, Inst *instructions) {
+void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var_map) {
     
     // independently defined operators
-    if (ast.token.type == DECL_ASSIGN_STMT) {
-        generate_instructions_for_vardecl(ast, instructions);
+    if (ast.token.type == DECL_ASSIGN_STMT || ast.token.type == DECL_STMT) {
+        generate_instructions_for_vardecl(ast, instructions, var_map);
         return;
     }
 
@@ -1567,7 +1586,7 @@ void generate_instructions_for_node(ASTNode ast, Inst *instructions) {
     
     
     for (int i = 0; i < array_length(ast.children); i++) {
-        generate_instructions_for_node(ast.children[i], instructions);
+        generate_instructions_for_node(ast.children[i], instructions, var_map);
     }
 
     Val val;
@@ -1621,7 +1640,12 @@ void generate_instructions_for_node(ASTNode ast, Inst *instructions) {
             array_append(instructions, create_inst(I_NOT_EQUAL, null(Val)));
             break;
         case NAME:
-            array_append(instructions, create_inst(I_READ, (Val){.s_val = ast.token.text.data}));
+            if (!HM_has_key(var_map, ast.token.text)) {
+                print_err("Unknown identifier!");
+                exit(1);
+            }
+            int var_pos = (int)HM_get(var_map, ast.token.text);
+            array_append(instructions, create_inst(I_READ, (Val){.i_val = var_pos}));
             break;
         case STMT_SEQ:
         case BLOCK:
@@ -1638,10 +1662,11 @@ void generate_instructions_for_node(ASTNode ast, Inst *instructions) {
 
 Inst *generate_instructions(ASTNode ast) {
     Inst *res = array(Inst, 20);
+    HashMap var_map = HashMap(int, false);
 
     gi_stack_pos = 0;
     gi_stack_size = 0;
-    generate_instructions_for_node(ast, res);
+    generate_instructions_for_node(ast, res, var_map);
 
     return res;
 }
