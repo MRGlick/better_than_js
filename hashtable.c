@@ -12,6 +12,7 @@ typedef struct HashNode {
     String key;
     void *val;
     struct HashNode *next;
+    bool is_empty;
 } HashNode;
 
 typedef struct HashMap {
@@ -29,71 +30,143 @@ typedef struct HashMap {
 
 #define HM_put(map, key, val) _HM_put(map, key, (void *)val)
 
+
 int hash(String key, int arr_size);
 
+void HashNode_free(HashNode *node);
+
+void _HashNode_free_helper(HashNode *node);
+
+void print_hash_node(HashNode *node);
+
+
 bool _HM_is_hashnode_empty(HashNode node) {
-
-    if (String_isnull(node.key)) return true;
-
-    return false;
+    return node.is_empty;
 }
 
 HashMap _HM_new(int value_size, bool copy_values) {
     HashMap table = {0};
     table.value_size = value_size;
-    table.capacity = 100;
-    table.keys = array(String, table.capacity);
-    table.values = calloc(sizeof(HashNode), table.capacity);
-    table.copy_values = copy_values;
+    table.capacity = 1;
+    table.keys = _create_array(sizeof(String), 2);
+    table.values = malloc(sizeof(HashNode) * table.capacity);
     for (int i = 0; i < table.capacity; i++) {
-        table.keys[i] = String_null;
+        table.values[i].is_empty = true;
     }
+    table.copy_values = copy_values;
 
     return table;
 }
 
 void _HM_put(HashMap table, String key, void *value) {
 
-    bool found = false;
+    bool has_key = false;
     for (int i = 0; i < array_length(table.keys); i++) {
         if (String_equal(table.keys[i], key)) {
-            found = true;
+            has_key = true;
             break;
         }
     }
-    if (!found) {
+
+    printf("has key: %s \n", has_key ? "true" : "false");
+
+    if (!has_key) {
+        ArrayHeader *debug_header = array_header(table.keys);
+        printf("table.keys: len=%d, capacity=%d, item_size=%d, padding=%d \n", debug_header->length, debug_header->size, debug_header->item_size, debug_header->padding);
         array_append(table.keys, key);
     }
 
     int hash_value = hash(key, table.capacity);
-    HashNode *available = &table.values[hash_value];
-    HashNode *last = available;
-    while (available->val != NULL) {
-        available = available->next;
-        if (!_HM_is_hashnode_empty(*available)) last = available;
+
+    HashNode *node = &table.values[hash_value];
+
+    // if its the first time we encounter the node
+    if (node->is_empty) {
+        printf("First hashnode is empty. \n");
+        node->next = NULL;
+        node->key = key;
+        node->is_empty = false;
+        if (table.copy_values) {
+            void *new_val = malloc(table.value_size);
+            memcpy(new_val, value, table.value_size);
+            node->val = new_val; // responsibilties
+        } else {
+            node->val = value;
+        }
+        return;
     }
 
-    if (last != available) {
-        last->next = available;
+    if (String_equal(node->key, key)) {
+        if (table.copy_values) {
+            void *new_val = malloc(table.value_size);
+            memcpy(new_val, value, table.value_size);
+            free(node->val);
+            node->val = new_val; // responsibilties
+        } else {
+            node->val = value;
+        }
+        return;
     }
 
-    available->key = key;
+    HashNode *current = node;
 
-    if (!table.copy_values) {
-        available->val = value;
-    } else {
+    bool found = false;
+
+    while (current->next != NULL && !found) {
+        if (String_equal(current->key, key)) {
+            found = true;
+        } else {
+            current = current->next;
+        }
+    }
+
+    if (String_equal(current->key, key)) {
+        found = true;
+    }
+
+    printf("found: %s \n", found? "true" : "false");
+    printf("current->next == NULL: %s \n", current->next == NULL ? "true" : "false");
+
+    if (found) {
+        if (table.copy_values) {
+            void *new_val = malloc(table.value_size);
+            memcpy(new_val, value, table.value_size);
+            free(current->val);
+            current->val = new_val; // responsibilties
+        } else {
+            current->val = value;
+        }
+        return;
+    }
+
+    HashNode *new_node = malloc(sizeof(HashNode));
+    new_node->is_empty = false;
+    new_node->next = NULL;
+    new_node->key = key;
+    if (table.copy_values) {
         void *new_val = malloc(table.value_size);
         memcpy(new_val, value, table.value_size);
-
-        available->val = new_val;
+        new_node->val = new_val; // responsibilties
+    } else {
+        new_node->val = value;
     }
+    current->next = new_node;
+
+    ArrayHeader *debug_header = array_header(table.keys);
+    printf("table.keys: len=%d, capacity=%d, item_size=%d, padding=%d \n", debug_header->length, debug_header->size, debug_header->item_size, debug_header->padding);
+
+    printf("Inserted key '%s' with value <%p> \n", key.data, value);
 }
 
 void print_hash_node(HashNode *node) {
-    printf("Node: %p \n", node);
-    printf("\tKey: '%s' \n", node->key.data);
-    printf("\tValue: %p \n", node->val);
-    printf("\tNext node address: %p \n", node->next);
+    printf("[Node addr: %p, ", node);
+    printf("K: \"%s\", V: <%p>]", node->key.data, node->val);
+    if (node->next != NULL) {
+        printf(" -> ");
+        print_hash_node(node->next);
+    } else {
+        printf("\n");
+    }
 }
 
 void *HM_get(HashMap table, String key) {
@@ -108,8 +181,13 @@ void *HM_get(HashMap table, String key) {
         return NULL;
     }
 
-    while (!String_equal(current->key, key)) {
+    while (current != NULL && !String_equal(current->key, key)) {
         current = current->next;
+    }
+
+    if (current == NULL) {
+        printf("Key doesn't exist in hashmap! \n");
+        return NULL;
     }
     return current->val;
 }
@@ -131,14 +209,16 @@ void HM_delete(HashMap table) {
     }
 
     for (int i = 0; i < array_length(table.keys); i++) {
-        if (!table.keys[i].ref) {
-            String_delete(&table.keys[i]);
-        }
+        HashNode_free(&table.values[hash(table.keys[i], table.capacity)]);
     }
+
+    printf("freed hashnodes \n");
 
 
     array_free(table.keys);
     array_free(table.values);
+
+    printf("freed arrays \n");
 }
 
 
@@ -156,5 +236,57 @@ int hash(String key, int arr_size) {
 
     return hash % arr_size;
 }
+
+String *HM_get_keys(HashMap map) {
+    String *keys = array(String, 5);
+
+    for (int i = 0; i < array_length(map.keys); i++) {
+        if (!String_isnull(map.keys[i])) {
+            array_append(keys, map.keys[i]);
+        }
+    }
+
+    return keys;
+}
+
+void HM_print(HashMap map) {
+    printf("{");
+    String *keys = HM_get_keys(map);
+    int len = array_length(keys);
+    for (int i = 0; i < len; i++) {
+        printf("\n\t'%s' : %p", keys[i].data, HM_get(map, keys[i]));
+    }
+    if (len > 0) {
+        printf("\n");
+    }
+    printf("} \n");
+    array_free(keys);
+}
+
+// DOESN'T COPY COMPLEX VALUES!
+HashMap HM_copy(HashMap map) {
+    HashMap res = _HM_new(map.value_size, map.copy_values);
+
+    String *keys = HM_get_keys(map);
+
+    for (int i = 0; i < array_length(keys); i++) {
+        HM_put(res, keys[i], HM_get(map, keys[i]));
+    }
+
+    array_free(keys);
+
+    return res;
+}
+
+void HashNode_free(HashNode *node) {
+    _HashNode_free_helper(node->next);
+}
+
+void _HashNode_free_helper(HashNode *node) {
+    if (node == NULL) return;
+    _HashNode_free_helper(node->next);
+    free(node);
+}
+
 
 #endif

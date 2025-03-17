@@ -1,21 +1,24 @@
-#include "hashtable.c"
+#include "hashmap.c"
 
 
 int main() {
+    HashMap *map = HashMap_new(sizeof(int), 1, false);
+    HashMap_put(map, StringRef("hi"), (void *)3);
+    HashMap_put(map, StringRef("hi2"), (void *)30);
+    HashMap_put(map, StringRef("hi3"), (void *)40);
+    HashMap_put(map, StringRef("hi4"), (void *)50);
+    HashMap_put(map, StringRef("hi5"), (void *)60);
 
-    printf("hashmap test: \n");
 
-    HashMap map = HashMap(int, false);
+    int hi = (int)HashMap_get(map, StringRef("hi"));
+    int hi2 = (int)HashMap_get(map, StringRef("hi2"));
 
-    HM_put(map, StringRef("hello"), 3);
-    HM_put(map, StringRef("hello2"), 5);
+    printf("hi: %d, hi2: %d \n", hi, hi2);
 
-    int val = (int)HM_get(map, StringRef("hello"));
-    int val2 = (int)HM_get(map, StringRef("hello2"));
+    HashMap_print(map);
 
-    printf("val: %d, val2: %d \n", val, val2);
 
-    HM_delete(map);
+    printf("END \n");
 
     return 0;
 }
