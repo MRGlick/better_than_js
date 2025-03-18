@@ -1562,15 +1562,28 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
     array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
 }
 
-// void generate_instructions_for_assign(ASTNode ast, Inst *instructions, HashMap *var_map) {
+void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap *var_map) {
+    String var_name = ast.children[0].token.text;
 
-// }
+    int var_pos = (int)HashMap_get(var_map, var_name);
+
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = var_pos}));
+
+    generate_instructions_for_node(ast.children[1], instructions, var_map);
+
+    array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
+
+}
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
     // independently defined operators
     if (ast.token.type == DECL_ASSIGN_STMT || ast.token.type == DECL_STMT) {
         generate_instructions_for_vardecl(ast, instructions, var_map);
+        return;
+    }
+    if (ast.token.type == ASSIGN_STMT) {
+        generate_instructions_for_assign(ast, instructions, var_map);
         return;
     }
 
