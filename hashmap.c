@@ -19,6 +19,13 @@ typedef struct HashMap {
     bool copy;
 } HashMap;
 
+#define HashMap(type, copy) HashMap_new(sizeof(type), 100, copy)
+
+// yes i wrote a macro for it
+#define HashMap_put(map, key, value) _HashMap_put(map, key, (void *)value)
+
+#define HashMap_free(map) do {_HashMap_free(map); map = NULL;} while (0)
+
 int hash(String key, int capacity) {
 
     // Thanks Dan
@@ -36,13 +43,17 @@ int hash(String key, int capacity) {
 
 HashMap *HashMap_new(int value_size, int capacity, bool copy);
 
-void HashMap_put(HashMap *map, String key, void *value);
+void _HashMap_put(HashMap *map, String key, void *value);
 
 void *HashMap_get(HashMap *map, String key);
 
-void HashMap_free(HashMap *map);
+void _HashMap_free(HashMap *map);
 
 void HashMap_print(HashMap *map);
+
+bool HashMap_contains(HashMap *map, String key);
+
+HashMap *HashMap_copy(HashMap *map);
 
 HashMap *HashMap_new(int value_size, int capacity, bool copy) {
     HashMap *map = malloc(sizeof(HashMap)); 
@@ -84,8 +95,8 @@ void print_hash_node(HashNode *node) {
     }
 }
 
-
-void HashMap_put(HashMap *map, String key, void *value) {
+// 'key' is YOUR responsibilty! HashMap_free() won't free it.
+void _HashMap_put(HashMap *map, String key, void *value) {
 
     bool found = false;
     for (int i = 0; i < array_length(map->keys); i++) {
@@ -168,16 +179,72 @@ void *HashMap_get(HashMap *map, String key) {
 
 }
 
+void HashNode_free(HashNode *node) {
+    if (node == NULL) return;
 
+    HashNode_free(node->next);
+    free(node);
+}
 
+void _HashMap_free(HashMap *map) {
+
+    if (map == NULL) {
+        printf("Tried to free NULL HashMap! \n");
+        return;
+    }
+
+    if (map->copy) {
+        int len = array_length(map->keys);
+        for (int i = 0; i < len; i++) {
+            free(HashMap_get(map, map->keys[i]));
+        }
+    }
+
+    for (int i = 0; i < map->capacity; i++) {
+        HashNode_free(map->values[i].next);
+    }
+
+    free(map->values);
+
+    array_free(map->keys);
+
+    free(map);
+
+}
 
 void HashMap_print(HashMap *map) {
     printf("{");
     int len = array_length(map->keys);
     for (int i = 0; i < len; i++) {
-        printf("\n  \"%s\": <%p>", map->keys[i].data, HashMap_get(map, map->keys[i]));
-        if (i + 1 < len) printf(","); // pretty formatting
+        printf("\"%s\": <%p>", map->keys[i].data, HashMap_get(map, map->keys[i]));
+        if (i + 1 < len) printf(", "); // pretty formatting
     }
-    if (len > 0) printf("\n"); // pretty formatting
+    //if (len > 0) printf("\n"); // pretty formatting
     printf("} \n");
 }
+
+bool HashMap_contains(HashMap *map, String key) {
+    int len = array_length(map->keys);
+    for (int i = 0; i < len; i++) {
+        if (String_equal(map->keys[i], key)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+HashMap *HashMap_copy(HashMap *map) {
+    HashMap *new = HashMap_new(map->value_size, map->capacity, map->copy);
+
+    int len = array_length(map->keys);
+    for (int i = 0; i < len; i++) {
+        void *value = map->copy? copy_value(HashMap_get(map, map->keys[i]), map->value_size) : HashMap_get(map, map->keys[i]);
+
+        HashMap_put(new, map->keys[i], value);
+    }
+
+
+    return new;
+}
+

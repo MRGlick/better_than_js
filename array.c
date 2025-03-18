@@ -106,7 +106,7 @@ void _array_ensure_capacity(void **array) {
 // MIGHT CHANGE THE ADDRESS OF THE ARRAY
 #define array_append(array, val) do { \
     _array_ensure_capacity((void **)&(array)); \
-    array[array_length(array)] = val; \
+    (array)[array_length(array)] = val; \
     array_header(array)->length++; \
 } while (0)
 

@@ -4,7 +4,7 @@
 #include "array.c"
 #include <stdbool.h>
 #include "token_stuff.c"
-#include "hashtable.c"
+#include "hashmap.c"
 
 
 
@@ -1493,6 +1493,7 @@ void print_instruction(Inst inst) {
 }
 
 void print_instructions(Inst *arr) {
+    printf("Instructions: \n");
     for (int i = 0; i < array_length(arr); i++) {
         print_instruction(arr[i]);
     }
@@ -1522,9 +1523,9 @@ int get_vartype_size(VarType t) {
 int gi_stack_pos = 0;
 int gi_stack_size = 0;
 
-void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var_map);
+void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map);
 
-void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions, HashMap var_map) {
+void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap *var_map) {
     if (ast.children[0].token.type != TYPE) {
         print_err("Invalid variable declaration!");
         exit(1);
@@ -1532,22 +1533,22 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions, HashMap 
 
     String var_name = ast.children[1].token.text;
 
-    if (HM_has_key(var_map, var_name)) {
+    if (HashMap_contains(var_map, var_name)) {
         print_err("I'm too lazy for variable shadowing! (for now, atleast)");
         exit(1);
     }
 
-    HM_put(var_map, var_name, gi_stack_pos);
-
+    HashMap_put(var_map, var_name, gi_stack_pos);
 
     VarType var_type = ast.children[0].token.var_type;
 
     int size = get_vartype_size(var_type);
 
-    array_append(instructions, create_inst(I_STACK_ALLOC, (Val){.type = T_INT, .i_val = size}));
+    array_append(*instructions, create_inst(I_STACK_ALLOC, (Val){.type = T_INT, .i_val = size}));
     gi_stack_size += size;
-    array_append(instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
     gi_stack_pos += size;
+
     if (gi_stack_pos > gi_stack_size) {
         print_err("exceeded current stack!");
     }
@@ -1556,12 +1557,16 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst *instructions, HashMap 
     } else {
         Val val = null(Val);
         val.type = var_type;
-        array_append(instructions, create_inst(I_PUSH, val));
+        array_append(*instructions, create_inst(I_PUSH, val));
     }
-    array_append(instructions, create_inst(I_STACK_STORE, null(Val)));
+    array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
 }
 
-void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var_map) {
+// void generate_instructions_for_assign(ASTNode ast, Inst *instructions, HashMap *var_map) {
+
+// }
+
+void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
     // independently defined operators
     if (ast.token.type == DECL_ASSIGN_STMT || ast.token.type == DECL_STMT) {
@@ -1570,23 +1575,23 @@ void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var
     }
 
     int temp_stack_ptr;
+    HashMap *temp_var_map = NULL;
 
     // pre children operators
     switch (ast.token.type) {
         case STMT_SEQ:
         case BLOCK:
             temp_stack_ptr = gi_stack_pos;
-            array_append(instructions, create_inst(I_STORE_STACK_PTR, null(Val)));
+            temp_var_map = HashMap_copy(var_map);
+            array_append(*instructions, create_inst(I_STORE_STACK_PTR, null(Val)));
             break;
         
         default:
             break;
     }
-    
-    
-    
+        
     for (int i = 0; i < array_length(ast.children); i++) {
-        generate_instructions_for_node(ast.children[i], instructions, var_map);
+        generate_instructions_for_node(ast.children[i], instructions, temp_var_map != NULL ? temp_var_map : var_map);
     }
 
     Val val;
@@ -1596,61 +1601,63 @@ void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var
     switch (ast.token.type) {
         case INTEGER:
             val = (Val){.type = T_INT, .i_val = ast.token.int_val};
-            array_append(instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val));
             break;
         case FLOAT:
             val = (Val){.type = T_FLOAT, .f_val = ast.token.double_val};
-            array_append(instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val));
             break;
         case BOOL:
             val = (Val){.type = T_BOOL, .b_val = ast.token.bool_val};
-            array_append(instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val));
             break;
         case OP_ADD:
-            array_append(instructions, create_inst(I_ADD, null(Val)));
+            array_append(*instructions, create_inst(I_ADD, null(Val)));
             break;
         case OP_SUB:
-            array_append(instructions, create_inst(I_SUB, null(Val)));
+            array_append(*instructions, create_inst(I_SUB, null(Val)));
             break;
         case OP_MUL:
-            array_append(instructions, create_inst(I_MUL, null(Val)));
+            array_append(*instructions, create_inst(I_MUL, null(Val)));
             break;
         case OP_DIV:
-            array_append(instructions, create_inst(I_DIV, null(Val)));
+            array_append(*instructions, create_inst(I_DIV, null(Val)));
             break;
         case OP_MOD:
-            array_append(instructions, create_inst(I_MOD, null(Val)));
+            array_append(*instructions, create_inst(I_MOD, null(Val)));
             break;
         case OP_GREATER:
-            array_append(instructions, create_inst(I_GREATER, null(Val)));
+            array_append(*instructions, create_inst(I_GREATER, null(Val)));
             break;
         case OP_GREATEREQ:
-            array_append(instructions, create_inst(I_GREATER_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_GREATER_EQUAL, null(Val)));
             break;
         case OP_LESS:
-            array_append(instructions, create_inst(I_LESS, null(Val)));
+            array_append(*instructions, create_inst(I_LESS, null(Val)));
             break;
         case OP_LESSEQ:
-            array_append(instructions, create_inst(I_LESS_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_LESS_EQUAL, null(Val)));
             break;
         case OP_EQ:
-            array_append(instructions, create_inst(I_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_EQUAL, null(Val)));
             break;
         case OP_NOTEQ:
-            array_append(instructions, create_inst(I_NOT_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val)));
             break;
         case NAME:
-            if (!HM_has_key(var_map, ast.token.text)) {
+            if (!HashMap_contains(var_map, ast.token.text)) {
                 print_err("Unknown identifier!");
+                printf("'%s' \n", ast.token.text.data);
                 exit(1);
             }
-            int var_pos = (int)HM_get(var_map, ast.token.text);
-            array_append(instructions, create_inst(I_READ, (Val){.i_val = var_pos}));
+            int var_pos = (int)HashMap_get(var_map, ast.token.text);
+            array_append(*instructions, create_inst(I_READ, (Val){.i_val = var_pos}));
             break;
         case STMT_SEQ:
         case BLOCK:
+            HashMap_free(temp_var_map);
             gi_stack_pos = temp_stack_ptr;
-            array_append(instructions, create_inst(I_SET_STACK_PTR, null(Val)));
+            array_append(*instructions, create_inst(I_SET_STACK_PTR, null(Val)));
             break;
     
         default:
@@ -1662,11 +1669,13 @@ void generate_instructions_for_node(ASTNode ast, Inst *instructions, HashMap var
 
 Inst *generate_instructions(ASTNode ast) {
     Inst *res = array(Inst, 20);
-    HashMap var_map = HashMap(int, false);
+    HashMap *var_map = HashMap(int, false);
 
     gi_stack_pos = 0;
     gi_stack_size = 0;
-    generate_instructions_for_node(ast, res, var_map);
+    generate_instructions_for_node(ast, &res, var_map);
+
+    HashMap_free(var_map);
 
     return res;
 }
