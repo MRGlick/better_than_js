@@ -22,7 +22,9 @@ typedef struct HashMap {
 #define HashMap(type, copy) HashMap_new(sizeof(type), 100, copy)
 
 // yes i wrote a macro for it
-#define HashMap_put(map, key, value) _HashMap_put(map, key, (void *)value)
+#define HashMap_put(map, key, ...) do { \
+    _HashMap_put(map, key, &(__VA_ARGS__)); \
+} while (0)
 
 #define HashMap_free(map) do {_HashMap_free(map); map = NULL;} while (0)
 

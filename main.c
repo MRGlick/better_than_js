@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "token_stuff.c"
 #include "hashmap.c"
-
+#include "inttypes.h"
 
 
 const char SYMBOLS[] = {
@@ -1205,40 +1205,40 @@ ParseResult parse_assign_stmt(int idx) {
     if (get_token(idx).type != NAME) {
         return null(ParseResult);
     }
-
+    
     int name_idx = idx;
-
+    
     idx += 1;
-
+    
     if (get_token(idx).type != OP_ASSIGN) {
         return null(ParseResult);
     }
-
+    
     idx += 1;
-
+    
     ParseResult expr_res = parse_expr(idx);
-
+    
     if (!expr_res.success) {
         return null(ParseResult);
     }
-
+    
     idx = expr_res.endpos;
-
-
+    
+    
     if (get_token(idx).type != STMT_END) {
         free_ast(expr_res.node);
         print_err("forgot semicolon!");
         return null(ParseResult);
     }
-
+    
     idx += 1;
-
+    
     ASTNode node = create_ast_node((Token){.type = ASSIGN_STMT}, true);
-
+    
     array_append(node.children, create_ast_node(get_token(name_idx), true));
-
+    
     array_append(node.children, expr_res.node);
-
+    
     return create_parse_result(true, node, idx);
 }
 
@@ -1246,52 +1246,52 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
     if (get_token(idx).type != TYPE) {
         return null(ParseResult);
     }
-
     
-
+    
+    
     int type_idx = idx;
-
+    
     idx += 1;
-
+    
     if (get_token(idx).type != NAME) {
         return null(ParseResult);
     }
-
+    
     int name_idx = idx;
-
+    
     idx += 1;
-
+    
     if (get_token(idx).type != OP_ASSIGN) {
         return null(ParseResult);
     }
-
+    
     idx += 1;
-
+    
     ParseResult expr_res = parse_expr(idx);
-
+    
     if (!expr_res.success) {
         return null(ParseResult);
     }
-
+    
     idx = expr_res.endpos;
-
-
+    
+    
     if (get_token(idx).type != STMT_END) {
         free_ast(expr_res.node);
         print_err("forgot semicolon!");
         return null(ParseResult);
     }
-
+    
     idx += 1;
-
+    
     ASTNode node = create_ast_node((Token){.type = DECL_ASSIGN_STMT}, true);
-
+    
     array_append(node.children, create_ast_node(get_token(type_idx), true));
-
+    
     array_append(node.children, create_ast_node(get_token(name_idx), true));
-
+    
     array_append(node.children, expr_res.node);
-
+    
     return create_parse_result(true, node, idx);
 }
 
@@ -1385,7 +1385,7 @@ STACK_STORE
 
 */
 
-#define INSTRUCTIONS\
+#define INSTRUCTIONS \
     X(I_PUSH) \
     X(I_READ) \
     X(I_ADD) \
@@ -1424,18 +1424,30 @@ char *inst_names[] = {
 typedef struct Val {
     VarType type;
     union {
-        int i_val;
-        double f_val;
-        bool b_val;
+        void *any_val;
         char *s_val;
+        double f_val;
+        int i_val;
+        bool b_val;
     };
 } Val;
 
 typedef struct Inst {
     InstType type;
     Val arg;
-
+    
 } Inst;
+
+typedef struct VarHeader { 
+    i32 pos;
+    i32 type;
+}VarHeader;
+
+void *create_var_header_voidp(i32 pos, i32 type) {
+    VarHeader v = (VarHeader){.pos = pos, .type = type};
+
+    return *((void **)&v);
+}
 
 
 Inst create_inst(VarType type, Val arg) {
@@ -1443,12 +1455,12 @@ Inst create_inst(VarType type, Val arg) {
 }
 
 void print_val(Val val) {
-    printf("(%s, ", var_type_names[val.type]);
-    switch (val.type) {
-        case T_INT:
+        printf("(%s, ", var_type_names[val.type]);
+        switch (val.type) {
+            case T_INT:
             printf("%d", val.i_val);
             break;
-        case T_FLOAT:
+            case T_FLOAT:
             printf("%.2f", val.f_val);
             break;
         case T_BOOL:
@@ -1521,7 +1533,6 @@ int get_vartype_size(VarType t) {
 }
 
 int gi_stack_pos = 0;
-int gi_stack_size = 0;
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map);
 
@@ -1538,20 +1549,15 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
         exit(1);
     }
 
-    HashMap_put(var_map, var_name, gi_stack_pos);
-
     VarType var_type = ast.children[0].token.var_type;
-
+    
+    HashMap_put(var_map, var_name, create_var_header_voidp(gi_stack_pos, var_type));
+    
     int size = get_vartype_size(var_type);
 
-    array_append(*instructions, create_inst(I_STACK_ALLOC, (Val){.type = T_INT, .i_val = size}));
-    gi_stack_size += size;
     array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
     gi_stack_pos += size;
 
-    if (gi_stack_pos > gi_stack_size) {
-        print_err("exceeded current stack!");
-    }
     if (ast.token.type == DECL_ASSIGN_STMT) {
         generate_instructions_for_node(ast.children[2], instructions, var_map);
     } else {
@@ -1680,12 +1686,12 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
     }
 }
 
+
 Inst *generate_instructions(ASTNode ast) {
     Inst *res = array(Inst, 20);
-    HashMap *var_map = HashMap(int, false);
+    HashMap *var_map = HashMap(VarHeader, false); // ...i dont know about this
 
     gi_stack_pos = 0;
-    gi_stack_size = 0;
     generate_instructions_for_node(ast, &res, var_map);
 
     HashMap_free(var_map);
