@@ -26,6 +26,7 @@ char *KEYWORDS[] = {
 typedef struct ASTNode {
     Token token;
     struct ASTNode *children;
+    VarType expected_return_type;
     bool complete;
 } ASTNode;
 
@@ -338,6 +339,7 @@ ASTNode create_ast_node(Token tk, bool complete) {
     node.children = array(ASTNode, 2);
     node.token = tk;
     node.complete = complete;
+    node.expected_return_type = T_VOID;
     
     return node;
 }
@@ -1381,22 +1383,106 @@ PUSH (9.0, float)
 SUB
 SUB
 STACK_STORE
-
-
 */
 
+
+#define in_range(a, b, c) ((a >= b) && (a <= c))
+
+
+// for now, since types are already sorted for least to most precedent, this function is meaningless. but it might change in the future.
+int get_type_precedence(VarType type) {
+
+    if (type == T_BOOL) return 0;
+    if (type == T_INT) return 1;
+    if (type == T_FLOAT) return 2;
+    if (type == T_STRING) return 3;
+    if (type == T_STRUCT) return 4;
+
+    return -1;
+}
+
+// anything this function doesn't touch is meant to return void
+void typeify_tree(ASTNode *node, HashMap *var_map) {
+    
+    if (node->token.type == BLOCK || node->token.type == STMT_SEQ) {
+        var_map = HashMap_copy(var_map); // make further use be limited to this scope
+    }
+    
+    if (node->token.type == DECL_STMT || node->token.type == DECL_ASSIGN_STMT) {
+        String var_name = node->children[1].token.text;
+        VarType var_type = node->children[0].token.var_type;
+        
+        HashMap_put(var_map, var_name, (int)var_type);
+    }
+    
+    if (node->token.type == INTEGER) node->expected_return_type = T_INT;
+    if (node->token.type == FLOAT) node->expected_return_type = T_FLOAT;
+    if (node->token.type == STRING_LITERAL) node->expected_return_type = T_STRING;
+    if (node->token.type == BOOL) node->expected_return_type = T_BOOL;
+    if (node->token.type == NAME) {
+        node->expected_return_type = (int)HashMap_get(var_map, node->token.text);
+        printf("read variable: %s, got type: %d \n", node->token.text.data, node->expected_return_type);
+    }
+            
+    if (in_range(node->token.type, BINOPS_START, BINOPS_END)) {
+        int highest_precedence_type = T_VOID;
+        int len = array_length(node->children);
+        for (int i = 0; i < len; i++) {
+            typeify_tree(&node->children[i], var_map);
+            print_token(node->children[i].token, 0);
+            if (get_type_precedence(node->children[i].expected_return_type) > get_type_precedence(highest_precedence_type)) {
+                highest_precedence_type = node->children[i].expected_return_type;
+                printf("im: %s, new highest: %d \n", token_type_names[node->token.type], highest_precedence_type);
+            }
+        }
+        node->expected_return_type = highest_precedence_type;
+    } else {
+        int len = array_length(node->children);
+        for (int i = 0; i < len; i++) {
+            typeify_tree(&node->children[i], var_map);
+        }
+    }
+
+
+    
+
+    
+    if (node->token.type == BLOCK) {
+        HashMap_free(var_map);
+    }
+    
+}
+
+void typeify_tree_wrapper(ASTNode *node) {
+    HashMap *var_map = HashMap(int);
+    typeify_tree(node, var_map);
+
+    HashMap_free(var_map);
+}
+
+
+
 #define INSTRUCTIONS \
-    X(I_PUSH) \
-    X(I_READ) \
-    X(I_ADD) \
+X(I_PUSH) \
+X(I_READ) \
+X(I_ADD) \
+X(I_ADD_FLOAT) \
     X(I_SUB) \
+    X(I_SUB_FLOAT) \
     X(I_MUL) \
+    X(I_MUL_FLOAT) \
     X(I_DIV) \
+    X(I_DIV_FLOAT) \
     X(I_MOD) \
+    X(I_MOD_FLOAT) \
     X(I_GREATER) \
+    X(I_GREATER_FLOAT) \
     X(I_GREATER_EQUAL) \
+    X(I_GREATER_EQUAL_FLOAT) \
     X(I_LESS) \
+    X(I_LESS_FLOAT) \
     X(I_LESS_EQUAL) \
+    X(I_LESS_EQUAL_FLOAT) \
     X(I_EQUAL) \
     X(I_NOT_EQUAL) \
     X(I_LABEL) \
@@ -1563,6 +1649,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
     array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
 }
 
+
 void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap *var_map) {
     String var_name = ast.children[0].token.text;
 
@@ -1576,6 +1663,15 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap 
 
 }
 
+
+void generate_instructions_for_binop(ASTNode ast, Inst **instructions, HashMap *var_map) {
+    if (in_range(ast.token.type, BOOLOPS_START, BOOLOPS_END)) {
+        
+    }
+}
+
+
+
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
     // independently defined operators
@@ -1587,6 +1683,12 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         generate_instructions_for_assign(ast, instructions, var_map);
         return;
     }
+    // if (in_range(ast.token.type, BINOPS_START, BINOPS_END)) {
+    //     generate_instructions_for_binop(ast, instructions, var_map);
+    //     return;
+    // }
+
+
 
     int temp_stack_ptr;
     HashMap *temp_var_map = NULL;
@@ -1704,6 +1806,8 @@ void print_ast(ASTNode node, int level) {
     for (int i = 0; i < level; i++) {
         printf("|---");
     }
+
+    printf("<%s>", var_type_names[node.expected_return_type]);
     print_token(node.token, 0);
     for (int i = 0; i < array_length(node.children); i++) {
         print_ast(node.children[i], level + 1);
@@ -1944,6 +2048,7 @@ int main() {
 
         set_parse_tokens(tokens);
         ParseResult res = parse_stmt_seq(0);
+        typeify_tree_wrapper(&res.node);
         if (res.endpos < array_length(tokens)) {
             res.success = false;
         } else {

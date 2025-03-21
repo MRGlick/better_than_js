@@ -55,6 +55,8 @@ void _HashMap_put(HashMap *map, String key, void *value);
 
 void *HashMap_get(HashMap *map, String key);
 
+void *HashMap_get_safe(HashMap *map, String key, void *default_val);
+
 void _HashMap_free(HashMap *map);
 
 void HashMap_print(HashMap *map);
@@ -255,4 +257,23 @@ HashMap *HashMap_copy(HashMap *map) {
 
     return new;
 }
+
+void *HashMap_get_safe(HashMap *map, String key, void *default_val) {
+    int hash_value = hash(key, map->capacity);
+
+    HashNode *current = &map->values[hash_value];
+
+    if (current->empty) return default_val;
+    
+
+    while (current != NULL) {
+        if (String_equal(current->key, key)) {
+            return current->value;
+        }
+        current = current->next;
+    }
+
+    return default_val;
+}
+
 

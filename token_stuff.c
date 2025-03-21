@@ -14,21 +14,27 @@
     X(STRING_LITERAL) \
     X(INTEGER) \
     X(FLOAT) \
+    X(BINOPS_START) \
+    X(BOOLOPS_START) \
     X(OP_EQ) \
     X(OP_NOTEQ) \
     X(OP_GREATER) \
     X(OP_GREATEREQ) \
     X(OP_LESS) \
     X(OP_LESSEQ) \
-    X(OP_ASSIGN) \
     X(OP_AND) \
     X(OP_OR) \
     X(OP_NOT) \
+    X(BOOLOPS_END) \
+    X(ARITHOPS_START) \
     X(OP_ADD) \
     X(OP_SUB) \
     X(OP_MUL) \
     X(OP_DIV) \
     X(OP_MOD) \
+    X(ARITHOPS_END) \
+    X(BINOPS_END) \
+    X(OP_ASSIGN) \
     X(LPAREN) \
     X(RPAREN) \
     X(LCURLY) \
@@ -51,11 +57,14 @@
     X(VAL_SEQ) \
     X(TOKEN_TYPE_COUNT) \
 
+//              term i made up VVV
+// sorted by bin-op conversion precedence (least to most)
 #define VAR_TYPES \
+    X(T_VOID) \
+    X(T_BOOL) \
     X(T_INT) \
     X(T_FLOAT) \
     X(T_STRING) \
-    X(T_BOOL) \
     X(T_STRUCT)
 
 typedef enum VarType {
@@ -65,10 +74,11 @@ typedef enum VarType {
 } VarType;
 
 char *var_type_names[] = {
+    "void",
+    "bool",
     "int",
     "float",
     "string",
-    "bool",
     "struct"
 };
 
