@@ -16,14 +16,20 @@ typedef struct HashMap {
     HashNode *values;
     int capacity;
     int value_size;
-    bool copy;
+    bool primitive_values;
 } HashMap;
 
-#define HashMap(type, copy) HashMap_new(sizeof(type), 100, copy)
+#define if_primitive_value(true_case, false_case, ...) (_Generic((__VA_ARGS__), \
+    int: true_case, long: true_case, float: true_case, double: true_case, bool: true_case, char: true_case, default: false_case))
 
-// yes i wrote a macro for it
+#define if_primitive_type(true_case, false_case, ...) ({__VA_ARGS__ x; if_primitive_value(true_case, false_case, x);})
+
+#define HashMap(type) HashMap_new(sizeof(type), 100, (if_primitive_type(1, 0, type)))
+
+// ... = primitive value OR ptr to struct
 #define HashMap_put(map, key, ...) do { \
-    _HashMap_put(map, key, &(__VA_ARGS__)); \
+    if (if_primitive_value(1, 0, (__VA_ARGS__)) != map->primitive_values) printf("HashMap type mismatch! Line: %d \n", __LINE__); \
+    else _HashMap_put(map, key, (void *)(__VA_ARGS__)); \
 } while (0)
 
 #define HashMap_free(map) do {_HashMap_free(map); map = NULL;} while (0)
@@ -43,7 +49,7 @@ int hash(String key, int capacity) {
     return hash % capacity;
 }
 
-HashMap *HashMap_new(int value_size, int capacity, bool copy);
+HashMap *HashMap_new(int value_size, int capacity, bool prim);
 
 void _HashMap_put(HashMap *map, String key, void *value);
 
@@ -57,12 +63,12 @@ bool HashMap_contains(HashMap *map, String key);
 
 HashMap *HashMap_copy(HashMap *map);
 
-HashMap *HashMap_new(int value_size, int capacity, bool copy) {
+HashMap *HashMap_new(int value_size, int capacity, bool prim) {
     HashMap *map = malloc(sizeof(HashMap)); 
     
     *map = (HashMap){
         .capacity = capacity,
-        .copy = copy,
+        .primitive_values = prim,
         .value_size = value_size
     };
 
@@ -118,7 +124,7 @@ void _HashMap_put(HashMap *map, String key, void *value) {
     // debug
     // current->empty = false;
     // current->key = key;
-    // current->value = map->copy ? copy_value(value, map->value_size) : value;
+    // current->value = map->primitive_values ? copy_value(value, map->value_size) : value;
     // current->next = NULL;
     // printf("setting key to %s \n", key.data);
     // print_hash_node(current);
@@ -127,7 +133,7 @@ void _HashMap_put(HashMap *map, String key, void *value) {
     if (current->empty) {
         current->empty = false;
         current->key = key;
-        current->value = map->copy ? copy_value(value, map->value_size) : value;
+        current->value = !map->primitive_values ? copy_value(value, map->value_size) : value;
         return;
     }
 
@@ -142,7 +148,7 @@ void _HashMap_put(HashMap *map, String key, void *value) {
     }
 
     if (current != NULL) {
-        if (map->copy) {
+        if (!map->primitive_values) {
             free(current->value);
             current->value = copy_value(value, map->value_size);
         } else {
@@ -155,7 +161,7 @@ void _HashMap_put(HashMap *map, String key, void *value) {
     new_node->empty = false;
     new_node->key = key;
     new_node->next = NULL;
-    new_node->value = map->copy ? copy_value(value, map->value_size) : value;
+    new_node->value = !map->primitive_values ? copy_value(value, map->value_size) : value;
     prev->next = new_node;
     print_hash_node(&map->values[hash_value]);
 }
@@ -195,7 +201,7 @@ void _HashMap_free(HashMap *map) {
         return;
     }
 
-    if (map->copy) {
+    if (!map->primitive_values) {
         int len = array_length(map->keys);
         for (int i = 0; i < len; i++) {
             free(HashMap_get(map, map->keys[i]));
@@ -237,11 +243,11 @@ bool HashMap_contains(HashMap *map, String key) {
 }
 
 HashMap *HashMap_copy(HashMap *map) {
-    HashMap *new = HashMap_new(map->value_size, map->capacity, map->copy);
+    HashMap *new = HashMap_new(map->value_size, map->capacity, map->primitive_values);
 
     int len = array_length(map->keys);
     for (int i = 0; i < len; i++) {
-        void *value = map->copy? copy_value(HashMap_get(map, map->keys[i]), map->value_size) : HashMap_get(map, map->keys[i]);
+        void *value = map->primitive_values? HashMap_get(map, map->keys[i]) : copy_value(HashMap_get(map, map->keys[i]), map->value_size);
 
         HashMap_put(new, map->keys[i], value);
     }

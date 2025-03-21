@@ -1443,13 +1443,6 @@ typedef struct VarHeader {
     i32 type;
 }VarHeader;
 
-void *create_var_header_voidp(i32 pos, i32 type) {
-    VarHeader v = (VarHeader){.pos = pos, .type = type};
-
-    return *((void **)&v);
-}
-
-
 Inst create_inst(VarType type, Val arg) {
     return (Inst){.type = type, .arg = arg};
 }
@@ -1551,7 +1544,9 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
 
     VarType var_type = ast.children[0].token.var_type;
     
-    HashMap_put(var_map, var_name, create_var_header_voidp(gi_stack_pos, var_type));
+    VarHeader vh = (VarHeader){.pos = gi_stack_pos, .type = var_type};
+
+    HashMap_put(var_map, var_name, &vh);
     
     int size = get_vartype_size(var_type);
 
@@ -1571,9 +1566,9 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
 void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap *var_map) {
     String var_name = ast.children[0].token.text;
 
-    int var_pos = (int)HashMap_get(var_map, var_name);
+    VarHeader *vh = HashMap_get(var_map, var_name);
 
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = var_pos}));
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = vh->pos}));
 
     generate_instructions_for_node(ast.children[1], instructions, var_map);
 
@@ -1669,8 +1664,9 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
                 printf("'%s' \n", ast.token.text.data);
                 exit(1);
             }
-            int var_pos = (int)HashMap_get(var_map, ast.token.text);
-            array_append(*instructions, create_inst(I_READ, (Val){.i_val = var_pos}));
+            VarHeader *vh = HashMap_get(var_map, ast.token.text);
+            array_append(*instructions, create_inst(I_PUSH, (Val){.i_val = get_vartype_size(vh->type), .type = T_INT}));
+            array_append(*instructions, create_inst(I_READ, (Val){.i_val = vh->pos, .type = vh->type}));
             break;
         case STMT_SEQ:
         case BLOCK:
@@ -1689,7 +1685,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
 
 Inst *generate_instructions(ASTNode ast) {
     Inst *res = array(Inst, 20);
-    HashMap *var_map = HashMap(VarHeader, false); // ...i dont know about this
+    HashMap *var_map = HashMap(VarHeader); // I KNOW ABOUT THIS.
 
     gi_stack_pos = 0;
     generate_instructions_for_node(ast, &res, var_map);
