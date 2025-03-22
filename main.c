@@ -1424,28 +1424,34 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         printf("read variable: %s, got type: %d \n", node->token.text.data, node->expected_return_type);
     }
             
-    if (in_range(node->token.type, BINOPS_START, BINOPS_END)) {
+    if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {
         int highest_precedence_type = T_VOID;
         int len = array_length(node->children);
         for (int i = 0; i < len; i++) {
             typeify_tree(&node->children[i], var_map);
-            print_token(node->children[i].token, 0);
             if (get_type_precedence(node->children[i].expected_return_type) > get_type_precedence(highest_precedence_type)) {
                 highest_precedence_type = node->children[i].expected_return_type;
-                printf("im: %s, new highest: %d \n", token_type_names[node->token.type], highest_precedence_type);
             }
         }
         node->expected_return_type = highest_precedence_type;
+    } else if (in_range(node->token.type, BOOLOPS_START, BOOLOPS_END)) {
+
+        node->expected_return_type = T_BOOL;
+
+        int len = array_length(node->children);
+        for (int i = 0; i < len; i++) {
+            typeify_tree(&node->children[i], var_map);
+        }
     } else {
         int len = array_length(node->children);
         for (int i = 0; i < len; i++) {
             typeify_tree(&node->children[i], var_map);
         }
     }
-
-
     
-
+    
+    
+    
     
     if (node->token.type == BLOCK) {
         HashMap_free(var_map);
@@ -1456,44 +1462,61 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 void typeify_tree_wrapper(ASTNode *node) {
     HashMap *var_map = HashMap(int);
     typeify_tree(node, var_map);
-
+    
     HashMap_free(var_map);
 }
 
 
-
+// #INST
 #define INSTRUCTIONS \
+X(I_INVALID) \
 X(I_PUSH) \
 X(I_READ) \
 X(I_ADD) \
 X(I_ADD_FLOAT) \
-    X(I_SUB) \
-    X(I_SUB_FLOAT) \
-    X(I_MUL) \
-    X(I_MUL_FLOAT) \
-    X(I_DIV) \
-    X(I_DIV_FLOAT) \
-    X(I_MOD) \
-    X(I_MOD_FLOAT) \
-    X(I_GREATER) \
-    X(I_GREATER_FLOAT) \
-    X(I_GREATER_EQUAL) \
-    X(I_GREATER_EQUAL_FLOAT) \
-    X(I_LESS) \
-    X(I_LESS_FLOAT) \
-    X(I_LESS_EQUAL) \
-    X(I_LESS_EQUAL_FLOAT) \
-    X(I_EQUAL) \
-    X(I_NOT_EQUAL) \
-    X(I_LABEL) \
-    X(I_JUMP) \
-    X(I_JUMP_IF) \
-    X(I_JUMP_NOT) \
-    X(I_CONVERT) \
-    X(I_STACK_ALLOC) \
-    X(I_STACK_STORE) \
-    X(I_STORE_STACK_PTR) \
-    X(I_SET_STACK_PTR) \
+X(I_SUB) \
+X(I_SUB_FLOAT) \
+X(I_MUL) \
+X(I_MUL_FLOAT) \
+X(I_DIV) \
+X(I_DIV_FLOAT) \
+X(I_MOD) \
+X(I_MOD_FLOAT) \
+X(I_GREATER) \
+X(I_GREATER_FLOAT) \
+X(I_GREATER_EQUAL) \
+X(I_GREATER_EQUAL_FLOAT) \
+X(I_LESS) \
+X(I_LESS_FLOAT) \
+X(I_LESS_EQUAL) \
+X(I_LESS_EQUAL_FLOAT) \
+X(I_EQUAL) \
+X(I_NOT_EQUAL) \
+X(I_LABEL) \
+X(I_JUMP) \
+X(I_JUMP_IF) \
+X(I_JUMP_NOT) \
+X(I_CONVERT_START) \
+X(I_CONVERT_BOOL_INT) \
+X(I_CONVERT_BOOL_FLOAT) \
+X(I_CONVERT_BOOL_STR) \
+X(I_CONVERT_INT_FLOAT) \
+X(I_CONVERT_INT_STR) \
+X(I_CONVERT_INT_BOOL) \
+X(I_CONVERT_FLOAT_STR) \
+X(I_CONVERT_FLOAT_INT) \
+X(I_CONVERT_FLOAT_BOOL) \
+X(I_CONVERT_STR_BOOL) \
+X(I_CONVERT_END) \
+X(I_PRINT_START) \
+X(I_PRINT_INT) \
+X(I_PRINT_FLOAT) \
+X(I_PRINT_STR) \
+X(I_PRINT_BOOL) \
+X(I_PRINT_END) \
+X(I_STACK_STORE) \
+X(I_STORE_STACK_PTR) \
+X(I_SET_STACK_PTR)
 
 typedef enum InstType {
     #define X(i) i, 
@@ -1534,16 +1557,19 @@ Inst create_inst(VarType type, Val arg) {
 }
 
 void print_val(Val val) {
-        printf("(%s, ", var_type_names[val.type]);
-        switch (val.type) {
-            case T_INT:
+    printf("(%s, ", var_type_names[val.type]);
+    switch (val.type) {
+        case T_INT:
             printf("%d", val.i_val);
             break;
-            case T_FLOAT:
+        case T_FLOAT:
             printf("%.2f", val.f_val);
             break;
         case T_BOOL:
             printf("%s", val.b_val ? "true" : "false");
+            break;
+        case T_STRING:
+            printf("\"%s\"", val.s_val);
             break;
         default:
             printf("dunno");
@@ -1554,31 +1580,22 @@ void print_val(Val val) {
 
 void print_instruction(Inst inst) {
     printf("[%s", inst_names[inst.type]);
-
+    
     switch (inst.type) {
-
+        
         case I_PUSH:
-            printf(", ");
-            print_val(inst.arg);
-            break;
-        case I_STACK_ALLOC:
+        printf(", ");
+        print_val(inst.arg);
+        break;
         case I_READ:
-            printf(", %d", inst.arg.i_val);
-            break;
-        case I_CONVERT:
-            printf(", ");
-            print_val(inst.arg);
-            break;
-        case I_LABEL:
         case I_JUMP:
         case I_JUMP_IF:
         case I_JUMP_NOT:
-            printf(", %s", inst.arg.s_val);
-            break;
-
-
+        printf(", %d", inst.arg.i_val);
+        break;
+        
         default:
-            break;
+        break;
     }
     printf("] \n");
 }
@@ -1586,6 +1603,7 @@ void print_instruction(Inst inst) {
 void print_instructions(Inst *arr) {
     printf("Instructions: \n");
     for (int i = 0; i < array_length(arr); i++) {
+        printf("%d: ", i);
         print_instruction(arr[i]);
     }
 }
@@ -1593,25 +1611,91 @@ void print_instructions(Inst *arr) {
 int get_vartype_size(VarType t) {
     switch (t) {
         case T_INT:
-            return 4;
-            break;
+        return 4;
+        break;
         case T_FLOAT:
-            return 4;
-            break;
+        return 4;
+        break;
         case T_BOOL:
-            return 1;
-            break;
+        return 1;
+        break;
         case T_STRING:
-            return 8;
-            break;
+        return 8;
+        break;
         default:
-            print_err("i dunno the size!");
-            return -1;
-            break;
+        print_err("i dunno the size!");
+        return -1;
+        break;
     }
 }
 
+InstType get_cvt_inst_type_for_types(VarType from, VarType to) {
+    // avert your eyes
+    if (from == T_BOOL) {
+        if (to == T_INT) return I_CONVERT_BOOL_INT;
+        if (to == T_FLOAT) return I_CONVERT_BOOL_FLOAT;
+        if (to == T_STRING) return I_CONVERT_BOOL_STR;
+    }
+    if (from == T_INT) {
+        if (to == T_BOOL) return I_CONVERT_INT_BOOL;
+        if (to == T_FLOAT) return I_CONVERT_INT_FLOAT;
+        if (to == T_STRING) return I_CONVERT_INT_STR;
+    }
+    if (from == T_FLOAT) {
+        if (to == T_BOOL) return I_CONVERT_FLOAT_BOOL;
+        if (to == T_INT) return I_CONVERT_FLOAT_INT;
+        if (to == T_STRING) return I_CONVERT_FLOAT_STR;
+    }
+    if (from == T_STRING && to == T_BOOL) {
+        return I_CONVERT_STR_BOOL;
+    }
+
+    return I_INVALID;
+}
+
+InstType get_inst_type_for_op(TokenType op, VarType var_type) {
+    if (op == OP_ADD) {
+        if (var_type == T_INT) return I_ADD;
+        if (var_type == T_FLOAT) return I_ADD_FLOAT;
+    }
+    if (op == OP_SUB) {
+        if (var_type == T_INT) return I_SUB;
+        if (var_type == T_FLOAT) return I_SUB_FLOAT;
+    }
+    if (op == OP_MUL) {
+        if (var_type == T_INT) return I_MUL;
+        if (var_type == T_FLOAT) return I_MUL_FLOAT;
+    }
+    if (op == OP_DIV) {
+        if (var_type == T_INT) return I_DIV;
+        if (var_type == T_FLOAT) return I_DIV_FLOAT;
+    }
+    if (op == OP_MOD) {
+        if (var_type == T_INT) return I_MOD;
+        if (var_type == T_FLOAT) return I_MOD_FLOAT;
+    }
+    if (op == OP_GREATER) {
+        if (var_type == T_INT) return I_GREATER;
+        if (var_type == T_FLOAT) return I_GREATER_FLOAT;
+    }
+    if (op == OP_GREATEREQ) {
+        if (var_type == T_INT) return I_GREATER_EQUAL;
+        if (var_type == T_FLOAT) return I_GREATER_EQUAL_FLOAT;
+    }
+    if (op == OP_LESS) {
+        if (var_type == T_INT) return I_LESS;
+        if (var_type == T_FLOAT) return I_LESS_FLOAT;
+    }
+    if (op == OP_LESSEQ) {
+        if (var_type == T_INT) return I_LESS_EQUAL;
+        if (var_type == T_FLOAT) return I_LESS_EQUAL_FLOAT;
+    }
+
+    return I_INVALID;
+}
+
 int gi_stack_pos = 0;
+int gi_label_idx = 0;
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map);
 
@@ -1620,7 +1704,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
         print_err("Invalid variable declaration!");
         exit(1);
     }
-
+    
     String var_name = ast.children[1].token.text;
 
     if (HashMap_contains(var_map, var_name)) {
@@ -1641,6 +1725,18 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
 
     if (ast.token.type == DECL_ASSIGN_STMT) {
         generate_instructions_for_node(ast.children[2], instructions, var_map);
+
+        VarType child_return_type = ast.children[2].expected_return_type;
+
+        if (child_return_type != var_type) {
+            InstType inst_type = get_cvt_inst_type_for_types(child_return_type, var_type);
+            if (inst_type == I_INVALID) {
+                print_err("Invalid conversion on variable declaration!");
+                printf("Tried to convert from type '%s' to '%s' \n", var_type_names[child_return_type], var_type_names[var_type]);
+            } else {
+                array_append(*instructions, create_inst(inst_type, null(Val)));
+            }
+        }
     } else {
         Val val = null(Val);
         val.type = var_type;
@@ -1665,12 +1761,163 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap 
 
 
 void generate_instructions_for_binop(ASTNode ast, Inst **instructions, HashMap *var_map) {
-    if (in_range(ast.token.type, BOOLOPS_START, BOOLOPS_END)) {
-        
+
+    int len = array_length(ast.children);
+
+    bool is_bool_op = in_range(ast.token.type, BOOLOPS_START, BOOLOPS_END);
+
+    VarType highest_prec_type = T_VOID;
+
+    if (is_bool_op) {
+        for (int i = 0; i < len; i++) {
+            if (get_type_precedence(ast.children[i].expected_return_type) > get_type_precedence(highest_prec_type)) {
+                highest_prec_type = ast.children[i].expected_return_type;
+            }
+        }
+    }
+
+    VarType goal_type = is_bool_op ? highest_prec_type : ast.expected_return_type;
+
+    for (int i = 0; i < len; i++) {
+
+        generate_instructions_for_node(ast.children[i], instructions, var_map);
+
+        if (goal_type != ast.children[i].expected_return_type) {
+            InstType inst_type = get_cvt_inst_type_for_types(ast.children[i].expected_return_type, goal_type);
+            if (inst_type == I_INVALID) {
+                print_err("Invalid conversion!");
+                printf("Tried to convert from type '%s' to '%s' \n", var_type_names[ast.children[i].expected_return_type], var_type_names[goal_type]);
+            } else {
+                array_append(*instructions, create_inst(inst_type, null(Val)));
+            }
+        }
+    }
+
+    InstType inst_type = get_inst_type_for_op(ast.token.type, goal_type);
+    if (inst_type == I_INVALID) {
+        print_err("Invalid operator!");
+        printf("Tried to get operator '%s' between '%s' type operands! \n", token_type_names[ast.token.type], var_type_names[goal_type]);
+    } else {
+        array_append(*instructions, create_inst(inst_type, null(Val)));
+    }
+
+}
+
+InstType get_print_inst_for_type(VarType type) {
+    if (type == T_INT) return I_PRINT_INT;
+    if (type == T_BOOL) return I_PRINT_BOOL;
+    if (type == T_FLOAT) return I_PRINT_FLOAT;
+    if (type == T_STRING) return I_PRINT_STR;
+
+    return I_INVALID;
+}
+
+void generate_instructions_for_print(ASTNode ast, Inst **instructions, HashMap *var_map) {
+
+    int len = array_length(ast.children);
+    for (int i = 0; i < len; i++) {
+
+        generate_instructions_for_node(ast.children[i], instructions, var_map);
+
+        InstType inst_type = get_print_inst_for_type(ast.children[i].expected_return_type);
+        if (inst_type == I_INVALID) {
+            print_err("Invalid argument for print! (seriously how could you mess this up)");
+            printf("argument type: %s \n", var_type_names[ast.children[i].expected_return_type]);
+        } else {
+            array_append(*instructions, create_inst(inst_type, null(Val)));
+        }
     }
 }
 
+void generate_instructions_for_if(ASTNode ast, Inst **instructions, HashMap *var_map) {
+    
+    int end_label_idx = gi_label_idx++;
+    int else_label_idx;
 
+    int end_label_true_idx;
+    int else_label_true_idx;
+    if (ast.token.type == IF_ELSE_STMT) else_label_idx = gi_label_idx++;
+
+    // condition
+    generate_instructions_for_node(ast.children[0], instructions, var_map);
+
+    if (ast.children[0].expected_return_type != T_BOOL) {
+        InstType inst_type = get_cvt_inst_type_for_types(ast.children[0].expected_return_type, T_BOOL);
+
+        if (inst_type == I_INVALID) {
+            print_err("Type is ambigous! Cannot be used as an if condition. (you did badly.)");
+            printf("type: %s \n", var_type_names[ast.children[0].expected_return_type]);
+        } else {
+            array_append(*instructions, create_inst(inst_type, null(Val)));
+        }
+    }
+    
+    int first_jump_idx = array_length(*instructions);
+    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}));
+
+    // if-body
+    generate_instructions_for_node(ast.children[1], instructions, var_map);
+    
+    int if_body_jump_idx = -1;
+
+    if (ast.token.type == IF_ELSE_STMT) {
+
+        if_body_jump_idx = array_length(*instructions);
+        array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = end_label_idx}));
+
+        else_label_true_idx = array_length(*instructions);
+        array_append(*instructions, create_inst(I_LABEL, (Val){.type = T_INT, .i_val = else_label_idx}));
+
+        // else-body
+        generate_instructions_for_node(ast.children[2], instructions, var_map);
+    }
+
+    end_label_true_idx = array_length(*instructions);
+    array_append(*instructions, create_inst(I_LABEL, (Val){.type = T_INT, .i_val = end_label_idx}));
+
+    if (ast.token.type == IF_STMT) {
+        (*instructions)[first_jump_idx].arg.i_val = end_label_true_idx;
+    } else {
+        (*instructions)[first_jump_idx].arg.i_val = else_label_true_idx;
+        (*instructions)[if_body_jump_idx].arg.i_val = end_label_true_idx;
+    }
+
+}
+
+void generate_instructions_for_while(ASTNode ast, Inst **instructions, HashMap *var_map) {
+
+    int start_label_idx = array_length(*instructions);
+
+    array_append(*instructions, create_inst(I_LABEL, null(Val)));
+
+    generate_instructions_for_node(ast.children[0], instructions, var_map);
+
+    if (ast.children[0].expected_return_type != T_BOOL) {
+        InstType inst_type = get_cvt_inst_type_for_types(ast.children[0].expected_return_type, T_BOOL);
+
+        if (inst_type == I_INVALID) {
+            print_err("Type is ambigous! Cannot be used as an while condition. (you did badly.)");
+            printf("type: %s \n", var_type_names[ast.children[0].expected_return_type]);
+        } else {
+            array_append(*instructions, create_inst(inst_type, null(Val)));
+        }
+    }
+
+    int jump_not_inst_idx = array_length(*instructions);
+    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}));
+
+    // while body
+    generate_instructions_for_node(ast.children[1], instructions, var_map);
+
+    array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = start_label_idx}));
+
+    int end_label_idx = array_length(*instructions);
+    array_append(*instructions, create_inst(I_LABEL, null(Val)));
+
+    (*instructions)[jump_not_inst_idx].arg.i_val = end_label_idx;
+
+
+}
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
@@ -1683,10 +1930,24 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         generate_instructions_for_assign(ast, instructions, var_map);
         return;
     }
-    // if (in_range(ast.token.type, BINOPS_START, BINOPS_END)) {
-    //     generate_instructions_for_binop(ast, instructions, var_map);
-    //     return;
-    // }
+    if (in_range(ast.token.type, BINOPS_START, BINOPS_END)) {
+        generate_instructions_for_binop(ast, instructions, var_map);
+        return;
+    }
+    if (ast.token.type == PRINT_STMT) {
+        generate_instructions_for_print(ast, instructions, var_map);
+        return;
+    }
+
+    if (ast.token.type == IF_STMT || ast.token.type == IF_ELSE_STMT) {
+        generate_instructions_for_if(ast, instructions, var_map);
+        return;
+    }
+
+    if (ast.token.type == WHILE_STMT) {
+        generate_instructions_for_while(ast, instructions, var_map);
+        return;
+    }
 
 
 
@@ -1725,6 +1986,10 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
             break;
         case BOOL:
             val = (Val){.type = T_BOOL, .b_val = ast.token.bool_val};
+            array_append(*instructions, create_inst(I_PUSH, val));
+            break;
+        case STRING_LITERAL:
+            val = (Val){.type = T_STRING, .s_val = ast.token.text.data};
             array_append(*instructions, create_inst(I_PUSH, val));
             break;
         case OP_ADD:
@@ -1790,6 +2055,7 @@ Inst *generate_instructions(ASTNode ast) {
     HashMap *var_map = HashMap(VarHeader); // I KNOW ABOUT THIS.
 
     gi_stack_pos = 0;
+    gi_label_idx = 0;
     generate_instructions_for_node(ast, &res, var_map);
 
     HashMap_free(var_map);

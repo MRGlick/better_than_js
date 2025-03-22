@@ -2,14 +2,20 @@ int x = 3;
 int y = 2;
 int z = x + y;
 
-while (z > x) {
-    z = z - x;
-}
-
 if (z < 0) {
     print y;
-} else if (z == 0) {
-    print x;
 } else {
-    print "Oh well.";
+    print z;
 }
+
+READ z
+PUSH 0
+LESS
+JUMP_NOT L1
+READ y
+PRINT_INT
+JUMP L2
+LABEL L1
+READ z
+PRINT_INT
+LABEL L2
