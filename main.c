@@ -1513,6 +1513,7 @@ X(I_PRINT_INT) \
 X(I_PRINT_FLOAT) \
 X(I_PRINT_STR) \
 X(I_PRINT_BOOL) \
+X(I_PRINT_NEWLINE) \
 X(I_PRINT_END) \
 X(I_STACK_STORE) \
 X(I_STORE_STACK_PTR) \
@@ -1611,21 +1612,21 @@ void print_instructions(Inst *arr) {
 int get_vartype_size(VarType t) {
     switch (t) {
         case T_INT:
-        return 4;
-        break;
+            return 4;
+            break;
         case T_FLOAT:
-        return 4;
-        break;
+            return 8;
+            break;
         case T_BOOL:
-        return 1;
-        break;
+            return 1;
+            break;
         case T_STRING:
-        return 8;
-        break;
+            return 8;
+            break;
         default:
-        print_err("i dunno the size!");
-        return -1;
-        break;
+            print_err("i dunno the size!");
+            return -1;
+            break;
     }
 }
 
@@ -1827,6 +1828,8 @@ void generate_instructions_for_print(ASTNode ast, Inst **instructions, HashMap *
             array_append(*instructions, create_inst(inst_type, null(Val)));
         }
     }
+
+    array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val)));
 }
 
 void generate_instructions_for_if(ASTNode ast, Inst **instructions, HashMap *var_map) {
@@ -2062,6 +2065,148 @@ Inst *generate_instructions(ASTNode ast) {
 
     return res;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define STACK_SIZE 2048
+
+// THIS IS HAPPENING
+
+void print_float_dynamic_acc(float a) {
+
+    // to lazy for this shit :'(
+    printf("%.3f", a);
+
+}
+
+void run_instructions(Inst *instructions) {
+
+    printf("Program output: \n");
+
+    char temp_stack[STACK_SIZE] = {0};
+    int temp_stack_ptr = 0;
+    char var_stack[STACK_SIZE] = {0};
+    
+    int inst_ptr = 0;
+    int len = array_length(instructions);
+
+    #define append(ptr, size) {memcpy(temp_stack + temp_stack_ptr, ptr, size); temp_stack_ptr += size;}
+    #define pop(type, size) (*(type*)(&temp_stack[temp_stack_ptr -= size]))
+
+    while (inst_ptr < len) {
+        Inst inst = instructions[inst_ptr++];
+        if (inst.type == I_PUSH) {
+            append(&inst.arg.any_val, get_vartype_size(inst.arg.type));
+        } else if (inst.type == I_READ) {
+            int size = pop(int, 4);
+            temp_stack_ptr -= 4;
+            append(var_stack + inst.arg.i_val, size);
+        } else if (inst.type == I_PRINT_INT) {
+            int num = pop(int, 4);
+            temp_stack_ptr -= 4;
+            printf("%d", num);
+        } else if (inst.type == I_PRINT_STR) {
+            char *str = pop(char *, 8);
+            temp_stack_ptr -= 8;
+            printf("%s", str);
+        } else if (inst.type == I_PRINT_FLOAT) {
+            double num = pop(double, 8);
+            temp_stack_ptr -= 8;
+            printf("%.2f", num);
+        } else if (inst.type == I_PRINT_BOOL) {
+            bool b = pop(bool, 1);
+            temp_stack_ptr -= 1;
+            printf("%s", b ? "true" : "false");
+        } else if (inst.type == I_STORE_STACK_PTR || inst.type == I_SET_STACK_PTR) {
+            // do nothing for now...
+        } else if (inst.type == I_PRINT_NEWLINE) {
+            printf("\n");
+        } else if (inst.type == I_ADD) {
+            int sum = pop(int, 4);
+            sum += pop(int, 4);
+            append(&sum, 4);
+        } else if (inst.type == I_SUB) {
+            int sum = pop(int, 4);
+            sum = pop(int, 4) - sum;
+            append(&sum, 4);
+        } else if (inst.type == I_MUL) {
+            int prod = pop(int, 4);
+            prod *= pop(int, 4);
+            append(&prod, 4);
+        } else if (inst.type == I_DIV) {
+            int quot = pop(int, 4);
+            quot = pop(int, 4) / quot;
+            append(&quot, 4);
+        } else if (inst.type == I_ADD_FLOAT) {
+            double sum = pop(double, 8);
+            sum += pop(double, 8);
+            append(&sum, 8);
+        } else if (inst.type == I_SUB_FLOAT) {
+            double sum = pop(double, 8);
+            sum = pop(double, 8) - sum;
+            append(&sum, 8);
+        } else if (inst.type == I_MUL_FLOAT) {
+            double prod = pop(double, 8);
+            prod *= pop(double, 8);
+            append(&prod, 8);
+        } else if (inst.type == I_DIV_FLOAT) {
+            double quot = pop(double, 8);
+            quot = pop(double, 8) / quot;
+            append(&quot, 8);
+        } else if (inst.type == I_CONVERT_BOOL_FLOAT) {
+            double num = pop(bool, 1) ? 1.0 : 0.0;
+            append(&num, 8);
+        } else if (inst.type == I_CONVERT_BOOL_INT) {
+            int num = pop(bool, 1) ? 1 : 0;
+            append(&num, 4);
+        } else if (inst.type == I_CONVERT_BOOL_STR) {
+            char *str = pop(bool, 1) ? "true" : "false";
+            append(&str, 8);
+        } else if (inst.type == I_CONVERT_FLOAT_BOOL) {
+            bool b = pop(double, 8) > 0 ? true : false;
+            append(&b, 1);
+        } else if (inst.type == I_CONVERT_FLOAT_INT) {
+            int num = pop(double, 8); // hi c pls convert :)))
+            append(&num, 4);
+        } else if (inst.type == I_CONVERT_FLOAT_STR) {
+            char *str = String_from_double(pop(double, 8), 2).data; // never to be freed again :)
+            append(&str, 8);
+        } else if (inst.type == I_CONVERT_INT_BOOL) {
+            bool b = pop(int, 4) > 0 ? true : false;
+            append(&b, 1);
+        } else if (inst.type == I_CONVERT_INT_FLOAT) {
+            double num = pop(int, 4);
+            append(&num, 8);
+        } else if (inst.type == I_CONVERT_INT_STR) {
+            char *str = String_from_int(pop(int, 4)).data; // not freeing allat
+            append(&str, 8);
+        }
+        // todo: literally everything
+        
+        
+        else {
+            pause_err("Too stupid. cant.");
+        }
+    }
+
+}
+
+
+
+
 
 
 void print_ast(ASTNode node, int level) {
@@ -2329,6 +2474,9 @@ int main() {
         Inst *instructions = generate_instructions(res.node);
 
         print_instructions(instructions);
+
+        // place for chaos. increment when this made you want to kys: 0
+        run_instructions(instructions);
 
         array_free(instructions);
 
