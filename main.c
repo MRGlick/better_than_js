@@ -1404,7 +1404,7 @@ int get_type_precedence(VarType type) {
 // anything this function doesn't touch is meant to return void
 void typeify_tree(ASTNode *node, HashMap *var_map) {
     
-    if (node->token.type == BLOCK || node->token.type == STMT_SEQ) {
+    if (node->token.type == BLOCK) {
         var_map = HashMap_copy(var_map); // make further use be limited to this scope
     }
     
@@ -1421,7 +1421,6 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
     if (node->token.type == BOOL) node->expected_return_type = T_BOOL;
     if (node->token.type == NAME) {
         node->expected_return_type = (int)HashMap_get(var_map, node->token.text);
-        printf("read variable: %s, got type: %d \n", node->token.text.data, node->expected_return_type);
     }
             
     if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {
@@ -1491,7 +1490,13 @@ X(I_LESS_FLOAT) \
 X(I_LESS_EQUAL) \
 X(I_LESS_EQUAL_FLOAT) \
 X(I_EQUAL) \
+X(I_EQUAL_FLOAT) \
+X(I_EQUAL_BOOL) \
+X(I_EQUAL_STR) \
 X(I_NOT_EQUAL) \
+X(I_NOT_EQUAL_FLOAT) \
+X(I_NOT_EQUAL_BOOL) \
+X(I_NOT_EQUAL_STR) \
 X(I_LABEL) \
 X(I_JUMP) \
 X(I_JUMP_IF) \
@@ -1691,6 +1696,18 @@ InstType get_inst_type_for_op(TokenType op, VarType var_type) {
         if (var_type == T_INT) return I_LESS_EQUAL;
         if (var_type == T_FLOAT) return I_LESS_EQUAL_FLOAT;
     }
+    if (op == OP_EQ) {
+        if (var_type == T_INT) return I_EQUAL;
+        if (var_type == T_FLOAT) return I_EQUAL_FLOAT;
+        if (var_type == T_BOOL) return I_EQUAL_BOOL;
+        if (var_type == T_STRING) return I_EQUAL_STR;
+    }
+    if (op == OP_NOTEQ) {
+        if (var_type == T_INT) return I_NOT_EQUAL;
+        if (var_type == T_FLOAT) return I_NOT_EQUAL_FLOAT;
+        if (var_type == T_BOOL) return I_NOT_EQUAL_BOOL;
+        if (var_type == T_STRING) return I_NOT_EQUAL_STR;
+    }
 
     return I_INVALID;
 }
@@ -1721,14 +1738,12 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
     
     int size = get_vartype_size(var_type);
 
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
-    gi_stack_pos += size;
-
+    
     if (ast.token.type == DECL_ASSIGN_STMT) {
         generate_instructions_for_node(ast.children[2], instructions, var_map);
-
+        
         VarType child_return_type = ast.children[2].expected_return_type;
-
+        
         if (child_return_type != var_type) {
             InstType inst_type = get_cvt_inst_type_for_types(child_return_type, var_type);
             if (inst_type == I_INVALID) {
@@ -1743,6 +1758,12 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
         val.type = var_type;
         array_append(*instructions, create_inst(I_PUSH, val));
     }
+
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
+    gi_stack_pos += size;
+
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}));
+
     array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
 }
 
@@ -1752,9 +1773,11 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap 
 
     VarHeader *vh = HashMap_get(var_map, var_name);
 
+    generate_instructions_for_node(ast.children[1], instructions, var_map);
+    
     array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = vh->pos}));
 
-    generate_instructions_for_node(ast.children[1], instructions, var_map);
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = get_vartype_size(vh->type)}));
 
     array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
 
@@ -1959,7 +1982,6 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
 
     // pre children operators
     switch (ast.token.type) {
-        case STMT_SEQ:
         case BLOCK:
             temp_stack_ptr = gi_stack_pos;
             temp_var_map = HashMap_copy(var_map);
@@ -2038,7 +2060,6 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
             array_append(*instructions, create_inst(I_PUSH, (Val){.i_val = get_vartype_size(vh->type), .type = T_INT}));
             array_append(*instructions, create_inst(I_READ, (Val){.i_val = vh->pos, .type = vh->type}));
             break;
-        case STMT_SEQ:
         case BLOCK:
             HashMap_free(temp_var_map);
             gi_stack_pos = temp_stack_ptr;
@@ -2092,6 +2113,16 @@ void print_float_dynamic_acc(float a) {
 
 }
 
+// 10, 3
+
+double trunc(double a) {
+    return a > 0 ? (int)a : -(int)(-a);
+}
+
+double fmod(double a, double b) {
+    return a - trunc(a / b) * b;
+}
+
 void run_instructions(Inst *instructions) {
 
     printf("Program output: \n");
@@ -2112,23 +2143,18 @@ void run_instructions(Inst *instructions) {
             append(&inst.arg.any_val, get_vartype_size(inst.arg.type));
         } else if (inst.type == I_READ) {
             int size = pop(int, 4);
-            temp_stack_ptr -= 4;
             append(var_stack + inst.arg.i_val, size);
         } else if (inst.type == I_PRINT_INT) {
             int num = pop(int, 4);
-            temp_stack_ptr -= 4;
             printf("%d", num);
         } else if (inst.type == I_PRINT_STR) {
             char *str = pop(char *, 8);
-            temp_stack_ptr -= 8;
             printf("%s", str);
         } else if (inst.type == I_PRINT_FLOAT) {
             double num = pop(double, 8);
-            temp_stack_ptr -= 8;
             printf("%.2f", num);
         } else if (inst.type == I_PRINT_BOOL) {
             bool b = pop(bool, 1);
-            temp_stack_ptr -= 1;
             printf("%s", b ? "true" : "false");
         } else if (inst.type == I_STORE_STACK_PTR || inst.type == I_SET_STACK_PTR) {
             // do nothing for now...
@@ -2150,6 +2176,10 @@ void run_instructions(Inst *instructions) {
             int quot = pop(int, 4);
             quot = pop(int, 4) / quot;
             append(&quot, 4);
+        } else if (inst.type == I_MOD) {
+            int num = pop(int, 4);
+            num = pop(int, 4) % num;
+            append(&num, 4);
         } else if (inst.type == I_ADD_FLOAT) {
             double sum = pop(double, 8);
             sum += pop(double, 8);
@@ -2166,6 +2196,10 @@ void run_instructions(Inst *instructions) {
             double quot = pop(double, 8);
             quot = pop(double, 8) / quot;
             append(&quot, 8);
+        } else if (inst.type == I_MOD_FLOAT) {
+            double num = pop(double, 8);
+            num = fmod(pop(double, 8), num);
+            append(&num, 8);
         } else if (inst.type == I_CONVERT_BOOL_FLOAT) {
             double num = pop(bool, 1) ? 1.0 : 0.0;
             append(&num, 8);
@@ -2193,6 +2227,88 @@ void run_instructions(Inst *instructions) {
         } else if (inst.type == I_CONVERT_INT_STR) {
             char *str = String_from_int(pop(int, 4)).data; // not freeing allat
             append(&str, 8);
+        } else if (inst.type == I_GREATER) {
+            int num = pop(int, 4);
+            bool res = pop(int, 4) > num;
+            append(&res, 1);
+        } else if (inst.type == I_GREATER_EQUAL) {
+            int num = pop(int, 4);
+            bool res = pop(int, 4) >= num;
+            append(&res, 1);
+        } else if (inst.type == I_LESS) {
+            int num = pop(int, 4);
+            bool res = pop(int, 4) < num;
+            append(&res, 1);
+        } else if (inst.type == I_LESS_EQUAL) {
+            int num = pop(int, 4);
+            bool res = pop(int, 4) <= num;
+            append(&res, 1);
+        } else if (inst.type == I_GREATER_FLOAT) {
+            double num = pop(double, 8);
+            bool res = pop(double, 8) > num;
+            append(&res, 1);
+        } else if (inst.type == I_GREATER_EQUAL_FLOAT) {
+            double num = pop(double, 8);
+            bool res = pop(double, 8) >= num;
+            append(&res, 1);
+        } else if (inst.type == I_LESS_FLOAT) {
+            double num = pop(double, 8);
+            bool res = pop(double, 8) < num;
+            append(&res, 1);
+        } else if (inst.type == I_LESS_EQUAL_FLOAT) {
+            double num = pop(double, 8);
+            bool res = pop(double, 8) <= num;
+            append(&res, 1);
+        } else if (inst.type == I_EQUAL) {
+            int num = pop(int, 4);
+            bool res = pop(int, 4) == num;
+            append(&res, 1);
+        } else if (inst.type == I_EQUAL_FLOAT) {
+            double num = pop(double, 8);
+            bool res = pop(double, 8) == num;
+            append(&res, 1);
+        } else if (inst.type == I_EQUAL_BOOL) {
+            bool b = pop(bool, 1);
+            bool b2 = pop(bool, 1);
+            printf("b1: %d, b2: %d \n", b, b2);
+            bool res = b2 == b;
+            append(&res, 1);
+        } else if (inst.type == I_EQUAL_STR) {
+            char *str = pop(char *, 8);
+            char *str2 = pop(char *, 8);
+            bool res = !strcmp(str, str2);
+            append(&res, 1);
+        } else if (inst.type == I_NOT_EQUAL) {
+            int num = pop(int, 4);
+            bool res = pop(int, 4) != num;
+            append(&res, 1);
+        } else if (inst.type == I_NOT_EQUAL_FLOAT) {
+            double num = pop(double, 8);
+            bool res = pop(double, 8) != num;
+            append(&res, 1);
+        } else if (inst.type == I_NOT_EQUAL_BOOL) {
+            bool b = pop(bool, 1);
+            bool res = pop(bool, 1) != b;
+            append(&res, 1);
+        } else if (inst.type == I_NOT_EQUAL_STR) {
+            char *str = pop(char *, 8);
+            char *str2 = pop(char *, 8);
+            bool res = !(!strcmp(str, str2)); // i want it to be 1 or 0 okay??
+            append(&res, 1);
+        } else if (inst.type == I_STACK_STORE) {
+            int size = pop(int, 4);
+            int stack_pos = pop(int, 4);
+            memcpy(var_stack + stack_pos, temp_stack + temp_stack_ptr - size, size); // nothing is gonna go wrong :)
+        } else if (inst.type == I_LABEL) {
+            // do absolutely nothing (mentioned so i dont get an error)
+        } else if (inst.type == I_JUMP) {
+            inst_ptr = inst.arg.i_val;
+        } else if (inst.type == I_JUMP_IF) {
+            bool b = pop(bool, 1);
+            if (b) inst_ptr = inst.arg.i_val;
+        } else if (inst.type == I_JUMP_NOT) {
+            bool b = pop(bool, 1);
+            if (!b) inst_ptr = inst.arg.i_val;
         }
         // todo: literally everything
         
@@ -2460,12 +2576,11 @@ int main() {
         set_parse_tokens(tokens);
         ParseResult res = parse_stmt_seq(0);
         typeify_tree_wrapper(&res.node);
-        if (res.endpos < array_length(tokens)) {
-            res.success = false;
-        } else {
-            printf(">>> RESULT AST <<<\n");
-            print_ast(res.node, 0);
-        }
+        if (res.endpos < array_length(tokens))res.success = false;
+        // else {
+        //     // printf(">>> RESULT AST <<<\n");
+        //     // print_ast(res.node, 0);
+        // }
 
         if (!res.success) {
             printf("INVALID EXPRESSION \n");
@@ -2475,7 +2590,7 @@ int main() {
 
         print_instructions(instructions);
 
-        // place for chaos. increment when this made you want to kys: 0
+        // place for chaos. increment when this made you want to kys: 2
         run_instructions(instructions);
 
         array_free(instructions);

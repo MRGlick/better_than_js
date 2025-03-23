@@ -22,13 +22,13 @@ typedef struct HashMap {
 #define if_primitive_value(true_case, false_case, ...) (_Generic((__VA_ARGS__), \
     int: true_case, long: true_case, float: true_case, double: true_case, bool: true_case, char: true_case, default: false_case))
 
-#define if_primitive_type(true_case, false_case, ...) ({__VA_ARGS__ x; if_primitive_value(true_case, false_case, x);})
+#define if_primitive_type(true_case, false_case, ...) (if_primitive_value(true_case, false_case, (__VA_ARGS__){0}))
 
 #define HashMap(type) HashMap_new(sizeof(type), 100, (if_primitive_type(1, 0, type)))
 
 // ... = primitive value OR ptr to struct
 #define HashMap_put(map, key, ...) do { \
-    if (if_primitive_value(1, 0, (__VA_ARGS__)) != map->primitive_values) printf("HashMap type mismatch! Line: %d \n", __LINE__); \
+    if (if_primitive_value(1, 0, (__VA_ARGS__)) != map->primitive_values) printf("HashMap type mismatch! Line: %d \n Primitive: %d, map: %d \n", __LINE__, if_primitive_value(1, 0, (__VA_ARGS__)), map->primitive_values); \
     else _HashMap_put(map, key, (void *)(__VA_ARGS__)); \
 } while (0)
 
@@ -184,6 +184,8 @@ void *HashMap_get(HashMap *map, String key) {
     }
 
     nokey: printf("Key doesn't exist in HashMap! \n");
+    printf("map: \n");
+    HashMap_print(map);
 
     return NULL;
 
@@ -247,11 +249,12 @@ bool HashMap_contains(HashMap *map, String key) {
 HashMap *HashMap_copy(HashMap *map) {
     HashMap *new = HashMap_new(map->value_size, map->capacity, map->primitive_values);
 
+
     int len = array_length(map->keys);
     for (int i = 0; i < len; i++) {
         void *value = map->primitive_values? HashMap_get(map, map->keys[i]) : copy_value(HashMap_get(map, map->keys[i]), map->value_size);
 
-        HashMap_put(new, map->keys[i], value);
+        _HashMap_put(new, map->keys[i], value); // THE ONLY EXCEPTION TO THE MACRO
     }
 
 

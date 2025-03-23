@@ -1,0 +1,11 @@
+int max = 30;
+int a = 0;
+int b = 1;
+int count = 0;
+
+while (count < max) {
+    print "Fib ", count, ": ", b;
+    b = a + b;
+    a = b - a;
+    count = count + 1;
+}
