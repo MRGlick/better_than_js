@@ -2106,22 +2106,48 @@ Inst *generate_instructions(ASTNode ast) {
 
 // THIS IS HAPPENING
 
-void print_float_dynamic_acc(float a) {
-
-    // to lazy for this shit :'(
-    printf("%.3f", a);
-
-}
-
+#define EPSILON 0.001
 // 10, 3
 
 double trunc(double a) {
-    return a > 0 ? (int)a : -(int)(-a);
+    return a > 0 ? (long long)a : -(long long)(-a);
 }
 
 double fmod(double a, double b) {
     return a - trunc(a / b) * b;
 }
+
+#define lerp(a, b, w) (a + (b - a) * w)
+
+void print_double(double a) {
+
+    char str[512] = {0};
+
+    sprintf(str, "%.10f", a);
+
+    int dot_idx = 0;
+    while (str[dot_idx] != '.') dot_idx++;
+
+    int idx = dot_idx + 1;
+    int final = idx;
+    int len = strlen(str);
+
+    int window = 0;
+
+    while (str[idx] != 0 && window < lerp(6, 1, (double)(idx - dot_idx - 1) / (len - dot_idx)) ) {
+        if (str[idx] == '0') window++;
+        else {
+            final = idx;
+            window = 0;
+        }
+        idx++;
+    }
+
+
+    printf("%.*s", final + 1, str);
+
+}
+
 
 void run_instructions(Inst *instructions) {
 
@@ -2152,7 +2178,7 @@ void run_instructions(Inst *instructions) {
             printf("%s", str);
         } else if (inst.type == I_PRINT_FLOAT) {
             double num = pop(double, 8);
-            printf("%.2f", num);
+            print_double(num);
         } else if (inst.type == I_PRINT_BOOL) {
             bool b = pop(bool, 1);
             printf("%s", b ? "true" : "false");

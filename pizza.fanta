@@ -1,0 +1,11 @@
+float pi = 3.141592653;
+int radius1 = 11;
+int radius2 = 13;
+
+float area1 = pi * radius1 * radius1;
+float area2 = pi * radius2 * radius2;
+
+print "Area of 11 inch pizza: ", area1, " in^2";
+print "Area of 13 inch pizza: ", area2, " in^2";
+
+print "That's ", area2 / area1, " times bigger!";
