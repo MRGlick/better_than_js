@@ -1497,6 +1497,8 @@ X(I_NOT_EQUAL) \
 X(I_NOT_EQUAL_FLOAT) \
 X(I_NOT_EQUAL_BOOL) \
 X(I_NOT_EQUAL_STR) \
+X(I_AND) \
+X(I_OR) \
 X(I_LABEL) \
 X(I_JUMP) \
 X(I_JUMP_IF) \
@@ -1707,6 +1709,12 @@ InstType get_inst_type_for_op(TokenType op, VarType var_type) {
         if (var_type == T_FLOAT) return I_NOT_EQUAL_FLOAT;
         if (var_type == T_BOOL) return I_NOT_EQUAL_BOOL;
         if (var_type == T_STRING) return I_NOT_EQUAL_STR;
+    }
+    if (op == OP_AND && var_type == T_BOOL) {
+        return I_AND;
+    }
+    if (op == OP_OR && var_type == T_BOOL) {
+        return I_OR;
     }
 
     return I_INVALID;
@@ -1985,7 +1993,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         case BLOCK:
             temp_stack_ptr = gi_stack_pos;
             temp_var_map = HashMap_copy(var_map);
-            array_append(*instructions, create_inst(I_STORE_STACK_PTR, null(Val)));
+            // array_append(*instructions, create_inst(I_STORE_STACK_PTR, null(Val)));
             break;
         
         default:
@@ -2063,7 +2071,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         case BLOCK:
             HashMap_free(temp_var_map);
             gi_stack_pos = temp_stack_ptr;
-            array_append(*instructions, create_inst(I_SET_STACK_PTR, null(Val)));
+            // array_append(*instructions, create_inst(I_SET_STACK_PTR, null(Val)));
             break;
     
         default:
@@ -2142,7 +2150,6 @@ void print_double(double a) {
         }
         idx++;
     }
-
 
     printf("%.*s", final + 1, str);
 
@@ -2335,6 +2342,14 @@ void run_instructions(Inst *instructions) {
         } else if (inst.type == I_JUMP_NOT) {
             bool b = pop(bool, 1);
             if (!b) inst_ptr = inst.arg.i_val;
+        } else if (inst.type == I_AND) {
+            bool b = pop(bool, 1);
+            b = pop(bool, 1) && b;
+            append(&b, 1);
+        } else if (inst.type == I_OR) {
+            bool b = pop(bool, 1);
+            b = pop(bool, 1) || b;
+            append(&b, 1);
         }
         // todo: literally everything
         

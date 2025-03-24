@@ -1,0 +1,15 @@
+int num = 1921;
+
+int i = 1;
+bool prime = true;
+while (i < num / 2 && prime) {
+    i = i + 1;
+
+    if (num % i == 0) prime = false;
+
+}
+
+if (prime)
+    print num, " is a prime number!";
+ else 
+    print num, " is not a prime number because ", i, " x ", num / i, " = ", num;
