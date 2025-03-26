@@ -4,8 +4,6 @@
 #include "utils.c"
 
 
-#define thingamabob(...)
-
 #define TOKEN_TYPES \
     X(NULL_TOKEN) \
     X(KEYWORD) \
@@ -14,8 +12,9 @@
     X(STRING_LITERAL) \
     X(INTEGER) \
     X(FLOAT) \
-    X(BINOPS_START) \
     X(BOOLOPS_START) \
+    X(OP_NOT) \
+    X(BINOPS_START) \
     X(OP_EQ) \
     X(OP_NOTEQ) \
     X(OP_GREATER) \
@@ -24,7 +23,6 @@
     X(OP_LESSEQ) \
     X(OP_AND) \
     X(OP_OR) \
-    X(OP_NOT) \
     X(BOOLOPS_END) \
     X(ARITHOPS_START) \
     X(OP_ADD) \
@@ -53,6 +51,7 @@
     X(ASSIGN_STMT) \
     X(DECL_ASSIGN_STMT) \
     X(PRINT_STMT) \
+    X(INPUT_STMT) \
     X(STMT_SEQ) \
     X(VAL_SEQ) \
     X(TOKEN_TYPE_COUNT) \

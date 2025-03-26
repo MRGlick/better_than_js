@@ -17,7 +17,8 @@ char *KEYWORDS[] = {
     "while",
     "for",
     "print",
-    "else"
+    "else",
+    "input"
 };
 
 
@@ -425,6 +426,17 @@ ParseResult parse_value(int idx) {
         int token_idx = idx;
         idx += 1;
         return ((ParseResult){.success = 1, .node = create_ast_node(get_token(token_idx), 1), .endpos = idx});
+    }
+
+    if (get_token(idx).type == OP_SUB) {
+        idx += 1;
+        ParseResult value_res = parse_value(idx);
+        if (value_res.success) {
+            idx = value_res.endpos;
+            if (value_res.node.token.type == INTEGER) value_res.node.token.int_val *= -1;
+            if (value_res.node.token.type == FLOAT) value_res.node.token.double_val *= -1;
+            return create_parse_result(true, value_res.node, idx);
+        }
     }
 
     return null(ParseResult);
@@ -947,6 +959,8 @@ ParseResult parse_assign_stmt(int idx);
 
 ParseResult parse_vardecl_assign_stmt(int idx);
 
+ParseResult parse_input_stmt(int idx);
+
 ParseResult parse_stmt(int idx) {
 
     int start_idx = idx;
@@ -1000,6 +1014,11 @@ ParseResult parse_stmt(int idx) {
     ParseResult vardecl_assign_res = parse_vardecl_assign_stmt(idx);
     if (vardecl_assign_res.success) {
         return create_parse_result(true, vardecl_assign_res.node, vardecl_assign_res.endpos);
+    }
+
+    ParseResult input_res = parse_input_stmt(idx);
+    if (input_res.success) { 
+        return create_parse_result(true, input_res.node, input_res.endpos);
     }
 
     return null(ParseResult);
@@ -1297,6 +1316,29 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
     return create_parse_result(true, node, idx);
 }
 
+ParseResult parse_input_stmt(int idx) {
+
+    if (!check_keyword(get_token(idx), "input")) return null(ParseResult);
+
+    idx += 1;
+
+    if (get_token(idx).type != NAME) return null(ParseResult);
+
+    Token var_token = get_token(idx);
+
+    idx += 1;
+
+    if (get_token(idx).type != STMT_END) return null(ParseResult);
+
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = INPUT_STMT}, true);
+
+    array_append(node.children, create_ast_node(var_token, true));
+
+    return create_parse_result(true, node, idx);
+}
+
 /*
 Rules:
 <if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
@@ -1304,6 +1346,12 @@ Rules:
 <while-stmt> -> while ( <expr> ) <stmt>
 <declare-and-assign-stmt> -> <typename> <name> = <expr>;
 <declare-stmt> -> <typename> <name>;
+
+<func-decl> -> <typename> <name>(<func-args>) <stmt>
+
+<func-args> -> epsilon | , <typename> <name> <func-args> | <typename> <name> <func-args>
+
+<func-call> -> <name>(<val-seq>);
 
 <typename> -> one of a list of allowed types
 <name> -> sequence of characters which is NOT defined as a variable, doesnt start with [0-9], allowed characters: [a-z][A-Z]_[0-9]
@@ -1317,6 +1365,7 @@ Rules:
 
 <print-stmt> -> print <val-seq>;
 
+<input-stmt> -> input <name>;
 
 <expr> -> <and_rule> <'expr>
 <'expr> -> || <and_rule> <'expr> | epsilon
@@ -1329,7 +1378,7 @@ Rules:
 <mul_rule> -> <base_rule> <'mul_rule>
 <'mul_rule> -> * <base_rule> <'mul_rule> | / <base_rule> <'mul_rule> | epsilon
 <base_rule> -> !<base_rule> | <value> | ( <expr> )
-<value> -> <bool> | <literal> | <variable> | <int> | <float>
+<value> -> <bool> | <literal> | <variable> | <int> | <float> | <func-call>
 <bool> -> true | false
 
 
@@ -1499,6 +1548,7 @@ X(I_NOT_EQUAL_BOOL) \
 X(I_NOT_EQUAL_STR) \
 X(I_AND) \
 X(I_OR) \
+X(I_NOT) \
 X(I_LABEL) \
 X(I_JUMP) \
 X(I_JUMP_IF) \
@@ -1514,6 +1564,8 @@ X(I_CONVERT_FLOAT_STR) \
 X(I_CONVERT_FLOAT_INT) \
 X(I_CONVERT_FLOAT_BOOL) \
 X(I_CONVERT_STR_BOOL) \
+X(I_CONVERT_STR_INT) \
+X(I_CONVERT_STR_FLOAT) \
 X(I_CONVERT_END) \
 X(I_PRINT_START) \
 X(I_PRINT_INT) \
@@ -1522,6 +1574,7 @@ X(I_PRINT_STR) \
 X(I_PRINT_BOOL) \
 X(I_PRINT_NEWLINE) \
 X(I_PRINT_END) \
+X(I_INPUT) \
 X(I_STACK_STORE) \
 X(I_STORE_STACK_PTR) \
 X(I_SET_STACK_PTR)
@@ -1551,8 +1604,7 @@ typedef struct Val {
 
 typedef struct Inst {
     InstType type;
-    Val arg;
-    
+    Val arg;  
 } Inst;
 
 typedef struct VarHeader { 
@@ -1563,6 +1615,11 @@ typedef struct VarHeader {
 Inst create_inst(VarType type, Val arg) {
     return (Inst){.type = type, .arg = arg};
 }
+
+// - 1 + 1
+// 1 + - 1
+// 1 - 1
+
 
 void print_val(Val val) {
     printf("(%s, ", var_type_names[val.type]);
@@ -1654,8 +1711,10 @@ InstType get_cvt_inst_type_for_types(VarType from, VarType to) {
         if (to == T_INT) return I_CONVERT_FLOAT_INT;
         if (to == T_STRING) return I_CONVERT_FLOAT_STR;
     }
-    if (from == T_STRING && to == T_BOOL) {
-        return I_CONVERT_STR_BOOL;
+    if (from == T_STRING) {
+        if (to == T_BOOL) return I_CONVERT_STR_BOOL;
+        if (to == T_INT) return I_CONVERT_STR_INT;
+        if (to == T_FLOAT) return I_CONVERT_STR_FLOAT;
     }
 
     return I_INVALID;
@@ -1770,9 +1829,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
     array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
     gi_stack_pos += size;
 
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}));
-
-    array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
+    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}));
 }
 
 
@@ -1785,9 +1842,8 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap 
     
     array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = vh->pos}));
 
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = get_vartype_size(vh->type)}));
 
-    array_append(*instructions, create_inst(I_STACK_STORE, null(Val)));
+    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(vh->type)}));
 
 }
 
@@ -1953,6 +2009,33 @@ void generate_instructions_for_while(ASTNode ast, Inst **instructions, HashMap *
 
 }
 
+void generate_instructions_for_input(ASTNode ast, Inst **instructions, HashMap *var_map) {
+    // {
+    //     "hi" : 2,
+    //     "ghf", 6
+    // }
+    
+    array_append(*instructions, create_inst(I_INPUT, null(Val)));
+
+    VarType goal_type = ast.children[0].expected_return_type;
+
+    if (goal_type != T_STRING) {
+        InstType cvt_inst = get_cvt_inst_type_for_types(T_STRING, goal_type);
+        if (cvt_inst == I_INVALID) {
+            print_err("Can't convert string to this type!");
+            exit(1);
+        }
+        array_append(*instructions, create_inst(cvt_inst, null(Val)));
+    }
+
+    VarHeader *vh = HashMap_get(var_map, ast.children[0].token.text);
+
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = vh->pos}));
+
+    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(goal_type)}));
+
+}
+
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
     // independently defined operators
@@ -1983,6 +2066,11 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         return;
     }
 
+    if (ast.token.type == INPUT_STMT) {
+        generate_instructions_for_input(ast, instructions, var_map);
+        return;
+    }
+
 
 
     int temp_stack_ptr;
@@ -2005,6 +2093,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
     }
 
     Val val;
+
 
 
     // post children operators
@@ -2058,6 +2147,9 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         case OP_NOTEQ:
             array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val)));
             break;
+        case OP_NOT:
+            array_append(*instructions, create_inst(I_NOT, null(Val)));
+            break;
         case NAME:
             if (!HashMap_contains(var_map, ast.token.text)) {
                 print_err("Unknown identifier!");
@@ -2110,7 +2202,7 @@ Inst *generate_instructions(ASTNode ast) {
 
 
 
-#define STACK_SIZE 2048
+#define STACK_SIZE 8192
 
 // THIS IS HAPPENING
 
@@ -2155,6 +2247,8 @@ void print_double(double a) {
 
 }
 
+// idk why
+#define INPUT_BUFFER_SIZE 453
 
 void run_instructions(Inst *instructions) {
 
@@ -2260,6 +2354,19 @@ void run_instructions(Inst *instructions) {
         } else if (inst.type == I_CONVERT_INT_STR) {
             char *str = String_from_int(pop(int, 4)).data; // not freeing allat
             append(&str, 8);
+        } else if (inst.type == I_CONVERT_STR_FLOAT) {
+            char *str = pop(char *, 8);
+            double res = String_to_double(StringRef(str));
+            append(&res, 8);
+        } else if (inst.type == I_CONVERT_STR_BOOL) {
+            char *str = pop(char *, 8);
+            bool b = false;
+            b = String_equal(StringRef(str), StringRef("true"));
+            append(&b, 1);
+        } else if (inst.type == I_CONVERT_STR_INT) {
+            char *str = pop(char *, 8);
+            int res = String_to_int(StringRef(str));
+            append(&res, 4);
         } else if (inst.type == I_GREATER) {
             int num = pop(int, 4);
             bool res = pop(int, 4) > num;
@@ -2329,9 +2436,10 @@ void run_instructions(Inst *instructions) {
             bool res = !(!strcmp(str, str2)); // i want it to be 1 or 0 okay??
             append(&res, 1);
         } else if (inst.type == I_STACK_STORE) {
-            int size = pop(int, 4);
+            int size = inst.arg.i_val;
             int stack_pos = pop(int, 4);
             memcpy(var_stack + stack_pos, temp_stack + temp_stack_ptr - size, size); // nothing is gonna go wrong :)
+            temp_stack_ptr -= size;
         } else if (inst.type == I_LABEL) {
             // do absolutely nothing (mentioned so i dont get an error)
         } else if (inst.type == I_JUMP) {
@@ -2350,12 +2458,24 @@ void run_instructions(Inst *instructions) {
             bool b = pop(bool, 1);
             b = pop(bool, 1) || b;
             append(&b, 1);
+        } else if (inst.type == I_NOT) {
+            bool b = !pop(bool, 1);
+            append(&b, 1);
+        } else if (inst.type == I_INPUT) {
+            char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE);
+            fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin);
+            string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0;
+            append(&string_im_not_gonna_free, 8);
         }
         // todo: literally everything
         
         
         else {
             pause_err("Too stupid. cant.");
+        }
+        if (temp_stack_ptr > STACK_SIZE) {
+            print_err("https://stackoverflow.com/questions");
+            exit(1);
         }
     }
 
@@ -2462,9 +2582,6 @@ String *lex(StringRef text) {
             pos = 0;
         }
     }
-
-    
-
 
     if (pos > 0) {
         for (int i = 0; i < pos; i++) {
@@ -2618,10 +2735,10 @@ int main() {
         ParseResult res = parse_stmt_seq(0);
         typeify_tree_wrapper(&res.node);
         if (res.endpos < array_length(tokens))res.success = false;
-        // else {
-        //     // printf(">>> RESULT AST <<<\n");
-        //     // print_ast(res.node, 0);
-        // }
+        else {
+            printf(">>> RESULT AST <<<\n");
+            print_ast(res.node, 0);
+        }
 
         if (!res.success) {
             printf("INVALID EXPRESSION \n");

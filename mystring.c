@@ -34,7 +34,10 @@ bool String_isnull(String a) {
 int String_to_int(StringRef a) {
     int res = 0;
     for (int i = 0; i < a.len; i++) {
-        if (a.data[i] < '0' || a.data[i] > '9') Sdie();
+        if (a.data[i] < '0' || a.data[i] > '9') {
+            printf("This isn't an int. Not dealing with it. \n");
+            exit(1);
+        }
         res = res * 10 + a.data[i] - '0';
     }
 
@@ -161,6 +164,35 @@ String String_from_int(int num) {
     return string;
 }
 
+double String_to_double(StringRef a) {
+    double res = 0;
+    bool decimal = false;
+    double decimal_multiplier = 0.1;
+
+    for (int i = 0; i < a.len; i++) {
+        
+        if (a.data[i] == '.') {
+            decimal = true;
+            continue;
+        }
+
+        if (a.data[i] < '0' || a.data[i] > '9') {
+            printf("ERROR: This isn't a double. Not dealing with this shit. \n");
+            exit(1);
+        }
+
+
+        if (!decimal) {
+            res *= 10;
+            res += a.data[i] - '0';
+        } else {
+            res += (a.data[i] - '0') * decimal_multiplier;
+            decimal_multiplier /= 10;
+        }
+    }
+
+    return res;
+}
 
 bool String_equal(StringRef a, StringRef b) {
     if (a.len != b.len) return false;

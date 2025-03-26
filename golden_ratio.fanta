@@ -2,9 +2,9 @@
 float approx = 1;
 int count = 0;
 while (approx != 1 / (approx + 1)) {
-    print "Approx ", count, ": ", (1 + approx) * 1000000;
+    print "Approx ", count, ": ", (1 + approx);
     approx = 1 / (approx + 1);
     count = count + 1;
 }
 
-print "Final result: ", (1 + approx) * 1000000;
+print "Final result: ", (1 + approx);

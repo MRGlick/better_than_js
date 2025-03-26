@@ -1,0 +1,12 @@
+print "Enter iters: ";
+int x;
+input x;
+
+
+int i = 0;
+while (i < x) {
+
+    print "I: ", i;
+
+    i = i + 1;
+}

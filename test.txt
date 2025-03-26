@@ -70,6 +70,13 @@ HURRAY!
 
 
 
+[FUNC-DECL]
+    [TYPE]
+    [NAME]
+    [FUNC-ARGS]
+    [STMT]
+
+
 
 
 
