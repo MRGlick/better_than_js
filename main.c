@@ -7,7 +7,6 @@
 #include "hashmap.c"
 #include "inttypes.h"
 
-
 const char SYMBOLS[] = {
     ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|'
 };
@@ -1577,7 +1576,8 @@ X(I_PRINT_END) \
 X(I_INPUT) \
 X(I_STACK_STORE) \
 X(I_STORE_STACK_PTR) \
-X(I_SET_STACK_PTR)
+X(I_SET_STACK_PTR) \
+X(INST_COUNT)
 
 typedef enum InstType {
     #define X(i) i, 
@@ -1604,7 +1604,8 @@ typedef struct Val {
 
 typedef struct Inst {
     InstType type;
-    Val arg;  
+    Val arg1;
+    Val arg2; 
 } Inst;
 
 typedef struct VarHeader { 
@@ -1612,8 +1613,8 @@ typedef struct VarHeader {
     i32 type;
 }VarHeader;
 
-Inst create_inst(VarType type, Val arg) {
-    return (Inst){.type = type, .arg = arg};
+Inst create_inst(VarType type, Val arg1, Val arg2) {
+    return (Inst){.type = type, .arg1 = arg1, .arg2 = arg2};
 }
 
 // - 1 + 1
@@ -1649,18 +1650,21 @@ void print_instruction(Inst inst) {
     switch (inst.type) {
         
         case I_PUSH:
-        printf(", ");
-        print_val(inst.arg);
-        break;
-        case I_READ:
+            printf(", ");
+            print_val(inst.arg1);
+            break;
         case I_JUMP:
         case I_JUMP_IF:
         case I_JUMP_NOT:
-        printf(", %d", inst.arg.i_val);
-        break;
-        
+            printf(", %d", inst.arg1.i_val);
+            break;
+        case I_STACK_STORE:
+        case I_READ:
+            printf(", sz: %d, pos: %d", inst.arg1.i_val, inst.arg2.i_val);
+            break;
+
         default:
-        break;
+            break;
     }
     printf("] \n");
 }
@@ -1817,19 +1821,17 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, HashMap
                 print_err("Invalid conversion on variable declaration!");
                 printf("Tried to convert from type '%s' to '%s' \n", var_type_names[child_return_type], var_type_names[var_type]);
             } else {
-                array_append(*instructions, create_inst(inst_type, null(Val)));
+                array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
             }
         }
     } else {
         Val val = null(Val);
         val.type = var_type;
-        array_append(*instructions, create_inst(I_PUSH, val));
+        array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
     }
 
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = gi_stack_pos}));
+    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}, (Val){.type = T_INT, .i_val = gi_stack_pos}));
     gi_stack_pos += size;
-
-    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}));
 }
 
 
@@ -1840,10 +1842,7 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, HashMap 
 
     generate_instructions_for_node(ast.children[1], instructions, var_map);
     
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = vh->pos}));
-
-
-    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(vh->type)}));
+    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(vh->type)}, (Val){.type = T_INT, .i_val = vh->pos}));
 
 }
 
@@ -1876,7 +1875,7 @@ void generate_instructions_for_binop(ASTNode ast, Inst **instructions, HashMap *
                 print_err("Invalid conversion!");
                 printf("Tried to convert from type '%s' to '%s' \n", var_type_names[ast.children[i].expected_return_type], var_type_names[goal_type]);
             } else {
-                array_append(*instructions, create_inst(inst_type, null(Val)));
+                array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
             }
         }
     }
@@ -1886,7 +1885,7 @@ void generate_instructions_for_binop(ASTNode ast, Inst **instructions, HashMap *
         print_err("Invalid operator!");
         printf("Tried to get operator '%s' between '%s' type operands! \n", token_type_names[ast.token.type], var_type_names[goal_type]);
     } else {
-        array_append(*instructions, create_inst(inst_type, null(Val)));
+        array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
     }
 
 }
@@ -1912,21 +1911,20 @@ void generate_instructions_for_print(ASTNode ast, Inst **instructions, HashMap *
             print_err("Invalid argument for print! (seriously how could you mess this up)");
             printf("argument type: %s \n", var_type_names[ast.children[i].expected_return_type]);
         } else {
-            array_append(*instructions, create_inst(inst_type, null(Val)));
+            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
         }
     }
 
-    array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val)));
+    array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val), null(Val)));
 }
 
 void generate_instructions_for_if(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
     int end_label_idx = gi_label_idx++;
-    int else_label_idx;
 
     int end_label_true_idx;
     int else_label_true_idx;
-    if (ast.token.type == IF_ELSE_STMT) else_label_idx = gi_label_idx++;
+    // if (ast.token.type == IF_ELSE_STMT) else_label_idx = gi_label_idx++;
 
     // condition
     generate_instructions_for_node(ast.children[0], instructions, var_map);
@@ -1938,12 +1936,12 @@ void generate_instructions_for_if(ASTNode ast, Inst **instructions, HashMap *var
             print_err("Type is ambigous! Cannot be used as an if condition. (you did badly.)");
             printf("type: %s \n", var_type_names[ast.children[0].expected_return_type]);
         } else {
-            array_append(*instructions, create_inst(inst_type, null(Val)));
+            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
         }
     }
     
     int first_jump_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}));
+    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}, null(Val)));
 
     // if-body
     generate_instructions_for_node(ast.children[1], instructions, var_map);
@@ -1953,23 +1951,23 @@ void generate_instructions_for_if(ASTNode ast, Inst **instructions, HashMap *var
     if (ast.token.type == IF_ELSE_STMT) {
 
         if_body_jump_idx = array_length(*instructions);
-        array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = end_label_idx}));
+        array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = end_label_idx}, null(Val)));
 
         else_label_true_idx = array_length(*instructions);
-        array_append(*instructions, create_inst(I_LABEL, (Val){.type = T_INT, .i_val = else_label_idx}));
+        array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
         // else-body
         generate_instructions_for_node(ast.children[2], instructions, var_map);
     }
 
     end_label_true_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_LABEL, (Val){.type = T_INT, .i_val = end_label_idx}));
+    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
     if (ast.token.type == IF_STMT) {
-        (*instructions)[first_jump_idx].arg.i_val = end_label_true_idx;
+        (*instructions)[first_jump_idx].arg1.i_val = end_label_true_idx;
     } else {
-        (*instructions)[first_jump_idx].arg.i_val = else_label_true_idx;
-        (*instructions)[if_body_jump_idx].arg.i_val = end_label_true_idx;
+        (*instructions)[first_jump_idx].arg1.i_val = else_label_true_idx;
+        (*instructions)[if_body_jump_idx].arg1.i_val = end_label_true_idx;
     }
 
 }
@@ -1978,7 +1976,7 @@ void generate_instructions_for_while(ASTNode ast, Inst **instructions, HashMap *
 
     int start_label_idx = array_length(*instructions);
 
-    array_append(*instructions, create_inst(I_LABEL, null(Val)));
+    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
     generate_instructions_for_node(ast.children[0], instructions, var_map);
 
@@ -1989,22 +1987,22 @@ void generate_instructions_for_while(ASTNode ast, Inst **instructions, HashMap *
             print_err("Type is ambigous! Cannot be used as an while condition. (you did badly.)");
             printf("type: %s \n", var_type_names[ast.children[0].expected_return_type]);
         } else {
-            array_append(*instructions, create_inst(inst_type, null(Val)));
+            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
         }
     }
 
     int jump_not_inst_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}));
+    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}, null(Val)));
 
     // while body
     generate_instructions_for_node(ast.children[1], instructions, var_map);
 
-    array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = start_label_idx}));
+    array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = start_label_idx}, null(Val)));
 
     int end_label_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_LABEL, null(Val)));
+    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
-    (*instructions)[jump_not_inst_idx].arg.i_val = end_label_idx;
+    (*instructions)[jump_not_inst_idx].arg1.i_val = end_label_idx;
 
 
 }
@@ -2015,7 +2013,7 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, HashMap *
     //     "ghf", 6
     // }
     
-    array_append(*instructions, create_inst(I_INPUT, null(Val)));
+    array_append(*instructions, create_inst(I_INPUT, null(Val), null(Val)));
 
     VarType goal_type = ast.children[0].expected_return_type;
 
@@ -2025,14 +2023,12 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, HashMap *
             print_err("Can't convert string to this type!");
             exit(1);
         }
-        array_append(*instructions, create_inst(cvt_inst, null(Val)));
+        array_append(*instructions, create_inst(cvt_inst, null(Val), null(Val)));
     }
 
     VarHeader *vh = HashMap_get(var_map, ast.children[0].token.text);
 
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = vh->pos}));
-
-    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(goal_type)}));
+    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(goal_type)}, (Val){.type = T_INT, .i_val = vh->pos}));
 
 }
 
@@ -2100,55 +2096,55 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
     switch (ast.token.type) {
         case INTEGER:
             val = (Val){.type = T_INT, .i_val = ast.token.int_val};
-            array_append(*instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
             break;
         case FLOAT:
             val = (Val){.type = T_FLOAT, .f_val = ast.token.double_val};
-            array_append(*instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
             break;
         case BOOL:
             val = (Val){.type = T_BOOL, .b_val = ast.token.bool_val};
-            array_append(*instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
             break;
         case STRING_LITERAL:
             val = (Val){.type = T_STRING, .s_val = ast.token.text.data};
-            array_append(*instructions, create_inst(I_PUSH, val));
+            array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
             break;
         case OP_ADD:
-            array_append(*instructions, create_inst(I_ADD, null(Val)));
+            array_append(*instructions, create_inst(I_ADD, null(Val), null(Val)));
             break;
         case OP_SUB:
-            array_append(*instructions, create_inst(I_SUB, null(Val)));
+            array_append(*instructions, create_inst(I_SUB, null(Val), null(Val)));
             break;
         case OP_MUL:
-            array_append(*instructions, create_inst(I_MUL, null(Val)));
+            array_append(*instructions, create_inst(I_MUL, null(Val), null(Val)));
             break;
         case OP_DIV:
-            array_append(*instructions, create_inst(I_DIV, null(Val)));
+            array_append(*instructions, create_inst(I_DIV, null(Val), null(Val)));
             break;
         case OP_MOD:
-            array_append(*instructions, create_inst(I_MOD, null(Val)));
+            array_append(*instructions, create_inst(I_MOD, null(Val), null(Val)));
             break;
         case OP_GREATER:
-            array_append(*instructions, create_inst(I_GREATER, null(Val)));
+            array_append(*instructions, create_inst(I_GREATER, null(Val), null(Val)));
             break;
         case OP_GREATEREQ:
-            array_append(*instructions, create_inst(I_GREATER_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_GREATER_EQUAL, null(Val), null(Val)));
             break;
         case OP_LESS:
-            array_append(*instructions, create_inst(I_LESS, null(Val)));
+            array_append(*instructions, create_inst(I_LESS, null(Val), null(Val)));
             break;
         case OP_LESSEQ:
-            array_append(*instructions, create_inst(I_LESS_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_LESS_EQUAL, null(Val), null(Val)));
             break;
         case OP_EQ:
-            array_append(*instructions, create_inst(I_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_EQUAL, null(Val), null(Val)));
             break;
         case OP_NOTEQ:
-            array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val)));
+            array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val), null(Val)));
             break;
         case OP_NOT:
-            array_append(*instructions, create_inst(I_NOT, null(Val)));
+            array_append(*instructions, create_inst(I_NOT, null(Val), null(Val)));
             break;
         case NAME:
             if (!HashMap_contains(var_map, ast.token.text)) {
@@ -2157,8 +2153,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
                 exit(1);
             }
             VarHeader *vh = HashMap_get(var_map, ast.token.text);
-            array_append(*instructions, create_inst(I_PUSH, (Val){.i_val = get_vartype_size(vh->type), .type = T_INT}));
-            array_append(*instructions, create_inst(I_READ, (Val){.i_val = vh->pos, .type = vh->type}));
+            array_append(*instructions, create_inst(I_READ, (Val){.i_val = get_vartype_size(vh->type), .type = T_INT}, (Val){.i_val = vh->pos, .type = vh->type}));
             break;
         case BLOCK:
             HashMap_free(temp_var_map);
@@ -2262,222 +2257,350 @@ void run_instructions(Inst *instructions) {
     int len = array_length(instructions);
 
     #define append(ptr, size) {memcpy(temp_stack + temp_stack_ptr, ptr, size); temp_stack_ptr += size;}
-    #define pop(type, size) (*(type*)(&temp_stack[temp_stack_ptr -= size]))
+    #define pop(type, size) (*(type*)(temp_stack + (temp_stack_ptr -= size)))
+
+    long inst_timers[INST_COUNT] = {0};
+
+    double start = get_current_process_time_seconds();
 
     while (inst_ptr < len) {
         Inst inst = instructions[inst_ptr++];
-        if (inst.type == I_PUSH) {
-            append(&inst.arg.any_val, get_vartype_size(inst.arg.type));
-        } else if (inst.type == I_READ) {
-            int size = pop(int, 4);
-            append(var_stack + inst.arg.i_val, size);
-        } else if (inst.type == I_PRINT_INT) {
-            int num = pop(int, 4);
-            printf("%d", num);
-        } else if (inst.type == I_PRINT_STR) {
-            char *str = pop(char *, 8);
-            printf("%s", str);
-        } else if (inst.type == I_PRINT_FLOAT) {
-            double num = pop(double, 8);
-            print_double(num);
-        } else if (inst.type == I_PRINT_BOOL) {
-            bool b = pop(bool, 1);
-            printf("%s", b ? "true" : "false");
-        } else if (inst.type == I_STORE_STACK_PTR || inst.type == I_SET_STACK_PTR) {
-            // do nothing for now...
-        } else if (inst.type == I_PRINT_NEWLINE) {
-            printf("\n");
-        } else if (inst.type == I_ADD) {
-            int sum = pop(int, 4);
-            sum += pop(int, 4);
-            append(&sum, 4);
-        } else if (inst.type == I_SUB) {
-            int sum = pop(int, 4);
-            sum = pop(int, 4) - sum;
-            append(&sum, 4);
-        } else if (inst.type == I_MUL) {
-            int prod = pop(int, 4);
-            prod *= pop(int, 4);
-            append(&prod, 4);
-        } else if (inst.type == I_DIV) {
-            int quot = pop(int, 4);
-            quot = pop(int, 4) / quot;
-            append(&quot, 4);
-        } else if (inst.type == I_MOD) {
-            int num = pop(int, 4);
-            num = pop(int, 4) % num;
-            append(&num, 4);
-        } else if (inst.type == I_ADD_FLOAT) {
-            double sum = pop(double, 8);
-            sum += pop(double, 8);
-            append(&sum, 8);
-        } else if (inst.type == I_SUB_FLOAT) {
-            double sum = pop(double, 8);
-            sum = pop(double, 8) - sum;
-            append(&sum, 8);
-        } else if (inst.type == I_MUL_FLOAT) {
-            double prod = pop(double, 8);
-            prod *= pop(double, 8);
-            append(&prod, 8);
-        } else if (inst.type == I_DIV_FLOAT) {
-            double quot = pop(double, 8);
-            quot = pop(double, 8) / quot;
-            append(&quot, 8);
-        } else if (inst.type == I_MOD_FLOAT) {
-            double num = pop(double, 8);
-            num = fmod(pop(double, 8), num);
-            append(&num, 8);
-        } else if (inst.type == I_CONVERT_BOOL_FLOAT) {
-            double num = pop(bool, 1) ? 1.0 : 0.0;
-            append(&num, 8);
-        } else if (inst.type == I_CONVERT_BOOL_INT) {
-            int num = pop(bool, 1) ? 1 : 0;
-            append(&num, 4);
-        } else if (inst.type == I_CONVERT_BOOL_STR) {
-            char *str = pop(bool, 1) ? "true" : "false";
-            append(&str, 8);
-        } else if (inst.type == I_CONVERT_FLOAT_BOOL) {
-            bool b = pop(double, 8) > 0 ? true : false;
-            append(&b, 1);
-        } else if (inst.type == I_CONVERT_FLOAT_INT) {
-            int num = pop(double, 8); // hi c pls convert :)))
-            append(&num, 4);
-        } else if (inst.type == I_CONVERT_FLOAT_STR) {
-            char *str = String_from_double(pop(double, 8), 2).data; // never to be freed again :)
-            append(&str, 8);
-        } else if (inst.type == I_CONVERT_INT_BOOL) {
-            bool b = pop(int, 4) > 0 ? true : false;
-            append(&b, 1);
-        } else if (inst.type == I_CONVERT_INT_FLOAT) {
-            double num = pop(int, 4);
-            append(&num, 8);
-        } else if (inst.type == I_CONVERT_INT_STR) {
-            char *str = String_from_int(pop(int, 4)).data; // not freeing allat
-            append(&str, 8);
-        } else if (inst.type == I_CONVERT_STR_FLOAT) {
-            char *str = pop(char *, 8);
-            double res = String_to_double(StringRef(str));
-            append(&res, 8);
-        } else if (inst.type == I_CONVERT_STR_BOOL) {
-            char *str = pop(char *, 8);
-            bool b = false;
-            b = String_equal(StringRef(str), StringRef("true"));
-            append(&b, 1);
-        } else if (inst.type == I_CONVERT_STR_INT) {
-            char *str = pop(char *, 8);
-            int res = String_to_int(StringRef(str));
-            append(&res, 4);
-        } else if (inst.type == I_GREATER) {
-            int num = pop(int, 4);
-            bool res = pop(int, 4) > num;
-            append(&res, 1);
-        } else if (inst.type == I_GREATER_EQUAL) {
-            int num = pop(int, 4);
-            bool res = pop(int, 4) >= num;
-            append(&res, 1);
-        } else if (inst.type == I_LESS) {
-            int num = pop(int, 4);
-            bool res = pop(int, 4) < num;
-            append(&res, 1);
-        } else if (inst.type == I_LESS_EQUAL) {
-            int num = pop(int, 4);
-            bool res = pop(int, 4) <= num;
-            append(&res, 1);
-        } else if (inst.type == I_GREATER_FLOAT) {
-            double num = pop(double, 8);
-            bool res = pop(double, 8) > num;
-            append(&res, 1);
-        } else if (inst.type == I_GREATER_EQUAL_FLOAT) {
-            double num = pop(double, 8);
-            bool res = pop(double, 8) >= num;
-            append(&res, 1);
-        } else if (inst.type == I_LESS_FLOAT) {
-            double num = pop(double, 8);
-            bool res = pop(double, 8) < num;
-            append(&res, 1);
-        } else if (inst.type == I_LESS_EQUAL_FLOAT) {
-            double num = pop(double, 8);
-            bool res = pop(double, 8) <= num;
-            append(&res, 1);
-        } else if (inst.type == I_EQUAL) {
-            int num = pop(int, 4);
-            bool res = pop(int, 4) == num;
-            append(&res, 1);
-        } else if (inst.type == I_EQUAL_FLOAT) {
-            double num = pop(double, 8);
-            bool res = pop(double, 8) == num;
-            append(&res, 1);
-        } else if (inst.type == I_EQUAL_BOOL) {
-            bool b = pop(bool, 1);
-            bool b2 = pop(bool, 1);
-            printf("b1: %d, b2: %d \n", b, b2);
-            bool res = b2 == b;
-            append(&res, 1);
-        } else if (inst.type == I_EQUAL_STR) {
-            char *str = pop(char *, 8);
-            char *str2 = pop(char *, 8);
-            bool res = !strcmp(str, str2);
-            append(&res, 1);
-        } else if (inst.type == I_NOT_EQUAL) {
-            int num = pop(int, 4);
-            bool res = pop(int, 4) != num;
-            append(&res, 1);
-        } else if (inst.type == I_NOT_EQUAL_FLOAT) {
-            double num = pop(double, 8);
-            bool res = pop(double, 8) != num;
-            append(&res, 1);
-        } else if (inst.type == I_NOT_EQUAL_BOOL) {
-            bool b = pop(bool, 1);
-            bool res = pop(bool, 1) != b;
-            append(&res, 1);
-        } else if (inst.type == I_NOT_EQUAL_STR) {
-            char *str = pop(char *, 8);
-            char *str2 = pop(char *, 8);
-            bool res = !(!strcmp(str, str2)); // i want it to be 1 or 0 okay??
-            append(&res, 1);
-        } else if (inst.type == I_STACK_STORE) {
-            int size = inst.arg.i_val;
-            int stack_pos = pop(int, 4);
-            memcpy(var_stack + stack_pos, temp_stack + temp_stack_ptr - size, size); // nothing is gonna go wrong :)
-            temp_stack_ptr -= size;
-        } else if (inst.type == I_LABEL) {
-            // do absolutely nothing (mentioned so i dont get an error)
-        } else if (inst.type == I_JUMP) {
-            inst_ptr = inst.arg.i_val;
-        } else if (inst.type == I_JUMP_IF) {
-            bool b = pop(bool, 1);
-            if (b) inst_ptr = inst.arg.i_val;
-        } else if (inst.type == I_JUMP_NOT) {
-            bool b = pop(bool, 1);
-            if (!b) inst_ptr = inst.arg.i_val;
-        } else if (inst.type == I_AND) {
-            bool b = pop(bool, 1);
-            b = pop(bool, 1) && b;
-            append(&b, 1);
-        } else if (inst.type == I_OR) {
-            bool b = pop(bool, 1);
-            b = pop(bool, 1) || b;
-            append(&b, 1);
-        } else if (inst.type == I_NOT) {
-            bool b = !pop(bool, 1);
-            append(&b, 1);
-        } else if (inst.type == I_INPUT) {
-            char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE);
-            fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin);
-            string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0;
-            append(&string_im_not_gonna_free, 8);
+
+        long inst_start = get_current_process_time();
+
+        switch (inst.type) {
+            case I_PUSH:
+                append(&inst.arg1.any_val, get_vartype_size(inst.arg1.type));
+                break;
+            case I_READ: {
+                append(var_stack + inst.arg2.i_val, inst.arg1.i_val);
+                break;
+            }
+            case I_PRINT_INT: {
+                int num = pop(int, 4);
+                printf("%d", num);
+                break;
+            }
+            case I_PRINT_STR: {
+                char *str = pop(char *, 8);
+                printf("%s", str);
+                break;
+            }
+            case I_PRINT_FLOAT: {
+                double num = pop(double, 8);
+                print_double(num);
+                break;
+            }
+            case I_PRINT_BOOL: {
+                bool b = pop(bool, 1);
+                printf("%s", b ? "true" : "false");
+                break;
+            }
+            case I_STORE_STACK_PTR:
+            case I_SET_STACK_PTR: {
+                // do nothing for now...
+                break;
+            }
+            case I_PRINT_NEWLINE: {
+                printf("\n");
+                break;
+            }
+            case I_ADD: {
+                int num = pop(int, 4);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 4);
+                (*top) += num;
+                break;
+            }
+            case I_SUB: {
+                int num = pop(int, 4);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 4);
+                (*top) -= num;
+                break;
+            }
+            case I_MUL: {
+                int num = pop(int, 4);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 4);
+                (*top) *= num;
+                break;
+            }
+            case I_DIV: {
+                int num = pop(int, 4);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 4);
+                (*top) /= num;
+                break;
+            }
+            case I_MOD: {
+                int num = pop(int, 4);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 4);
+                (*top) %= num;
+                break;
+            }
+            case I_ADD_FLOAT: {
+                double num = pop(double, 8);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 8);
+                (*top) += num;
+                break;
+            }
+            case I_SUB_FLOAT: {
+                double num = pop(double, 8);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 8);
+                (*top) -= num;
+                break;
+            }
+            case I_MUL_FLOAT: {
+                double num = pop(double, 8);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 8);
+                (*top) *= num;
+                break;
+            }
+            case I_DIV_FLOAT: {
+                double num = pop(double, 8);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 8);
+                (*top) /= num;
+                break;
+            }
+            case I_MOD_FLOAT: {
+                double num = pop(double, 8);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 8);
+                (*top) = fmod(*top, num);
+                break;
+            }
+            case I_CONVERT_BOOL_FLOAT: {
+                double num = pop(bool, 1) ? 1.0 : 0.0;
+                append(&num, 8);
+                break;
+            }
+            case I_CONVERT_BOOL_INT: {
+                int num = pop(bool, 1) ? 1 : 0;
+                append(&num, 4);
+                break;
+            }
+            case I_CONVERT_BOOL_STR: {
+                char *str = pop(bool, 1) ? "true" : "false";
+                append(&str, 8);
+                break;
+            }
+            case I_CONVERT_FLOAT_BOOL: {
+                bool b = pop(double, 8) > 0 ? true : false;
+                append(&b, 1);
+                break;
+            }
+            case I_CONVERT_FLOAT_INT: {
+                int num = pop(double, 8);
+                append(&num, 4);
+                break;
+            }
+            case I_CONVERT_FLOAT_STR: {
+                char *str = String_from_double(pop(double, 8), 2).data;
+                append(&str, 8);
+                break;
+            }
+            case I_CONVERT_INT_BOOL: {
+                bool b = pop(int, 4) > 0 ? true : false;
+                append(&b, 1);
+                break;
+            }
+            case I_CONVERT_INT_FLOAT: {
+                double num = pop(int, 4);
+                append(&num, 8);
+                break;
+            }
+            case I_CONVERT_INT_STR: {
+                char *str = String_from_int(pop(int, 4)).data;
+                append(&str, 8);
+                break;
+            }
+            case I_CONVERT_STR_FLOAT: {
+                char *str = pop(char *, 8);
+                double res = String_to_double(StringRef(str));
+                append(&res, 8);
+                break;
+            }
+            case I_CONVERT_STR_BOOL: {
+                char *str = pop(char *, 8);
+                bool b = String_equal(StringRef(str), StringRef("true"));
+                append(&b, 1);
+                break;
+            }
+            case I_CONVERT_STR_INT: {
+                char *str = pop(char *, 8);
+                int res = String_to_int(StringRef(str));
+                append(&res, 4);
+                break;
+            }
+            case I_GREATER: {
+                int num = pop(int, 4);
+                bool res = pop(int, 4) > num;
+                append(&res, 1);
+                break;
+            }
+            case I_GREATER_EQUAL: {
+                int num = pop(int, 4);
+                bool res = pop(int, 4) >= num;
+                append(&res, 1);
+                break;
+            }
+            case I_LESS: {
+                int num = pop(int, 4);
+                bool res = pop(int, 4) < num;
+                append(&res, 1);
+                break;
+            }
+            case I_LESS_EQUAL: {
+                int num = pop(int, 4);
+                bool res = pop(int, 4) <= num;
+                append(&res, 1);
+                break;
+            }
+            case I_GREATER_FLOAT: {
+                double num = pop(double, 8);
+                bool res = pop(double, 8) > num;
+                append(&res, 1);
+                break;
+            }
+            case I_GREATER_EQUAL_FLOAT: {
+                double num = pop(double, 8);
+                bool res = pop(double, 8) >= num;
+                append(&res, 1);
+                break;
+            }
+            case I_LESS_FLOAT: {
+                double num = pop(double, 8);
+                bool res = pop(double, 8) < num;
+                append(&res, 1);
+                break;
+            }
+            case I_LESS_EQUAL_FLOAT: {
+                double num = pop(double, 8);
+                bool res = pop(double, 8) <= num;
+                append(&res, 1);
+                break;
+            }
+            case I_EQUAL: {
+                int num = pop(int, 4);
+                bool res = pop(int, 4) == num;
+                append(&res, 1);
+                break;
+            }
+            case I_EQUAL_FLOAT: {
+                double num = pop(double, 8);
+                bool res = pop(double, 8) == num;
+                append(&res, 1);
+                break;
+            }
+            case I_EQUAL_BOOL: {
+                bool b = pop(bool, 1);
+                bool b2 = pop(bool, 1);
+                printf("b1: %d, b2: %d \n", b, b2);
+                bool res = b2 == b;
+                append(&res, 1);
+                break;
+            }
+            case I_EQUAL_STR: {
+                char *str = pop(char *, 8);
+                char *str2 = pop(char *, 8);
+                bool res = !strcmp(str, str2);
+                append(&res, 1);
+                break;
+            }
+            case I_NOT_EQUAL: {
+                int num = pop(int, 4);
+                bool res = pop(int, 4) != num;
+                append(&res, 1);
+                break;
+            }
+            case I_NOT_EQUAL_FLOAT: {
+                double num = pop(double, 8);
+                bool res = pop(double, 8) != num;
+                append(&res, 1);
+                break;
+            }
+            case I_NOT_EQUAL_BOOL: {
+                bool b = pop(bool, 1);
+                bool res = pop(bool, 1) != b;
+                append(&res, 1);
+                break;
+            }
+            case I_NOT_EQUAL_STR: {
+                char *str = pop(char *, 8);
+                char *str2 = pop(char *, 8);
+                bool res = !(!strcmp(str, str2));
+                append(&res, 1);
+                break;
+            }
+            case I_STACK_STORE: {
+                int size = inst.arg1.i_val;
+                int stack_pos = inst.arg2.i_val;
+                memcpy(var_stack + stack_pos, temp_stack + temp_stack_ptr - size, size);
+                temp_stack_ptr -= size;
+                break;
+            }
+            case I_LABEL: {
+                // do absolutely nothing (mentioned so i dont get an error)
+                break;
+            }
+            case I_JUMP: {
+                inst_ptr = inst.arg1.i_val;
+                break;
+            }
+            case I_JUMP_IF: {
+                bool b = pop(bool, 1);
+                if (b) inst_ptr = inst.arg1.i_val;
+                break;
+            }
+            case I_JUMP_NOT: {
+                bool b = pop(bool, 1);
+                if (!b) inst_ptr = inst.arg1.i_val;
+                break;
+            }
+            case I_AND: {
+                bool b = pop(bool, 1);
+                b = pop(bool, 1) && b;
+                append(&b, 1);
+                break;
+            }
+            case I_OR: {
+                bool b = pop(bool, 1);
+                b = pop(bool, 1) || b;
+                append(&b, 1);
+                break;
+            }
+            case I_NOT: {
+                bool b = !pop(bool, 1);
+                append(&b, 1);
+                break;
+            }
+            case I_INPUT: {
+                char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE);
+                fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin);
+                string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0;
+                append(&string_im_not_gonna_free, 8);
+                break;
+            }
+            default: {
+                pause_err("Too stupid. cant.");
+                break;
+            }
         }
-        // todo: literally everything
-        
-        
-        else {
-            pause_err("Too stupid. cant.");
-        }
+
+        long inst_end = get_current_process_time();
+
+        inst_timers[inst.type] += inst_end - inst_start;
+
         if (temp_stack_ptr > STACK_SIZE) {
             print_err("https://stackoverflow.com/questions");
             exit(1);
         }
     }
+
+    for (int i = 0; i < INST_COUNT; i++) {
+        printf("%s: %ld \n", inst_names[i], inst_timers[i]);
+    }
+
+
+    double end = get_current_process_time_seconds();
+
+    printf("Program finished succesfully after %.2f seconds. \n", end - start);
 
 }
 

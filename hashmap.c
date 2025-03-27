@@ -165,7 +165,6 @@ void _HashMap_put(HashMap *map, String key, void *value) {
     new_node->next = NULL;
     new_node->value = !map->primitive_values ? copy_value(value, map->value_size) : value;
     prev->next = new_node;
-    print_hash_node(&map->values[hash_value]);
 }
 
 void *HashMap_get(HashMap *map, String key) {
@@ -229,9 +228,9 @@ void HashMap_print(HashMap *map) {
     int len = array_length(map->keys);
     for (int i = 0; i < len; i++) {
         printf("\"%s\": <%p>", map->keys[i].data, HashMap_get(map, map->keys[i]));
-        if (i + 1 < len) printf(", "); // pretty formatting
+        if (i + 1 < len) printf(", \n"); // pretty formatting
     }
-    //if (len > 0) printf("\n"); // pretty formatting
+    if (len > 0) printf("\n"); // pretty formatting
     printf("} \n");
 }
 

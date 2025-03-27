@@ -1,0 +1,16 @@
+int num = 78953803;
+
+bool prime = true;
+
+int i = 2;
+
+while (i < num / 2 && prime) {
+    if (num % i == 0) prime = false;
+    i = i + 1;
+}
+
+if (prime)
+    print num, " is a prime number!";
+ else 
+    print num, " is not a prime number because ", i, " x ", num / i, " = ", num;
+
