@@ -17,7 +17,8 @@ char *KEYWORDS[] = {
     "for",
     "print",
     "else",
-    "input"
+    "input",
+    "return"
 };
 
 
@@ -414,11 +415,17 @@ ParseResult parse_expr(int idx);
 
 ParseResult parse_add_rule(int idx);
 
+ParseResult parse_func_call(int idx);
+
 void print_ast(ASTNode node, int level);
 
 
 ParseResult parse_value(int idx) {
-
+    
+    ParseResult func_call_res = parse_func_call(idx);
+    if (func_call_res.success) {
+        return create_parse_result(true, func_call_res.node, func_call_res.endpos);
+    }
     if (get_token(idx).type == BOOL
         || get_token(idx).type == STRING_LITERAL
         || get_token(idx).type == INTEGER
@@ -440,6 +447,8 @@ ParseResult parse_value(int idx) {
             return create_parse_result(true, value_res.node, idx);
         }
     }
+
+
 
     return null(ParseResult);
 }
@@ -965,6 +974,8 @@ ParseResult parse_input_stmt(int idx);
 
 ParseResult parse_func_decl_stmt(int idx);
 
+ParseResult parse_return_stmt(int idx);
+
 ParseResult parse_stmt(int idx) {
 
     int start_idx = idx;
@@ -1028,6 +1039,11 @@ ParseResult parse_stmt(int idx) {
     ParseResult funcdecl_res = parse_func_decl_stmt(idx);
     if (funcdecl_res.success) {
         return create_parse_result(true, funcdecl_res.node, funcdecl_res.endpos);
+    }
+
+    ParseResult return_res = parse_return_stmt(idx);
+    if (return_res.success) {
+        return create_parse_result(true, return_res.node, return_res.endpos);
     }
 
     return null(ParseResult);
@@ -1472,6 +1488,75 @@ ParseResult parse_func_decl_stmt(int idx) {
 
 }
 
+ParseResult parse_func_call(int idx) {
+
+    printf("parse func call \n");
+
+    if (get_token(idx).type != NAME) return null(ParseResult);
+    int name_idx = idx;
+    idx += 1;
+
+    if (get_token(idx).type != LPAREN) return null(ParseResult);
+    idx += 1;
+
+    ParseResult val_seq_res = parse_val_seq(idx);
+
+    if (!val_seq_res.success) {
+        if (get_token(idx).type == RPAREN) {
+            idx += 1;
+            ASTNode node = create_ast_node((Token){.type = FUNC_CALL}, true);
+            array_append(node.children, create_ast_node(get_token(name_idx), true));
+            array_append(node.children, create_ast_node((Token){.type = VAL_SEQ}, true));
+            return create_parse_result(true, node, idx);
+        }
+        return null(ParseResult);
+    }
+    idx = val_seq_res.endpos;
+
+    if (get_token(idx).type != RPAREN) {
+        free_ast(val_seq_res.node);
+        return null(ParseResult);
+    }
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = FUNC_CALL}, true);
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    array_append(node.children, val_seq_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_return_stmt(int idx) {
+    if (!check_keyword(get_token(idx), "return")) return null(ParseResult);
+
+    idx += 1;
+
+    ParseResult expr_res = parse_expr(idx);
+    if (!expr_res.success) {
+        if (get_token(idx).type == STMT_END) {
+            idx += 1;
+            return create_parse_result(true, create_ast_node((Token){.type = RETURN_STMT}, true), idx);
+        }
+        return null(ParseResult);
+    }
+
+    idx = expr_res.endpos;
+
+    if (get_token(idx).type != STMT_END) {
+        free_ast(expr_res.node);
+        return null(ParseResult);
+    }
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = RETURN_STMT}, true);
+
+
+    array_append(node.children, expr_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
+
 /*
 Rules:
 <if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
@@ -1604,6 +1689,9 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
     if (node->token.type == BOOL) node->expected_return_type = T_BOOL;
     if (node->token.type == NAME) {
         node->expected_return_type = (int)HashMap_get(var_map, node->token.text);
+    }
+    if (node->token.type == FUNC_CALL) {
+        node->expected_return_type = (int)HashMap_get(var_map, node->children[0].token.text);
     }
             
     if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {

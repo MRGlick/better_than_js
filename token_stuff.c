@@ -55,6 +55,8 @@
     X(FUNC_DECL_STMT) \
     X(FUNC_ARGS_SEQ) \
     X(FUNC_ARG) \
+    X(FUNC_CALL) \
+    X(RETURN_STMT) \
     X(STMT_SEQ) \
     X(VAL_SEQ) \
     X(TOKEN_TYPE_COUNT)
