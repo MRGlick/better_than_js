@@ -52,9 +52,12 @@
     X(DECL_ASSIGN_STMT) \
     X(PRINT_STMT) \
     X(INPUT_STMT) \
+    X(FUNC_DECL_STMT) \
+    X(FUNC_ARGS_SEQ) \
+    X(FUNC_ARG) \
     X(STMT_SEQ) \
     X(VAL_SEQ) \
-    X(TOKEN_TYPE_COUNT) \
+    X(TOKEN_TYPE_COUNT)
 
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)

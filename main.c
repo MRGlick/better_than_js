@@ -345,15 +345,16 @@ ASTNode create_ast_node(Token tk, bool complete) {
 }
 
 #define free_ast(ast) do { \
-    _free_ast(ast); \
+    int result = _free_ast(ast); \
+    if (result == -1) printf("On line %d \n", __LINE__); \
     ast = (ASTNode){0}; \
 } while (0)
 
-void _free_ast(ASTNode ast) {
+int _free_ast(ASTNode ast) {
     
     if (ast.children == NULL) {
         print_err("Tried to free an AST with null children!");
-        return;
+        return -1;
     }
 
     for (int i = 0; i < array_length(ast.children); i++) {
@@ -361,6 +362,8 @@ void _free_ast(ASTNode ast) {
     }
 
     array_free(ast.children);
+
+    return 0;
 }
 
 typedef struct ParseResult {
@@ -960,6 +963,8 @@ ParseResult parse_vardecl_assign_stmt(int idx);
 
 ParseResult parse_input_stmt(int idx);
 
+ParseResult parse_func_decl_stmt(int idx);
+
 ParseResult parse_stmt(int idx) {
 
     int start_idx = idx;
@@ -1018,6 +1023,11 @@ ParseResult parse_stmt(int idx) {
     ParseResult input_res = parse_input_stmt(idx);
     if (input_res.success) { 
         return create_parse_result(true, input_res.node, input_res.endpos);
+    }
+
+    ParseResult funcdecl_res = parse_func_decl_stmt(idx);
+    if (funcdecl_res.success) {
+        return create_parse_result(true, funcdecl_res.node, funcdecl_res.endpos);
     }
 
     return null(ParseResult);
@@ -1338,6 +1348,130 @@ ParseResult parse_input_stmt(int idx) {
     return create_parse_result(true, node, idx);
 }
 
+ParseResult parse_func_arg(int idx) {
+    if (get_token(idx).type != TYPE) return null(ParseResult);
+    int type_idx = idx;
+    idx += 1;
+    if (get_token(idx).type != NAME) return null(ParseResult);
+    int name_idx = idx;
+    idx += 1;
+    ASTNode node = create_ast_node((Token){.type = FUNC_ARG}, true);
+    array_append(node.children, create_ast_node(get_token(type_idx), true));
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_func_args_seq(int idx) {
+    
+    printf("parsing func args from idx: %d \n", idx);
+
+    if (get_token(idx).type == COMMA) {
+        idx += 1;
+        ParseResult func_arg_res = parse_func_arg(idx);
+        if (!func_arg_res.success) return null(ParseResult);
+        idx = func_arg_res.endpos;
+
+        ParseResult func_args_res = parse_func_args_seq(idx);
+        if (!func_args_res.success) {
+            free_ast(func_arg_res.node);
+            return null(ParseResult);
+        }
+        idx = func_args_res.endpos;
+
+        ASTNode node = create_ast_node((Token){.type = FUNC_ARGS_SEQ}, true);
+        
+        array_append(node.children, func_arg_res.node);
+        if (!is_null_ast(func_args_res.node)) {
+            for (int i = 0; i < array_length(func_args_res.node.children); i++) {
+                array_append(node.children, func_args_res.node.children[i]);
+            }
+            array_free(func_args_res.node.children); // cant call free_ast because its recursive and we only want to free this one
+            func_args_res.node.children = NULL;
+        }
+
+        return create_parse_result(true, node, idx);
+    }
+
+    ParseResult func_arg_res = parse_func_arg(idx);
+    if (!func_arg_res.success) return create_parse_result(true, null(ASTNode), idx);
+    idx = func_arg_res.endpos;
+
+    ParseResult func_args_res = parse_func_args_seq(idx);
+    if (!func_args_res.success) {
+        free_ast(func_arg_res.node);
+        return create_parse_result(true, null(ASTNode), idx);
+    }
+    idx = func_args_res.endpos;
+
+    ASTNode node = create_ast_node((Token){.type = FUNC_ARGS_SEQ}, true);
+    
+    array_append(node.children, func_arg_res.node);
+    if (!is_null_ast(func_args_res.node)) {
+        for (int i = 0; i < array_length(func_args_res.node.children); i++) {
+            array_append(node.children, func_args_res.node.children[i]);
+        }
+        array_free(func_args_res.node.children); // cant call free_ast because its recursive and we only want to free this one
+        func_args_res.node.children = NULL;
+    }
+
+    return create_parse_result(true, node, idx);
+
+}
+
+ParseResult parse_func_decl_stmt(int idx) {
+
+    if (get_token(idx++).type != TYPE) return null(ParseResult);
+    int type_idx = idx - 1;
+    if (get_token(idx++).type != NAME) return null(ParseResult);
+    int name_idx = idx - 1;
+    if (get_token(idx++).type != LPAREN) return null(ParseResult);
+
+    ParseResult func_args_res = parse_func_args_seq(idx);
+    if (!func_args_res.success) return null(ParseResult);
+    idx = func_args_res.endpos;
+
+    if (get_token(idx++).type != RPAREN) {
+        if (!is_null_ast(func_args_res.node)) free_ast(func_args_res.node);
+        return null(ParseResult);
+    }
+
+    ParseResult stmt_res = parse_stmt(idx);
+
+    if (!stmt_res.success) {
+        if (!is_null_ast(func_args_res.node)) free_ast(func_args_res.node);
+        return null(ParseResult);
+    }
+
+    idx = stmt_res.endpos;
+
+    // turn one liners into blocks so i can gurantee every function has a block (to make dealing with argument lifetimes easier)
+    if (stmt_res.node.token.type != BLOCK) {
+        ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
+        array_append(block.children, stmt_res.node);
+        stmt_res.node = block;
+    }
+
+    ASTNode node = create_ast_node((Token){.type = FUNC_DECL_STMT}, true);
+
+    array_append(node.children, create_ast_node(get_token(type_idx), true));
+
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+
+    if (!is_null_ast(func_args_res.node)) {
+        array_append(node.children, func_args_res.node);
+    } else {
+        // an empty one
+        array_append(node.children, create_ast_node((Token){.type = FUNC_ARGS_SEQ}, true));
+    }
+
+    array_append(node.children, stmt_res.node);
+
+
+    return create_parse_result(true, node, idx);
+
+}
+
 /*
 Rules:
 <if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
@@ -1348,7 +1482,8 @@ Rules:
 
 <func-decl> -> <typename> <name>(<func-args>) <stmt>
 
-<func-args> -> epsilon | , <typename> <name> <func-args> | <typename> <name> <func-args>
+<func-arg> -> <typename> <name>
+<func-args> -> <func-arg> <func-args> | , <func-arg> <func-args> | epsilon 
 
 <func-call> -> <name>(<val-seq>);
 
@@ -1489,12 +1624,47 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         for (int i = 0; i < len; i++) {
             typeify_tree(&node->children[i], var_map);
         }
+    } else if (node->token.type == FUNC_DECL_STMT) {
+
+        printf("putting func %s of type %s \n", node->children[1].token.text.data, var_type_names[node->children[0].token.var_type]);
+
+        HashMap_put(var_map, node->children[1].token.text, (int)node->children[0].token.var_type);
+        
+        var_map = HashMap_copy(var_map);
+
+        HashMap_print(var_map);
+
+        printf("copied hashmap \n");
+
+        ASTNode func_args = node->children[2];
+
+        // print_ast(func_args->children[0].children[1], 0);
+        int len = array_length(func_args.children);
+        for (int i = 0; i < len; i++) {
+
+            StringRef var_name = func_args.children[i].children[1].token.text;
+
+            VarType var_type = func_args.children[i].children[0].token.var_type;
+
+            HashMap_put(var_map, var_name, (int)var_type);
+        }
+
+        ASTNode *func_scope = &node->children[3];
+
+        // this ensures we don't copy the hashmap twice because of the scope
+        for (int i = 0; i < array_length(func_scope->children); i++) {
+            typeify_tree(&func_scope->children[i], var_map);
+        }
+
+        HashMap_free(var_map);
+
+
     } else {
         int len = array_length(node->children);
         for (int i = 0; i < len; i++) {
             typeify_tree(&node->children[i], var_map);
         }
-    }
+    } 
     
     
     
@@ -1611,6 +1781,7 @@ typedef struct Inst {
 typedef struct VarHeader { 
     i32 pos;
     i32 type;
+    bool is_func;
 }VarHeader;
 
 Inst create_inst(VarType type, Val arg1, Val arg2) {
@@ -2242,8 +2413,14 @@ void print_double(double a) {
 
 }
 
+
+
+
+
+
 // idk why
 #define INPUT_BUFFER_SIZE 453
+#define LITERALS_MEMORY_SIZE 1024
 
 void run_instructions(Inst *instructions) {
 
@@ -2259,14 +2436,14 @@ void run_instructions(Inst *instructions) {
     #define append(ptr, size) {memcpy(temp_stack + temp_stack_ptr, ptr, size); temp_stack_ptr += size;}
     #define pop(type, size) (*(type*)(temp_stack + (temp_stack_ptr -= size)))
 
-    long inst_timers[INST_COUNT] = {0};
+    // long inst_timers[INST_COUNT] = {0};
 
     double start = get_current_process_time_seconds();
 
     while (inst_ptr < len) {
         Inst inst = instructions[inst_ptr++];
 
-        long inst_start = get_current_process_time();
+        // long inst_start = get_current_process_time();
 
         switch (inst.type) {
             case I_PUSH:
@@ -2297,10 +2474,10 @@ void run_instructions(Inst *instructions) {
                 break;
             }
             case I_STORE_STACK_PTR:
-            case I_SET_STACK_PTR: {
+            case I_SET_STACK_PTR: 
                 // do nothing for now...
                 break;
-            }
+            
             case I_PRINT_NEWLINE: {
                 printf("\n");
                 break;
@@ -2583,9 +2760,9 @@ void run_instructions(Inst *instructions) {
             }
         }
 
-        long inst_end = get_current_process_time();
+        // long inst_end = get_current_process_time();
 
-        inst_timers[inst.type] += inst_end - inst_start;
+        // inst_timers[inst.type] += inst_end - inst_start;
 
         if (temp_stack_ptr > STACK_SIZE) {
             print_err("https://stackoverflow.com/questions");
@@ -2855,26 +3032,27 @@ int main() {
         Token *tokens = tokenize_parts(parts);
 
         set_parse_tokens(tokens);
+
         ParseResult res = parse_stmt_seq(0);
         typeify_tree_wrapper(&res.node);
         if (res.endpos < array_length(tokens))res.success = false;
         else {
-            // printf(">>> RESULT AST <<<\n");
-            // print_ast(res.node, 0);
+            printf(">>> RESULT AST <<<\n");
+            print_ast(res.node, 0);
         }
 
         if (!res.success) {
             printf("INVALID EXPRESSION \n");
         }
 
-        Inst *instructions = generate_instructions(res.node);
+        // Inst *instructions = generate_instructions(res.node);
 
         // print_instructions(instructions);
 
-        // place for chaos. increment when this made you want to kys: 2
-        run_instructions(instructions);
+        // // place for chaos. increment when this made you want to kys: 2
+        // run_instructions(instructions);
 
-        array_free(instructions);
+        // array_free(instructions);
 
         free_tokens(tokens);
 
