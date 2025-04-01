@@ -1848,20 +1848,19 @@ char *inst_names[] = {
 };
 
 typedef struct Val {
-    VarType type;
     union {
-        void *any_val;
-        char *s_val;
         double f_val;
+        char *s_val;
         int i_val;
         bool b_val;
     };
+    u8 type;
 } Val;
 
 typedef struct Inst {
-    InstType type;
     Val arg1;
     Val arg2; 
+    u8 type;
 } Inst;
 
 typedef struct VarHeader { 
@@ -1870,7 +1869,7 @@ typedef struct VarHeader {
     bool is_func;
 }VarHeader;
 
-Inst create_inst(VarType type, Val arg1, Val arg2) {
+Inst create_inst(InstType type, Val arg1, Val arg2) {
     return (Inst){.type = type, .arg1 = arg1, .arg2 = arg2};
 }
 
@@ -1934,7 +1933,7 @@ void print_instructions(Inst *arr) {
     }
 }
 
-static inline int get_vartype_size(VarType t) {
+int get_vartype_size(VarType t) {
     switch (t) {
         case T_INT:
             return 4;
@@ -2450,11 +2449,8 @@ Inst *generate_instructions(ASTNode ast) {
 
 
 
-
-
-
-
 #define STACK_SIZE 8192
+#define TEXT_BUF_SIZE 8192
 
 // THIS IS HAPPENING
 
@@ -2499,353 +2495,399 @@ void print_double(double a) {
 
 }
 
+#define append(value, type) { *(type *)(temp_stack + temp_stack_ptr) = (value); temp_stack_ptr++;}
+#define pop(type) (*(type *)&temp_stack[temp_stack_ptr -= 1])
+Inst *current_instructions = NULL;
+int temp_stack_ptr = 0;
+int inst_ptr = 0;
+int text_buffer_ptr = 0;
+u64 temp_stack[STACK_SIZE] = {0};
+char var_stack[STACK_SIZE] = {0};
+char *text_buffer = NULL;
 
 
-
+void *append_to_text_buffer(const char *text, int len) {
+    if (text_buffer_ptr + len >= TEXT_BUF_SIZE) {
+        print_err("Ran out of text memory!");
+        return NULL;
+    }
+    memcpy(text_buffer + text_buffer_ptr, text, len + 1);
+    void *addr = text_buffer + text_buffer_ptr;
+    text_buffer_ptr += len + 1;
+    return addr;
+}
 
 
 // idk why
 #define INPUT_BUFFER_SIZE 453
 #define LITERALS_MEMORY_SIZE 1024
 
-#define execute_instruction() switch (inst.type) { \
-    case I_PUSH: \
-        append(&inst.arg1.any_val, get_vartype_size(inst.arg1.type)); \
-        break; \
-    case I_READ: { \
-        append(var_stack + inst.arg2.i_val, inst.arg1.i_val); \
-        break; \
-    } \
-    case I_PRINT_INT: { \
-        int num = pop(int); \
-        printf("%d", num); \
-        break; \
-    } \
-    case I_PRINT_STR: { \
-        char *str = pop(char *); \
-        printf("%s", str); \
-        break; \
-    } \
-    case I_PRINT_FLOAT: { \
-        double num = pop(double); \
-        print_double(num); \
-        break; \
-    } \
-    case I_PRINT_BOOL: { \
-        bool b = pop(bool); \
-        printf("%s", b ? "true" : "false"); \
-        break; \
-    } \
-    case I_PRINT_NEWLINE: { \
-        printf("\n"); \
-        break; \
-    } \
-    case I_ADD: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) += num; \
-        break; \
-    } \
-    case I_SUB: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) -= num; \
-        break; \
-    } \
-    case I_MUL: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) *= num; \
-        break; \
-    } \
-    case I_DIV: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) /= num; \
-        break; \
-    } \
-    case I_MOD: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) %= num; \
-        break; \
-    } \
-    case I_ADD_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) += num; \
-        break; \
-    } \
-    case I_SUB_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) -= num; \
-        break; \
-    } \
-    case I_MUL_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) *= num; \
-        break; \
-    } \
-    case I_DIV_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) /= num; \
-        break; \
-    } \
-    case I_MOD_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = fmod(*top, num); \
-        break; \
-    } \
-    case I_CONVERT_BOOL_FLOAT: { \
-        double num = pop(bool) ? 1.0 : 0.0; \
-        append(&num, 8); \
-        break; \
-    } \
-    case I_CONVERT_BOOL_INT: { \
-        int num = pop(bool) ? 1 : 0; \
-        append(&num, 4); \
-        break; \
-    } \
-    case I_CONVERT_BOOL_STR: { \
-        StringRef string = pop(bool) == 0 ? StringRef("false") : StringRef("true");  \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        append(&str, 8); \
-        break; \
-    } \
-    case I_CONVERT_FLOAT_BOOL: { \
-        bool b = pop(double) > 0 ? true : false; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_CONVERT_FLOAT_INT: { \
-        int num = pop(double); \
-        append(&num, 4); \
-        break; \
-    } \
-    case I_CONVERT_FLOAT_STR: { \
-        String string = String_from_double(pop(double), 2); \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        String_delete(&string); \
-        append(&str, 8); \
-        break; \
-    } \
-    case I_CONVERT_INT_BOOL: { \
-        bool b = pop(int) > 0 ? true : false; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_CONVERT_INT_FLOAT: { \
-        double num = pop(int); \
-        append(&num, 8); \
-        break; \
-    } \
-    case I_CONVERT_INT_STR: { \
-        String string = String_from_int(pop(int)); \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        String_delete(&string); \
-        append(&str, 8); \
-        break; \
-    } \
-    case I_CONVERT_STR_FLOAT: { \
-        char *str = pop(char *); \
-        double res = String_to_double(StringRef(str)); \
-        append(&res, 8); \
-        break; \
-    } \
-    case I_CONVERT_STR_BOOL: { \
-        char *str = pop(char *); \
-        bool b = String_equal(StringRef(str), StringRef("true")); \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_CONVERT_STR_INT: { \
-        char *str = pop(char *); \
-        int res = String_to_int(StringRef(str)); \
-        append(&res, 4); \
-        break; \
-    } \
-    case I_GREATER: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) > num; \
-        break; \
-    } \
-    case I_GREATER_EQUAL: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) >= num; \
-        break; \
-    } \
-    case I_LESS: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) < num; \
-        break; \
-    } \
-    case I_LESS_EQUAL: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) <= num; \
-        break; \
-    } \
-    case I_GREATER_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) > num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_GREATER_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) >= num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_LESS_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) < num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_LESS_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) <= num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL: { \
-        int num = pop(int); \
-        bool res = pop(int) == num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) == num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL_BOOL: { \
-        bool b = pop(bool); \
-        bool b2 = pop(bool); \
-        bool res = b2 == b; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL_STR: { \
-        char *str = pop(char *); \
-        char *str2 = pop(char *); \
-        bool res = !strcmp(str, str2); \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL: { \
-        int num = pop(int); \
-        bool res = pop(int) != num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) != num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL_BOOL: { \
-        bool b = pop(bool); \
-        bool res = pop(bool) != b; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL_STR: { \
-        char *str = pop(char *); \
-        char *str2 = pop(char *); \
-        bool res = !(!strcmp(str, str2)); \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_STACK_STORE: { \
-        memcpy(var_stack + inst.arg2.i_val, temp_stack + --temp_stack_ptr, inst.arg1.i_val); \
-        break; \
-    } \
-    case I_JUMP: { \
-        inst_ptr = inst.arg1.i_val; \
-        break; \
-    } \
-    case I_JUMP_IF: { \
-        bool b = pop(bool); \
-        if (b) inst_ptr = inst.arg1.i_val; \
-        break; \
-    } \
-    case I_JUMP_NOT: { \
-        bool b = pop(bool); \
-        if (!b) inst_ptr = inst.arg1.i_val; \
-        break; \
-    } \
-    case I_AND: { \
-        bool b = pop(bool); \
-        b = pop(bool) && b; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_OR: { \
-        bool b = pop(bool); \
-        b = pop(bool) || b; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_NOT: { \
-        bool b = !pop(bool); \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_INPUT: { \
-        char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE); \
-        fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin); \
-        string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0; \
-        char *str = append_to_text_buffer(string_im_not_gonna_free, strlen(string_im_not_gonna_free)); \
-        free(string_im_not_gonna_free); \
-        append(&str, 4); \
-        break; \
-    } \
-    case I_LABEL: \
-        break; \
-    default: { \
-        print_err("Too stupid. cant.\n"); \
-        printf("instruction: %s \n", inst_names[inst.type]); \
-        break; \
-    } \
+static inline void ipush() {
+    Inst inst = current_instructions[inst_ptr];
+    append(*(u64 *)&inst.arg1.f_val, u64);
 }
 
-#define BENCHMARK_ITERS 100
-#define TEXT_BUF_SIZE 8192
-
-#define append(ptr, size) memcpy(temp_stack + temp_stack_ptr++, ptr, size)
-#define pop(type) (*(type *)&temp_stack[--temp_stack_ptr])
-#define dup() temp_stack[temp_stack_ptr++] = temp_stack_ptr[temp_stack_ptr - 1]
-
-u64 temp_stack[STACK_SIZE] = {0};
-int temp_stack_ptr = 0;
-char var_stack[STACK_SIZE] = {0};
-char text_buffer[TEXT_BUF_SIZE] = {0};
-int text_buffer_ptr = 0;
-
-void *append_to_text_buffer(const char *text, int len) {
-    memcpy(text_buffer + text_buffer_ptr, text, len);
-    void *retval = text_buffer + text_buffer_ptr;
-    text_buffer_ptr += len + 1;
-    return retval;
+static inline void iread() {
+    Inst inst = current_instructions[inst_ptr];
+    memcpy(temp_stack + temp_stack_ptr, var_stack + inst.arg2.i_val, inst.arg1.i_val);
+    temp_stack_ptr++;
 }
 
-void preprocess_string_literals(Inst *instructions) {
+static inline void iadd() {
+    int num = pop(int);
+    *(int *)(temp_stack + temp_stack_ptr - 1) += num;
+}
+
+static inline void isub() {
+    int num = pop(int);
+    *(int *)(temp_stack + temp_stack_ptr - 1) -= num;
+}
+
+static inline void imul() {
+    int num = pop(int);
+    *(int *)(temp_stack + temp_stack_ptr - 1) *= num;
+}
+
+static inline void idiv() {
+    int num = pop(int);
+    *(int *)(temp_stack + temp_stack_ptr - 1) /= num;
+}
+
+static inline void imod() {
+    int num = pop(int);
+    *(int *)(temp_stack + temp_stack_ptr - 1) %= num;
+}
+
+static inline void iaddf() {
+    double num = pop(double);
+    *(double *)(temp_stack + temp_stack_ptr - 1) += num;
+}
+
+static inline void isubf() {
+    double num = pop(double);
+    *(double *)(temp_stack + temp_stack_ptr - 1) -= num;
+}
+
+static inline void imulf() {
+    double num = pop(double);
+    *(double *)(temp_stack + temp_stack_ptr - 1) *= num;
+}
+
+static inline void idivf() {
+    double num = pop(double);
+    *(double *)(temp_stack + temp_stack_ptr - 1) /= num;
+}
+
+static inline void imodf() {
+    double num = pop(double);
+    *(double *)(temp_stack + temp_stack_ptr - 1) = fmod(*(double *)(temp_stack + temp_stack_ptr), num);
+}
+
+static inline void iprint_int() {
+    int num = pop(int);
+    printf("%d", num);
+}
+
+static inline void iprint_float() {
+    double num = pop(double);
+    print_double(num);
+}
+
+static inline void iprint_bool() {
+    bool b = pop(bool);
+    printf("%s", b ? "true" : "false");
+}
+
+static inline void iprint_str() {
+    char *str = pop(char *);
+    printf("%s", str);
+}
+
+static inline void iprint_newline() {
+    printf("\n");
+}
+
+static inline void icvt_bool_float() {
+    double num = pop(bool) ? 1.0 : 0.0;
+    append(num, double);
+}
+
+static inline void icvt_bool_int() {
+    int num = pop(bool) ? 1 : 0;
+    append(num, int);
+}
+
+static inline void icvt_bool_str() {
+    StringRef string = pop(bool) ? StringRef("true") : StringRef("false");
     
-    int len = array_length(instructions);
+    char *str = append_to_text_buffer(string.data, string.len);
+
+    // no need to free because its a ref
+
+    append(str, char *);
+}
+
+static inline void icvt_float_str() {
+    String string = String_from_double(pop(double), 2);
+    char *str = append_to_text_buffer(string.data, string.len);
+    String_delete(&string);
+    append(str, char *);
+}
+
+static inline void icvt_float_int() {
+    u64 *top = (u64 *)(temp_stack + temp_stack_ptr - 1);
+    *(int *)top = *(double *)top;
+}
+
+static inline void icvt_float_bool() {
+    u64 *top = (u64 *)(temp_stack + temp_stack_ptr - 1);
+    *top = *(double *)top == 0 ? 0 : 1;
+}
+
+static inline void icvt_int_float() {
+    u64 *top = (u64 *)(temp_stack + temp_stack_ptr - 1);
+    *(double *)top = *top;
+}
+
+static inline void icvt_int_bool() {
+    u64 *top = (u64 *)(temp_stack + temp_stack_ptr - 1);
+    *top = *top == 0 ? 0 : 1;
+}
+
+static inline void icvt_int_str() {
+    String string = String_from_int(pop(int));
+    char *str = append_to_text_buffer(string.data, string.len);
+    String_delete(&string); // yay memory safety!!!
     
+    append(str, char *);
+}
+
+static inline void icvt_str_bool() {
+    char *str = pop(char *);
+    bool b = String_equal(StringRef(str), StringRef("false")) || StringRef(str).len == 0;
+    append(b, bool);
+}
+
+static inline void icvt_str_int() {
+    char *str = pop(char *);
+    int res = String_to_int(StringRef(str));
+    append(res, int);
+}
+
+static inline void icvt_str_float() {
+    char *str = pop(char *);
+    double res = String_to_double(StringRef(str));
+    append(res, double);
+}
+
+static inline void i_greater() {
+    int num = pop(int);
+    bool res = pop(int) > num;
+    append(res, bool);
+}
+
+static inline void i_greatereq() {
+    int num = pop(int);
+    bool res = pop(int) >= num;
+    append(res, bool);
+}
+
+static inline void i_less() {
+    int num = pop(int);
+    int num2 = pop(int);
+    bool res = num2 < num;
+    append(res, bool);
+}
+
+static inline void i_lesseq() {
+    int num = pop(int);
+    bool res = pop(int) <= num;
+    append(res, bool);
+}
+
+static inline void i_greater_float() {
+    double num = pop(double);
+    bool res = pop(double) > num;
+    append(res, bool);
+}
+
+static inline void igreatereq_float() {
+    double num = pop(double);
+    bool res = pop(double) >= num;
+    append(res, bool);
+}
+
+static inline void i_less_float() {
+    double num = pop(double);
+    bool res = pop(double) < num;
+    append(res, bool);
+}
+
+static inline void i_lesseq_float() {
+    double num = pop(double);
+    bool res = pop(double) <= num;
+    append(res, bool);
+}
+
+static inline void i_equal() {
+    int num = pop(int);
+    bool res = pop(int) == num;
+    append(res, int);
+}
+
+static inline void i_noteq() {
+    int num = pop(int);
+    bool res = pop(int) != num;
+    append(res, int);
+}
+
+static inline void i_equal_float() {
+    double num = pop(double);
+    bool res = pop(double) == num;
+    append(res, bool);
+}
+
+static inline void i_equal_bool() {
+    bool b = pop(bool);
+    temp_stack[temp_stack_ptr - 1] &= b;
+}
+
+static inline void i_equal_str() {
+    char *str = pop(char *);
+    char *str2 = pop(char *);
+    bool res = !strcmp(str, str2);
+    append(res, bool);
+}
+
+static inline void i_noteq_float() {
+    double num = pop(double);
+    bool res = pop(double) != num;
+    append(res, bool);
+}
+
+static inline void i_noteq_bool() {
+    bool b = pop(bool);
+    temp_stack[temp_stack_ptr - 1] &= !b;
+}
+
+static inline void i_noteq_str() {
+    char *str = pop(char *);
+    char *str2 = pop(char *);
+    bool res = !(!strcmp(str, str2));
+    append(res, bool);
+}
+
+static inline void istack_store() { // worry about this
+    Inst inst = current_instructions[inst_ptr];
+    int size = inst.arg1.i_val;
+    int stack_pos = inst.arg2.i_val;
+    memcpy(var_stack + stack_pos, (char *)(&temp_stack[temp_stack_ptr -= 1]), size);
+}
+
+static inline void ilabel() {
+    // do absolutely nothing (exists so i dont get an error)
+}
+
+static inline void ijump() {
+    Inst inst = current_instructions[inst_ptr];
+    inst_ptr = inst.arg1.i_val;
+}
+
+static inline void ijump_if() {
+    bool b = pop(bool);
+    if (b) { // gets optimized away
+        Inst inst = current_instructions[inst_ptr];
+        inst_ptr = inst.arg1.i_val;
+    }
+}
+
+static inline void ijump_not() {
+    bool b = pop(bool);
+    if (!b) { // gets optimized away
+        Inst inst = current_instructions[inst_ptr];
+        inst_ptr = inst.arg1.i_val;
+    }
+}
+
+static inline void iand() {
+    bool b = pop(bool);
+    temp_stack[temp_stack_ptr - 1] &= b;
+}
+
+static inline void ior() {
+    bool b = pop(bool);
+    temp_stack[temp_stack_ptr - 1] |= b;
+}
+
+static inline void inot() {
+    temp_stack[temp_stack_ptr - 1] ^= 1;
+}
+
+static inline void iinput() {
+    char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE);
+    fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin);
+    string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0;
+    append(string_im_not_gonna_free, char *);
+}
+
+void *inst_funcs[INST_COUNT] = {
+    [I_PUSH] = ipush,
+    [I_READ] = iread,
+    [I_ADD] = iadd,
+    [I_SUB] = isub,
+    [I_MUL] = imul,
+    [I_DIV] = idiv,
+    [I_MOD] = imod,
+    [I_ADD_FLOAT] = iaddf,
+    [I_SUB_FLOAT] = isubf,
+    [I_DIV_FLOAT] = idivf,
+    [I_MUL_FLOAT] = imulf,
+    [I_MOD_FLOAT] = imodf,
+    [I_PRINT_BOOL] = iprint_bool,
+    [I_PRINT_FLOAT] = iprint_float,
+    [I_PRINT_INT] = iprint_int,
+    [I_PRINT_STR] = iprint_str,
+    [I_PRINT_NEWLINE] = iprint_newline,
+    [I_CONVERT_BOOL_FLOAT] = icvt_bool_float,
+    [I_CONVERT_BOOL_INT] = icvt_bool_int,
+    [I_CONVERT_BOOL_STR] = icvt_bool_str,
+    [I_CONVERT_FLOAT_BOOL] = icvt_float_bool,
+    [I_CONVERT_FLOAT_INT] = icvt_float_int,
+    [I_CONVERT_FLOAT_STR] = icvt_float_str,
+    [I_CONVERT_INT_BOOL] = icvt_int_bool,
+    [I_CONVERT_INT_FLOAT] = icvt_int_float,
+    [I_CONVERT_INT_STR] = icvt_int_str,
+    [I_CONVERT_STR_BOOL] = icvt_str_bool,
+    [I_CONVERT_STR_INT] = icvt_str_int,
+    [I_CONVERT_STR_FLOAT] = icvt_str_float,
+    [I_GREATER] = i_greater,
+    [I_LESS] = i_less,
+    [I_GREATER_EQUAL] = i_greatereq,
+    [I_LESS_EQUAL] = i_lesseq,
+    [I_EQUAL] = i_equal,
+    [I_EQUAL_BOOL] = i_equal_bool,
+    [I_EQUAL_FLOAT] = i_equal_float,
+    [I_EQUAL_STR] = i_equal_str,
+    [I_NOT_EQUAL] = i_noteq,
+    [I_NOT_EQUAL_BOOL] = i_noteq_bool,
+    [I_NOT_EQUAL_FLOAT] = i_noteq_float,
+    [I_NOT_EQUAL_STR] = i_noteq_str,
+    [I_INPUT] = iinput,
+    [I_AND] = iand,
+    [I_OR] = ior,
+    [I_NOT] = inot,
+    [I_STACK_STORE] = istack_store,
+    [I_JUMP] = ijump,
+    [I_JUMP_IF] = ijump_if,
+    [I_JUMP_NOT] = ijump_not,
+    [I_LABEL] = ilabel
+};
+
+void preprocess_string_literals() {
+
+    int len = array_length(current_instructions);
     for (int i = 0; i < len; i++) {
-        Inst inst = instructions[i];
+        Inst inst = current_instructions[i];
         if (inst.type == I_PUSH && inst.arg1.type == T_STRING) {
             inst.arg1.s_val = append_to_text_buffer(inst.arg1.s_val, strlen(inst.arg1.s_val));
         }
@@ -2853,64 +2895,43 @@ void preprocess_string_literals(Inst *instructions) {
 }
 
 void run_instructions(Inst *instructions) {
-    
-    memset(temp_stack, 0, STACK_SIZE);
-    temp_stack_ptr = 0;
-    memset(var_stack, 0, STACK_SIZE);
-    memset(text_buffer, 0, TEXT_BUF_SIZE);
-    text_buffer_ptr = 0;
 
-    preprocess_string_literals(instructions);
-
-    int len = array_length(instructions);
-    
-    for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
-        Inst inst = instructions[inst_ptr];
-        execute_instruction();
-    }
-}
-
-void print_text_buffer() {
-    printf("text buffer: [");
-    for (int i = 0; i < TEXT_BUF_SIZE; i++) {
-        printf("%c", text_buffer[i]);
-        if (text_buffer[i] != 0) printf("|");
-    }
-    printf("]\n");
-}
-
-void run_program(Inst *instructions) {
     printf("Program output: \n");
+
+    memset(temp_stack, 0, STACK_SIZE);
+    memset(var_stack, 0, STACK_SIZE);
+    inst_ptr = 0;
+    temp_stack_ptr = 0;
+    text_buffer = calloc(1, TEXT_BUF_SIZE);
+    current_instructions = instructions;
+    
+    int len = array_length(instructions);
+
+    preprocess_string_literals();
+
+
+    u8 inst_types[INST_COUNT] = {0}; // for better cache locality?
+
+    for (int i = 0; i < len; i++) {
+        inst_types[i] = instructions[i].type;
+    }
 
     double start = get_current_process_time_seconds();
-    run_instructions(instructions);
-    double end = get_current_process_time_seconds();
 
-    printf("Program finished successfully after %.2f seconds! \n", end - start);
-
-    print_text_buffer();
-
-}
-
-
-void run_benchmark(Inst *instructions) {
-
-    printf("Program output: \n");
-
-    double avg = 0;
-    for (int lap = 1; lap <= BENCHMARK_ITERS; lap++) {
-        double start = get_current_process_time_seconds();
-        run_instructions(instructions);
-        double end = get_current_process_time_seconds();
-
-        avg += end - start;
-        if (lap % 10 == 0) printf("Time of %dth lap: %.3f \n", lap, end - start);
+    for (; inst_ptr < len; inst_ptr++) {
+        void (*func)() = inst_funcs[inst_types[inst_ptr]];
+        func();
     }
 
-    printf("Finished benchmarking. Average time: %.3f \n", avg / BENCHMARK_ITERS);
-    
-    print_text_buffer();
+    double end = get_current_process_time_seconds();
+
+    free(text_buffer);
+    text_buffer = NULL;
+
+    printf("Program finished succesfully after %.2f seconds. \n", end - start);
+
 }
+
 
 
 
@@ -3100,16 +3121,12 @@ int main() {
 
     while (true) {
 
-        bool benchmark = false;
-
         start_label: printf("File or raw code? ('file' for file, 'code' for code)\n");
         char buf[4096] = {0};
         char answer[20] = {0};
         fgets(answer, sizeof(answer), stdin);
 
         if (!strncmp(answer, "file", 4)) {
-
-            benchmark = !strncmp(answer + 5, "bench", 5);
 
             printf("Enter relative path: ");
 
@@ -3181,14 +3198,12 @@ int main() {
 
         Inst *instructions = generate_instructions(res.node);
 
+        
+
         print_instructions(instructions);
 
         // place for chaos. increment when this made you want to kys: 2
-        if (benchmark) {
-            run_benchmark(instructions);
-        } else {
-            run_program(instructions);
-        }
+        run_instructions(instructions);
 
         array_free(instructions);
 

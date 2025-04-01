@@ -1,4 +1,4 @@
-int num = 2000003;
+int num = 78953803;
 
 bool prime = true;
 
@@ -9,3 +9,5 @@ while (i < num / 2 && prime) {
     i = i + 1;
 }
 
+if (prime) print "It's prime!";
+else print "It's not prime coz ", num / i, " * ", i, " = ", num;
