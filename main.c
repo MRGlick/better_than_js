@@ -1833,6 +1833,8 @@ X(I_INPUT) \
 X(I_STACK_STORE) \
 X(I_STORE_STACK_PTR) \
 X(I_SET_STACK_PTR) \
+X(I_RETURN) \
+X(I_CALL) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -2289,6 +2291,40 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, HashMap *
 
 }
 
+void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, HashMap *var_map) {
+    
+    ASTNode var_args = ast.children[2];
+
+    HashMap *cop = HashMap_copy(var_map);
+    int prev_gi_stack_pos = gi_stack_pos;
+
+
+    for (int i = array_length(var_args.children) - 1; i >= 0; i--) {
+        String var_name = var_args.children[i].children[1].token.text;
+        VarType var_type = var_args.children[i].children[0].token.var_type;
+        array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}, (Val){.type = T_INT, .i_val = gi_stack_pos}));
+        VarHeader vh = (VarHeader){.pos = gi_stack_pos, .is_func = true};
+        HashMap_put(cop, var_name, &vh);
+        gi_stack_pos += get_vartype_size(var_type);
+    }
+
+    ASTNode scope = ast.children[3];
+
+    int len = array_length(scope.children);
+
+    for (int i = 0; i < len; i++) {
+        generate_instructions_for_node(scope.children[i], instructions, cop);
+    }
+    gi_stack_pos = prev_gi_stack_pos;
+    HashMap_free(cop);
+
+    array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
+}
+
+void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, HashMap *var_map) {
+
+}
+
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
     // independently defined operators
@@ -2324,7 +2360,15 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *v
         return;
     }
 
+    if (ast.token.type == FUNC_DECL_STMT) {
+        generate_instructions_for_func_decl(ast, instructions, var_map);
+        return;
+    }
 
+    if (ast.token.type == FUNC_CALL) {
+        generate_instructions_for_func_call(ast, instructions, var_map);
+        return;
+    }
 
     int temp_stack_ptr;
     HashMap *temp_var_map = NULL;
@@ -2507,6 +2551,14 @@ void print_double(double a) {
 // idk why
 #define INPUT_BUFFER_SIZE 453
 #define LITERALS_MEMORY_SIZE 1024
+#define BENCHMARK_ITERS 100
+#define TEXT_BUF_SIZE 8192
+
+#define append(ptr, size) memcpy(temp_stack + temp_stack_ptr++, ptr, size)
+#define pop(type) (*(type *)&temp_stack[--temp_stack_ptr])
+#define dup() temp_stack[temp_stack_ptr++] = temp_stack_ptr[temp_stack_ptr - 1]
+#define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++); memcpy(temp_stack, ptr, size);}
+#define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr); val;})
 
 #define execute_instruction() switch (inst.type) { \
     case I_PUSH: \
@@ -2811,6 +2863,18 @@ void print_double(double a) {
         append(&str, 4); \
         break; \
     } \
+    case I_CALL: { \
+        Inst inst = instructions[inst_ptr]; \
+        int val = inst_ptr + 1; \
+        tuck(&val, 4); \
+        inst_ptr = inst.arg1.i_val; \
+        break; \
+    } \
+    case I_RETURN: { \
+        int ret_addr = pop_bottom(int); \
+        inst_ptr = ret_addr; \
+        break; \
+    } \
     case I_LABEL: \
         break; \
     default: { \
@@ -2820,12 +2884,7 @@ void print_double(double a) {
     } \
 }
 
-#define BENCHMARK_ITERS 100
-#define TEXT_BUF_SIZE 8192
 
-#define append(ptr, size) memcpy(temp_stack + temp_stack_ptr++, ptr, size)
-#define pop(type) (*(type *)&temp_stack[--temp_stack_ptr])
-#define dup() temp_stack[temp_stack_ptr++] = temp_stack_ptr[temp_stack_ptr - 1]
 
 u64 temp_stack[STACK_SIZE] = {0};
 int temp_stack_ptr = 0;
@@ -3171,8 +3230,8 @@ int main() {
         typeify_tree_wrapper(&res.node);
         if (res.endpos < array_length(tokens))res.success = false;
         else {
-            // printf(">>> RESULT AST <<<\n");
-            // print_ast(res.node, 0);
+            printf(">>> RESULT AST <<<\n");
+            print_ast(res.node, 0);
         }
 
         if (!res.success) {
@@ -3183,12 +3242,12 @@ int main() {
 
         print_instructions(instructions);
 
-        // place for chaos. increment when this made you want to kys: 2
-        if (benchmark) {
-            run_benchmark(instructions);
-        } else {
-            run_program(instructions);
-        }
+        // // place for chaos. increment when this made you want to kys: 2
+        // if (benchmark) {
+        //     run_benchmark(instructions);
+        // } else {
+        //     run_program(instructions);
+        // }
 
         array_free(instructions);
 

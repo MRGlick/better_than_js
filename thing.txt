@@ -1,0 +1,62 @@
+call - tuck inst addr. goto function addr
+ret - pop from stack bottom and goto addr
+
+int add(int a, int b) return a + b;
+
+int mul(int a) return add(a, a); 
+
+int foo(int a, int b, int c) {
+    int z = add(a, b);
+    if (z > 10) return c;
+
+    return add(z, c);
+}
+
+add:
+    stack_alloc b, 4
+    stack_alloc a, 4
+    read a
+    read b
+    add
+    ret
+
+mul:
+    stack_alloc a, 4
+    read a
+    read a
+    call add
+    ret
+
+foo:
+    stack_alloc c, 4
+    stack_alloc b, 4
+    stack_alloc a, 4
+    read a;
+    read b;
+    call add
+    stack_alloc z, 4
+    read z
+    push 10
+    greater
+    jump_not l1
+    read c
+    ret
+    label l1
+    read z;
+    read c
+    call add
+    ret
+
+c: 2
+b: 3
+a: 5
+z: 8
+
+//
+
+push 5
+push 3
+push 2
+call foo
+print
+
