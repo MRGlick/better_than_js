@@ -1835,6 +1835,7 @@ X(I_STORE_STACK_PTR) \
 X(I_SET_STACK_PTR) \
 X(I_RETURN) \
 X(I_CALL) \
+X(I_START) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -1908,6 +1909,9 @@ void print_instruction(Inst inst) {
     
     switch (inst.type) {
         
+        case I_CALL:
+            printf(", #%d", inst.arg1.i_val);
+            break;
         case I_PUSH:
             printf(", ");
             print_val(inst.arg1);
@@ -2293,7 +2297,14 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, HashMap *
 
 void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, HashMap *var_map) {
     
+    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
+
     ASTNode var_args = ast.children[2];
+
+    String func_name = ast.children[1].token.text;
+    VarHeader vh = {.is_func = true, .pos = array_length(*instructions)};
+
+    HashMap_put(var_map, func_name, &vh);
 
     HashMap *cop = HashMap_copy(var_map);
     int prev_gi_stack_pos = gi_stack_pos;
@@ -2303,7 +2314,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, HashM
         String var_name = var_args.children[i].children[1].token.text;
         VarType var_type = var_args.children[i].children[0].token.var_type;
         array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}, (Val){.type = T_INT, .i_val = gi_stack_pos}));
-        VarHeader vh = (VarHeader){.pos = gi_stack_pos, .is_func = true};
+        VarHeader vh = (VarHeader){.pos = gi_stack_pos, .type = var_type};
         HashMap_put(cop, var_name, &vh);
         gi_stack_pos += get_vartype_size(var_type);
     }
@@ -2323,6 +2334,19 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, HashM
 
 void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, HashMap *var_map) {
 
+    ASTNode func_args = ast.children[1];
+
+    int len = array_length(func_args.children);
+
+    for (int i = 0; i < len; i++) {
+        generate_instructions_for_node(func_args.children[i], instructions, var_map);
+    }
+
+    String func_name = ast.children[0].token.text;
+
+    VarHeader *vh = HashMap_get(var_map, func_name);
+
+    array_append(*instructions, create_inst(I_CALL, (Val){.type = T_INT, .i_val = vh->pos}, null(Val)));
 }
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, HashMap *var_map) {
@@ -2867,11 +2891,13 @@ void print_double(double a) {
         Inst inst = instructions[inst_ptr]; \
         int val = inst_ptr + 1; \
         tuck(&val, 4); \
+        printf("allegedly tucked %d \n", *(int *)(temp_stack)); \
         inst_ptr = inst.arg1.i_val; \
         break; \
     } \
     case I_RETURN: { \
         int ret_addr = pop_bottom(int); \
+        printf("allegedly popped %d from the bottom ;) \n", ret_addr); \
         inst_ptr = ret_addr; \
         break; \
     } \
@@ -2925,6 +2951,7 @@ void run_instructions(Inst *instructions) {
     
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
         Inst inst = instructions[inst_ptr];
+        printf("inst %d \n", inst_ptr);
         execute_instruction();
     }
 }
@@ -3242,12 +3269,12 @@ int main() {
 
         print_instructions(instructions);
 
-        // // place for chaos. increment when this made you want to kys: 2
-        // if (benchmark) {
-        //     run_benchmark(instructions);
-        // } else {
-        //     run_program(instructions);
-        // }
+        // place for chaos. increment when this made you want to kys: 2
+        if (benchmark) {
+            run_benchmark(instructions);
+        } else {
+            run_program(instructions);
+        }
 
         array_free(instructions);
 
