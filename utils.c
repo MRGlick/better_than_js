@@ -20,6 +20,8 @@
 
 #define pause_err(...) {print_err(__VA_ARGS__); getchar();}
 
+#define in_range(a, b, c) ((a >= b) && (a <= c))
+
 double get_current_process_time_seconds() {
     return (double)clock() / CLOCKS_PER_SEC; 
 }

@@ -33,6 +33,13 @@
     X(ARITHOPS_END) \
     X(BINOPS_END) \
     X(OP_ASSIGN) \
+    X(MODIFY_TOKENS_START) \
+    X(OP_ASSIGN_ADD) \
+    X(OP_ASSIGN_SUB) \
+    X(OP_ASSIGN_MUL) \
+    X(OP_ASSIGN_DIV) \
+    X(OP_ASSIGN_MOD) \
+    X(MODIFY_TOKENS_END) \
     X(LPAREN) \
     X(RPAREN) \
     X(LCURLY) \

@@ -189,7 +189,6 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
-
         if (is_vartype(parts[i])) {
             Token tk = {.type = TYPE, .var_type = check_vartype(parts[i])};
             array_append(tokens, tk);
@@ -216,6 +215,31 @@ Token *tokenize_parts(String *parts) {
 
         if (String_equal(parts[i], StringRef("="))) {
             Token tk = {.type = OP_ASSIGN};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("+="))) {
+            Token tk = {.type = OP_ASSIGN_ADD};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("-="))) {
+            Token tk = {.type = OP_ASSIGN_SUB};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("*="))) {
+            Token tk = {.type = OP_ASSIGN_MUL};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("/="))) {
+            Token tk = {.type = OP_ASSIGN_DIV};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("%="))) {
+            Token tk = {.type = OP_ASSIGN_MOD};
             array_append(tokens, tk);
             continue;
         }
@@ -983,6 +1007,8 @@ ParseResult parse_func_decl_stmt(int idx);
 
 ParseResult parse_return_stmt(int idx);
 
+ParseResult parse_modify_stmt(int idx);
+
 ParseResult parse_stmt(int idx) {
 
     int start_idx = idx;
@@ -1031,6 +1057,11 @@ ParseResult parse_stmt(int idx) {
     ParseResult assign_res = parse_assign_stmt(idx);
     if (assign_res.success) {
         return create_parse_result(true, assign_res.node, assign_res.endpos);
+    }
+
+    ParseResult modify_res = parse_modify_stmt(idx);
+    if (modify_res.success) {
+        return create_parse_result(true, modify_res.node, modify_res.endpos);
     }
 
     ParseResult vardecl_assign_res = parse_vardecl_assign_stmt(idx);
@@ -1561,6 +1592,56 @@ ParseResult parse_return_stmt(int idx) {
     return create_parse_result(true, node, idx);
 }
 
+ParseResult parse_modify_stmt(int idx) {
+    if (get_token(idx).type != NAME) return null(ParseResult);
+    int name_idx = idx;
+    idx += 1;
+    if (!in_range(get_token(idx).type, MODIFY_TOKENS_START, MODIFY_TOKENS_END)) return null(ParseResult);
+    int op_idx = idx;
+    idx += 1;
+
+    ParseResult expr_res = parse_expr(idx);
+
+    if (!expr_res.success) return null(ParseResult);
+    idx = expr_res.endpos;
+
+    if (get_token(idx).type != STMT_END) return null(ParseResult);
+    idx += 1;
+
+
+    ASTNode node = create_ast_node((Token){.type = ASSIGN_STMT}, true);
+
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    TokenType op_type;
+    switch (get_token(op_idx).type) {
+        case OP_ASSIGN_ADD:
+            op_type = OP_ADD;
+            break;
+        case OP_ASSIGN_SUB:
+            op_type = OP_SUB;
+            break;
+        case OP_ASSIGN_MUL:
+            op_type = OP_MUL;
+            break;
+        case OP_ASSIGN_DIV:
+            op_type = OP_DIV;
+            break;
+        case OP_ASSIGN_MOD:
+            op_type = OP_MOD;
+            break;
+        default:
+            print_err("LITERALLY CAN'T HAPPEN. KYS.");
+            break;
+    }
+
+    ASTNode op_node = create_ast_node((Token){.type = op_type}, true);
+    array_append(op_node.children, create_ast_node(get_token(name_idx), true));
+    array_append(op_node.children, expr_res.node);
+    array_append(node.children, op_node);
+    return create_parse_result(true, node, idx);
+
+}
+
 
 /*
 Rules:
@@ -1659,7 +1740,7 @@ STACK_STORE
 */
 
 
-#define in_range(a, b, c) ((a >= b) && (a <= c))
+
 
 
 // for now, since types are already sorted for least to most precedent, this function is meaningless. but it might change in the future.
@@ -3169,14 +3250,23 @@ String *lex(StringRef text) {
 
         buf[pos++] = c;
 
+        #define check(c1, c2) (c == c1 && text.data[i + 1] == c2)
+
         bool part_of_double_symbol = (stop_char && i + 1 < text.len) && (
-            (c == '=' && text.data[i + 1] == '=')
-            || (c == '>' && text.data[i + 1] == '=')
-            || (c == '<' && text.data[i + 1] == '=')
-            || (c == '!' && text.data[i + 1] == '=')
-            || (c == '&' && text.data[i + 1] == '&')
-            || (c == '|' && text.data[i + 1] == '|')
+            check('=', '=')
+            || check('>', '=')
+            || check('<', '=')
+            || check('!', '=')
+            || check('&', '&')
+            || check('|', '|')
+            || check('+', '=')
+            || check('-', '=')
+            || check('*', '=')
+            || check('/', '=')
+            || check('%', '=')
         );
+
+        #undef check
 
         if (stop_char) {
 
