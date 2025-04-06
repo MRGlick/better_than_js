@@ -109,7 +109,6 @@ typedef struct Token {
         double double_val;
         int int_val;
         char symbol;
-        bool bool_val;
         VarType var_type; 
     };
 } Token;

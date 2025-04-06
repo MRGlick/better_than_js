@@ -1,0 +1,8 @@
+
+bool happy = maybe;
+
+if (happy) {
+    print "I'm happy today!";
+} else {
+    print "Not feeling up to it...";
+}

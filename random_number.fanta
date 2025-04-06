@@ -1,0 +1,23 @@
+
+int random_number() {
+    int res = 0;
+    int i = 0;
+    while (i < 32) {
+        res = res * 2;
+        res = res + maybe;
+        i = i + 1;
+    }
+    return res;
+}
+
+
+int n;
+print "Enter number of random numbers to generate: ";
+input n;
+
+while (n > 0) {
+
+    print random_number();
+
+    n = n - 1;
+}

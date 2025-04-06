@@ -22,7 +22,8 @@ char *KEYWORDS[] = {
     "return"
 };
 
-
+// dont ask
+#define MAYBE 2
 
 
 typedef struct ASTNode {
@@ -169,12 +170,17 @@ Token *tokenize_parts(String *parts) {
 
     for (int i = 0; i < len; i++) {
         if (String_equal(parts[i], StringRef("true"))) {
-            Token tk = {.type = BOOL, .bool_val = true};
+            Token tk = {.type = BOOL, .int_val = true};
             array_append(tokens, tk);
             continue;
         }
         if (String_equal(parts[i], StringRef("false"))) {
-            Token tk = {.type = BOOL, .bool_val = false};
+            Token tk = {.type = BOOL, .int_val = false};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("maybe")) || String_equal(parts[i], StringRef("mabye"))) {
+            Token tk = {.type = BOOL, .int_val = MAYBE};
             array_append(tokens, tk);
             continue;
         }
@@ -1775,6 +1781,7 @@ void typeify_tree_wrapper(ASTNode *node) {
 #define INSTRUCTIONS \
 X(I_INVALID) \
 X(I_PUSH) \
+X(I_PUSH_MAYBE) \
 X(I_READ) \
 X(I_READ_GLOBAL) \
 X(I_ADD) \
@@ -2496,8 +2503,12 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
             array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
             break;
         case BOOL:
-            val = (Val){.type = T_BOOL, .b_val = ast.token.bool_val};
-            array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
+            val = (Val){.type = T_BOOL, .b_val = ast.token.int_val};
+            if (ast.token.int_val == MAYBE) {
+                array_append(*instructions, create_inst(I_PUSH_MAYBE, null(Val), null(Val)));
+            } else {
+                array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
+            }
             break;
         case STRING_LITERAL:
             val = (Val){.type = T_STRING, .s_val = ast.token.text.data};
@@ -2643,6 +2654,10 @@ void print_double(double a) {
 #define execute_instruction() switch (inst.type) { \
     case I_PUSH: \
         append(&inst.arg1.any_val, get_vartype_size(inst.arg1.type)); \
+        break; \
+    case I_PUSH_MAYBE:; \
+        bool m = rand() % 2; \
+        append(&m, 1); \
         break; \
     case I_READ: { \
         append(var_stack + frame_ptr + inst.arg2.i_val, inst.arg1.i_val); \
@@ -3210,7 +3225,7 @@ void print_token(Token token, int level) {
             printf(", %.2f", token.double_val);
             break;
         case BOOL:
-            printf(", %s", token.bool_val ? "true" : "false");
+            printf(", %s", token.int_val == 1 ? "true" : ((char)token.int_val == MAYBE ? "maybe" : "false"));
             break;
         case STRING_LITERAL:
             printf(", \"%s\"", token.text.data);
