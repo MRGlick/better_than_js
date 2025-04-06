@@ -444,11 +444,14 @@ Token get_token(int idx) {
 
 ParseResult parse_expr(int idx);
 
+ParseResult parse_base_rule(int idx);
+
 ParseResult parse_add_rule(int idx);
 
 ParseResult parse_func_call(int idx);
 
 void print_ast(ASTNode node, int level);
+
 
 
 ParseResult parse_value(int idx) {
@@ -470,12 +473,18 @@ ParseResult parse_value(int idx) {
 
     if (get_token(idx).type == OP_SUB) {
         idx += 1;
-        ParseResult value_res = parse_value(idx);
-        if (value_res.success) {
-            idx = value_res.endpos;
-            if (value_res.node.token.type == INTEGER) value_res.node.token.int_val *= -1;
-            if (value_res.node.token.type == FLOAT) value_res.node.token.double_val *= -1;
-            return create_parse_result(true, value_res.node, idx);
+        ParseResult base_rule_res = parse_base_rule(idx);
+        if (base_rule_res.success) {
+            idx = base_rule_res.endpos;
+            if (base_rule_res.node.token.type == INTEGER) base_rule_res.node.token.int_val *= -1;
+            else if (base_rule_res.node.token.type == FLOAT) base_rule_res.node.token.double_val *= -1;
+            else {
+                ASTNode node = create_ast_node((Token){.type = OP_MUL}, true);
+                array_append(node.children, base_rule_res.node);
+                array_append(node.children, create_ast_node((Token){.type = INTEGER, .int_val = -1}, true));                
+                base_rule_res.node = node;
+            }
+            return create_parse_result(true, base_rule_res.node, idx);
         }
     }
 

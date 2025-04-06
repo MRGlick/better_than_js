@@ -1,4 +1,9 @@
 
+int abs(int n) {
+    if (n < 0) return n * -1;
+    return n;
+}
+
 int random_number() {
     int res = 0;
     int i = 0;
@@ -17,7 +22,7 @@ input n;
 
 while (n > 0) {
 
-    print random_number();
+    print abs(random_number());
 
     n = n - 1;
 }
