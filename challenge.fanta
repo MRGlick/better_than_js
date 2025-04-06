@@ -1,0 +1,61 @@
+
+int get_num_length(int n) {
+    int len = 0;
+    while (n > 0) {
+        n = n / 10;
+        len = len + 1;
+    }
+
+    return len;
+}
+
+int nth_digit(int num, int n) {
+    while (n > 0) {
+        num = num / 10;
+        n = n - 1;
+    }
+    return num % 10;
+}
+
+bool is_palindrome(int num) {
+    int len = get_num_length(num);
+    int start = 0;
+    int end = len;
+    while (end - 1 > start) {
+        if (nth_digit(num, end - 1) != nth_digit(num, start)) {
+            return false;
+        }
+        end = end - 1;
+        start = start + 1;
+    }
+    return true;
+}
+
+
+int max_palindrome = 1;
+int maxp_i;
+int maxp_j;
+int i = 100;
+int j = 100;
+
+while (i < 1000) {
+
+    j = 100;
+    while (j < 1000) {
+
+        int prod = i * j;
+
+        if (i * j > max_palindrome) {
+            if (is_palindrome(prod)) {
+                maxp_i = i;
+                maxp_j = j;
+                max_palindrome = prod;
+            }
+        }
+
+        j = j + 1;
+    }
+    i = i + 1;
+}
+
+print "The maximum palidrome for products of 3 digit numbers is ", max_palindrome, ", which is the product of ", maxp_i, " and ", maxp_j;
