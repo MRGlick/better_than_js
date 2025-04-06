@@ -1,0 +1,10 @@
+
+void foo(int a) {
+    if (a > 0) {
+        print a;
+        foo(a - 1);
+    }
+}
+
+foo(2);
+

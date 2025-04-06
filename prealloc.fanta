@@ -1,0 +1,17 @@
+int x = 2;
+{
+    int y = 15;
+    {
+        int z = 1935;
+        print x, " ", y, " ", z;
+    }
+}
+
+void foo(int a) {
+    int b = a + 1;
+    int c = b + 1;
+    print c;
+}
+
+
+foo(x);

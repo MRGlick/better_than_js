@@ -16,14 +16,9 @@
 
 #endif
 
-void print_err(const char *text) {
-    printf("ERROR:\n\t%s \n", text);
-}
+#define print_err(...) printf("ERROR:\n\t"__VA_ARGS__) 
 
-void pause_err(const char *text) {
-    print_err(text);
-    getchar();
-}
+#define pause_err(...) {print_err(__VA_ARGS__); getchar();}
 
 double get_current_process_time_seconds() {
     return (double)clock() / CLOCKS_PER_SEC; 
