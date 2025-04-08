@@ -5,12 +5,13 @@ struct Foo {
     ...
 }
 
+Foo var1 = new Foo(x = 1, ...);
+defer delete var1;
+
 void print_self(Foo self) :: Foo {
 
 }
 
-Foo var1 = new Foo(x = 1, ...);
-defer delete var1;
 
 var1.print_self()
 

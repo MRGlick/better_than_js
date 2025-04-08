@@ -10,7 +10,7 @@
 #include "linked_list.c"
 
 const char SYMBOLS[] = {
-    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|'
+    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|', '.'
 };
 
 char *KEYWORDS[] = {
@@ -39,7 +39,7 @@ typedef struct ASTNode {
 void print_token(Token token, int level);
 
 bool is_char_alpha(char c) {
-    return (c >= 'a' && c <= 'z');
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
 bool is_char_num(char c) {
@@ -184,6 +184,11 @@ Token *tokenize_parts(String *parts) {
         }
         if (String_equal(parts[i], StringRef("maybe")) || String_equal(parts[i], StringRef("mabye"))) {
             Token tk = {.type = BOOL, .int_val = MAYBE};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("."))) { // check this early because it conflicts with float
+            Token tk = {.type = ATTR_ACCESS};
             array_append(tokens, tk);
             continue;
         }
@@ -409,8 +414,8 @@ typedef struct ParseResult {
 
 #define create_parse_result(s, n, e) ({ASTNode abcdef = n; (ParseResult){.success = s, .node = abcdef, .endpos = e};})
 
+#define PARSE_NULL_SUCCESS(idx) ((ParseResult){.success = true, .node = null(ASTNode), .endpos = idx})
 #define PARSE_FAILED ((ParseResult){0})
-
 int parse_idx = 0;
 int parse_anchor = 0;
 Token *parse_tokens = NULL;
@@ -449,6 +454,8 @@ ParseResult parse_expr(int idx);
 
 ParseResult parse_base_rule(int idx);
 
+ParseResult parse_attr_rule(int idx);
+
 ParseResult parse_add_rule(int idx);
 
 ParseResult parse_func_call(int idx);
@@ -460,9 +467,8 @@ void print_ast(ASTNode node, int level);
 ParseResult parse_value(int idx) {
     
     ParseResult func_call_res = parse_func_call(idx);
-    if (func_call_res.success) {
-        return create_parse_result(true, func_call_res.node, func_call_res.endpos);
-    }
+    if (func_call_res.success) return func_call_res;
+    
     if (get_token(idx).type == BOOL
         || get_token(idx).type == STRING_LITERAL
         || get_token(idx).type == INTEGER
@@ -490,15 +496,17 @@ ParseResult parse_value(int idx) {
             return create_parse_result(true, base_rule_res.node, idx);
         }
     }
-
-
-
+    
+    
+    
     return PARSE_FAILED;
 }
 
+#define is_null_ast(ast) (ast.children == NULL)
+
 ParseResult parse_base_rule(int idx) {
     ParseResult value_res = parse_value(idx);
-
+    
     if (value_res.success) {
         return value_res;
     }
@@ -543,7 +551,73 @@ ParseResult parse_base_rule(int idx) {
     return PARSE_FAILED;
 }
 
-#define is_null_ast(ast) (ast.children == NULL)
+ParseResult parse_attr_rule_h(int idx) {
+    
+    if (get_token(idx).type != ATTR_ACCESS) return PARSE_NULL_SUCCESS(idx);
+    int op_idx = idx;
+    idx += 1;
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
+    int name_idx = idx;
+    idx += 1;
+
+    ParseResult attr_h_res = parse_attr_rule_h(idx);
+    
+    if (!attr_h_res.success) {
+        
+        return PARSE_FAILED;
+    }
+    
+    idx = attr_h_res.endpos;
+
+    ASTNode node = create_ast_node(get_token(op_idx), false);
+    
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    
+
+    if (!is_null_ast(attr_h_res.node)) {
+        ASTNode leaf = attr_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
+        }
+        array_insert(leaf.children, node, 0);
+
+        attr_h_res.node.complete = true;
+
+        return create_parse_result(true, attr_h_res.node, idx);
+    }
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_attr_rule(int idx) {
+    
+    ParseResult base_rule_res = parse_base_rule(idx);
+    if (!base_rule_res.success) return PARSE_FAILED;
+    idx = base_rule_res.endpos;
+
+    ParseResult attr_h_res = parse_attr_rule_h(idx);
+
+    if (!attr_h_res.success) return PARSE_FAILED;
+
+    idx = attr_h_res.endpos;
+
+    if (is_null_ast(attr_h_res.node)) {
+        return create_parse_result(true, base_rule_res.node, idx);
+    } else {
+        ASTNode leaf = attr_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
+        }
+        array_insert(leaf.children, base_rule_res.node, 0);
+        attr_h_res.node.complete = true;
+        return create_parse_result(true, attr_h_res.node, idx);
+    }
+    
+    return PARSE_FAILED;
+
+}
+
+
 
 ParseResult parse_mul_rule_h(int idx) {
 
@@ -552,7 +626,7 @@ ParseResult parse_mul_rule_h(int idx) {
         || get_token(idx).type == OP_MOD) {
         int op_idx = idx;
         idx += 1;
-        ParseResult factor_res = parse_base_rule(idx);
+        ParseResult factor_res = parse_attr_rule(idx);
         if (factor_res.success) {
             idx = factor_res.endpos;
             ParseResult term_h_res = parse_mul_rule_h(idx);
@@ -586,7 +660,7 @@ ParseResult parse_mul_rule_h(int idx) {
 }
 
 ParseResult parse_mul_rule(int idx) {
-    ParseResult factor_res = parse_base_rule(idx);
+    ParseResult factor_res = parse_attr_rule(idx);
     if (factor_res.success) {
         idx = factor_res.endpos;
         ParseResult term_h_res = parse_mul_rule_h(idx);
@@ -1023,6 +1097,10 @@ ParseResult parse_modify_stmt(int idx);
 
 ParseResult parse_defer_stmt(int idx);
 
+ParseResult parse_struct_decl(int idx);
+
+// #PARSE STMT
+
 ParseResult parse_stmt(int idx) {
 
     int start_idx = idx;
@@ -1044,64 +1122,43 @@ ParseResult parse_stmt(int idx) {
     }
 
     ParseResult if_stmt_res = parse_if_stmt(idx);
-    if (if_stmt_res.success) {
-        return create_parse_result(true, if_stmt_res.node, if_stmt_res.endpos);
-    }
+    if (if_stmt_res.success) return if_stmt_res;
 
     ParseResult block_res = parse_block(idx);
-    if (block_res.success) {
-        return create_parse_result(true, block_res.node, block_res.endpos);
-    }
+    if (block_res.success) return block_res;
 
     ParseResult print_res = parse_print_stmt(idx);
-    if (print_res.success) {
-        return create_parse_result(true, print_res.node, print_res.endpos);
-    }
+    if (print_res.success) return print_res;
 
     ParseResult while_res = parse_while_stmt(idx);
-    if (while_res.success) {
-        return create_parse_result(true, while_res.node, while_res.endpos);
-    }
+    if (while_res.success) return while_res;
 
     ParseResult vardecl_res = parse_vardecl_stmt(idx);
-    if (vardecl_res.success) {
-        return create_parse_result(true, vardecl_res.node, vardecl_res.endpos);
-    }
+    if (vardecl_res.success) return vardecl_res;
 
     ParseResult assign_res = parse_assign_stmt(idx);
-    if (assign_res.success) {
-        return create_parse_result(true, assign_res.node, assign_res.endpos);
-    }
+    if (assign_res.success) return assign_res;
 
     ParseResult modify_res = parse_modify_stmt(idx);
-    if (modify_res.success) {
-        return create_parse_result(true, modify_res.node, modify_res.endpos);
-    }
+    if (modify_res.success) return modify_res;
 
     ParseResult vardecl_assign_res = parse_vardecl_assign_stmt(idx);
-    if (vardecl_assign_res.success) {
-        return create_parse_result(true, vardecl_assign_res.node, vardecl_assign_res.endpos);
-    }
+    if (vardecl_assign_res.success) return vardecl_assign_res;
 
     ParseResult input_res = parse_input_stmt(idx);
-    if (input_res.success) { 
-        return create_parse_result(true, input_res.node, input_res.endpos);
-    }
+    if (input_res.success) return input_res;
 
     ParseResult funcdecl_res = parse_func_decl_stmt(idx);
-    if (funcdecl_res.success) {
-        return create_parse_result(true, funcdecl_res.node, funcdecl_res.endpos);
-    }
+    if (funcdecl_res.success) return funcdecl_res;
 
     ParseResult return_res = parse_return_stmt(idx);
-    if (return_res.success) {
-        return create_parse_result(true, return_res.node, return_res.endpos);
-    }
+    if (return_res.success) return return_res;
 
     ParseResult defer_res = parse_defer_stmt(idx);
-    if (defer_res.success) {
-        return create_parse_result(true, defer_res.node, defer_res.endpos);
-    }
+    if (defer_res.success) return defer_res;
+
+    ParseResult struct_res = parse_struct_decl(idx);
+    if (struct_res.success) return struct_res;
 
     return PARSE_FAILED;
 }
@@ -1202,7 +1259,7 @@ ParseResult parse_print_stmt(int idx) {
     idx = val_seq.endpos;
 
     if (get_token(idx).type != STMT_END) {
-        print_err("forgor semi colon on print?");
+        print_err("forgor semi colon on print? at idx: %d ", idx);
         return PARSE_FAILED;
     }
 
@@ -1679,8 +1736,70 @@ ParseResult parse_defer_stmt(int idx) {
     return create_parse_result(true, node, idx);
 }
 
+ParseResult _parse_vardecl_and_or_assign_decl(int idx) {
+    ParseResult decl_res = parse_vardecl_stmt(idx);
+    if (decl_res.success) return decl_res;
+
+    ParseResult decl_assign_res = parse_vardecl_assign_stmt(idx);
+    if (decl_assign_res.success) return decl_assign_res;
+
+    return PARSE_FAILED;
+}
+
+ParseResult _parse_decl_seq(int idx) {
+    ParseResult decl_res = _parse_vardecl_and_or_assign_decl(idx);
+
+    if (!decl_res.success) {
+        return PARSE_FAILED;
+    }
+
+    ASTNode node = create_ast_node((Token){.type = DECL_SEQ}, true);
+
+    do {
+        idx = decl_res.endpos;
+
+        array_append(node.children, decl_res.node);
+
+        decl_res = _parse_vardecl_and_or_assign_decl(idx);
+    } while(decl_res.success);
 
 
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_struct_decl(int idx) {
+    if (!check_keyword(get_token(idx), "struct")) return PARSE_FAILED;
+    idx += 1;
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
+    int name_idx = idx;
+    idx += 1;
+    if (get_token(idx).type != LCURLY) return PARSE_FAILED;
+    idx += 1;
+
+    ParseResult decl_seq_res = _parse_decl_seq(idx);
+
+    if (!decl_seq_res.success) return PARSE_FAILED;
+
+    idx = decl_seq_res.endpos;
+
+    if (get_token(idx).type != RCURLY) {
+        free_ast(decl_seq_res.node);
+        return PARSE_FAILED;
+    }
+    idx += 1;
+
+    ASTNode node = create_ast_node((Token){.type = STRUCT_DECL_STMT}, true);
+
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    array_append(node.children, decl_seq_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
+// #PARSE END
+
+
+// #RULES
 /*
 Rules:
 <if-stmt> -> if ( <expr> ) <stmt> | if ( <expr> ) <stmt> else <stmt>
@@ -1720,6 +1839,17 @@ Rules:
 <'add_rule> -> + <mul_rule> <'add_rule> | - <mul_rule> <'add_rule> | epsilon
 <mul_rule> -> <base_rule> <'mul_rule>
 <'mul_rule> -> * <base_rule> <'mul_rule> | / <base_rule> <'mul_rule> | epsilon
+
+<assign_seq> -> <assign_stmt> | <assign_stmt> <assign_seq>
+<new_rule> -> new <typename> (<assign_seq>)
+
+box box.dyn
+
+<attr_rule> -> <base_rule><'attr_rule>
+<'attr_rule> -> .<name><attr_rule> | epsilon
+
+box.dyn.future
+
 <base_rule> -> !<base_rule> | <value> | ( <expr> )
 <value> -> <bool> | <literal> | <variable> | <int> | <float> | <func-call>
 <bool> -> true | false
@@ -3544,7 +3674,7 @@ int main() {
         }
 
 
-        
+        // #MAIN
 
         String *parts = lex(StringRef(buf));
 
@@ -3566,20 +3696,20 @@ int main() {
             printf("INVALID EXPRESSION \n");
         }
 
-        Inst *instructions = generate_instructions(res.node);
+        // Inst *instructions = generate_instructions(res.node);
 
-        print_instructions(instructions);
+        // print_instructions(instructions);
 
-        // compile_instructions(instructions);
+        // // compile_instructions(instructions);
 
-        // place for chaos. increment when this made you want to kys: 2
-        if (benchmark) {
-            run_benchmark(instructions);
-        } else {
-            run_program(instructions);
-        }
+        // // place for chaos. increment when this made you want to kys: 2
+        // if (benchmark) {
+        //     run_benchmark(instructions);
+        // } else {
+        //     run_program(instructions);
+        // }
 
-        array_free(instructions);
+        // array_free(instructions);
 
         free_tokens(tokens);
 

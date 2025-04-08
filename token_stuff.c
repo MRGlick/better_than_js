@@ -47,6 +47,7 @@
     X(TYPE) \
     X(STMT_END) \
     X(COMMA) \
+    X(ATTR_ACCESS) \
     X(UNRESOLVED) \
     X(INVALID) \
     X(BLOCK) \
@@ -66,7 +67,9 @@
     X(RETURN_STMT) \
     X(STMT_SEQ) \
     X(VAL_SEQ) \
+    X(DECL_SEQ) \
     X(DEFER_STMT) \
+    X(STRUCT_DECL_STMT) \
     X(TOKEN_TYPE_COUNT)
 
 //              term i made up VVV

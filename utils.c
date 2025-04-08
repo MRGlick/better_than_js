@@ -16,7 +16,7 @@
 
 #endif
 
-#define print_err(...) printf("ERROR:\n\t"__VA_ARGS__) 
+#define print_err(...) {printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n");}
 
 #define pause_err(...) {print_err(__VA_ARGS__); getchar();}
 

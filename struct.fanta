@@ -1,0 +1,10 @@
+
+struct Box {
+    int x;
+    int y;
+    int w;
+    int h;
+}
+
+
+print 1;
