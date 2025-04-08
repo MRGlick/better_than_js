@@ -1895,10 +1895,10 @@ void typeify_tree_wrapper(ASTNode *node) {
     HashMap_free(var_map);
 }
 
-
+// very simple defer, TODO: make it return-aware (and breaks/continues should work when i add them)
 void move_defers_to_end(ASTNode *node) {
     ASTNode *defers = array(ASTNode, 2);
-    
+
     //                 changes during loop VVV
     for (int i = 0; i < array_length(node->children); i++) {
         if (node->children[i].token.type == DEFER_STMT) {
