@@ -66,6 +66,7 @@
     X(RETURN_STMT) \
     X(STMT_SEQ) \
     X(VAL_SEQ) \
+    X(DEFER_STMT) \
     X(TOKEN_TYPE_COUNT)
 
 //              term i made up VVV

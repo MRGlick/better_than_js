@@ -1,0 +1,13 @@
+int reverse_number(int number) {
+    int res = 0;
+    while (number > 0) {
+        res *= 10;
+        res += number % 10;
+        number /= 10;
+    }
+
+    return res;
+}
+
+
+print reverse_number(123);

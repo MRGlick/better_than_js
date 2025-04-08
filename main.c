@@ -6,6 +6,7 @@
 #include "token_stuff.c"
 #include "hashmap.c"
 #include "inttypes.h"
+#include <inttypes.h>
 #include "linked_list.c"
 
 const char SYMBOLS[] = {
@@ -19,7 +20,9 @@ char *KEYWORDS[] = {
     "print",
     "else",
     "input",
-    "return"
+    "return",
+    "defer", // TODO
+    "struct" // TODO
 };
 
 // dont ask
@@ -490,7 +493,7 @@ ParseResult parse_value(int idx) {
 
 
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 ParseResult parse_base_rule(int idx) {
@@ -515,7 +518,7 @@ ParseResult parse_base_rule(int idx) {
             return create_parse_result(true, node, idx);
         }
 
-        return null(ParseResult);
+        return PARSE_FAILED;
 
     }
 
@@ -530,14 +533,14 @@ ParseResult parse_base_rule(int idx) {
                 return create_parse_result(true, expr_res.node, idx);
             }
             free_ast(expr_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
             
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
         
     }
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 #define is_null_ast(ast) (ast.children == NULL)
@@ -573,10 +576,10 @@ ParseResult parse_mul_rule_h(int idx) {
                 return create_parse_result(true, node, idx);
             }
             free_ast(factor_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
         }
 
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     return create_parse_result(true, null(ASTNode), idx);
@@ -605,10 +608,10 @@ ParseResult parse_mul_rule(int idx) {
         }
 
         free_ast(factor_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 ParseResult parse_add_rule_h(int idx) {
@@ -651,10 +654,10 @@ ParseResult parse_add_rule_h(int idx) {
             }
 
             free_ast(term_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
 
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     return create_parse_result(true, null(ASTNode), idx);
@@ -684,10 +687,10 @@ ParseResult parse_add_rule(int idx) {
         }
 
         free_ast(term_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 ParseResult parse_rel_rule_h(int idx) {
@@ -735,10 +738,10 @@ ParseResult parse_rel_rule_h(int idx) {
             }
 
             free_ast(add_rule_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
 
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     return create_parse_result(true, null(ASTNode), idx);
@@ -766,10 +769,10 @@ ParseResult parse_rel_rule(int idx) {
         }
 
         free_ast(add_rule_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 ParseResult parse_and_rule_h(int idx) {
@@ -811,10 +814,10 @@ ParseResult parse_and_rule_h(int idx) {
             }
 
             free_ast(rel_rule_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
 
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     return create_parse_result(true, null(ASTNode), idx);
@@ -842,10 +845,10 @@ ParseResult parse_and_rule(int idx) {
         }
 
         free_ast(rel_rule_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 ParseResult parse_expr_h(int idx) {
@@ -887,10 +890,10 @@ ParseResult parse_expr_h(int idx) {
             }
 
             free_ast(and_rule_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
 
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     return create_parse_result(true, null(ASTNode), idx);
@@ -918,10 +921,10 @@ ParseResult parse_expr(int idx) {
         }
 
         free_ast(and_rule_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
-    return null(ParseResult);
+    return PARSE_FAILED;
 }
 
 #define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
@@ -932,13 +935,13 @@ ParseResult parse_stmt(int idx);
 ParseResult parse_if_stmt(int idx) {
 
     if (!check_keyword(get_token(idx), "if")) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx += 1;
 
     if (get_token(idx).type != LPAREN) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -946,14 +949,14 @@ ParseResult parse_if_stmt(int idx) {
     ParseResult expr_res = parse_expr(idx);
 
     if (!expr_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx = expr_res.endpos;
 
     if (get_token(idx).type != RPAREN) {
         free_ast(expr_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -962,7 +965,7 @@ ParseResult parse_if_stmt(int idx) {
 
     if (!stmt_res.success) {
         free_ast(expr_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     
@@ -987,7 +990,7 @@ ParseResult parse_if_stmt(int idx) {
 
         free_ast(expr_res.node);
         free_ast(stmt_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
 
     } else {
         ASTNode node = create_ast_node((Token){.type = IF_STMT}, true);
@@ -1017,6 +1020,8 @@ ParseResult parse_func_decl_stmt(int idx);
 ParseResult parse_return_stmt(int idx);
 
 ParseResult parse_modify_stmt(int idx);
+
+ParseResult parse_defer_stmt(int idx);
 
 ParseResult parse_stmt(int idx) {
 
@@ -1093,14 +1098,19 @@ ParseResult parse_stmt(int idx) {
         return create_parse_result(true, return_res.node, return_res.endpos);
     }
 
-    return null(ParseResult);
+    ParseResult defer_res = parse_defer_stmt(idx);
+    if (defer_res.success) {
+        return create_parse_result(true, defer_res.node, defer_res.endpos);
+    }
+
+    return PARSE_FAILED;
 }
 
 ParseResult parse_stmt_seq(int idx) {
     ParseResult stmt_res = parse_stmt(idx);
 
     if (!stmt_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     ASTNode node = create_ast_node((Token){.type = STMT_SEQ}, true);
@@ -1120,7 +1130,7 @@ ParseResult parse_stmt_seq(int idx) {
 ParseResult parse_block(int idx) {
 
     if (get_token(idx).type != LCURLY) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1128,14 +1138,14 @@ ParseResult parse_block(int idx) {
     ParseResult stmt_seq_res = parse_stmt_seq(idx);
 
     if (!stmt_seq_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx = stmt_seq_res.endpos;
 
     if (get_token(idx).type != RCURLY) {
         free_ast(stmt_seq_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1149,7 +1159,7 @@ ParseResult parse_val_seq(int idx) {
     ParseResult expr_res = parse_expr(idx);
 
     if (!expr_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     ASTNode node = create_ast_node((Token){.type = VAL_SEQ}, true);
@@ -1177,7 +1187,7 @@ ParseResult parse_val_seq(int idx) {
 ParseResult parse_print_stmt(int idx) {
 
     if (!check_keyword(get_token(idx), "print")) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1186,14 +1196,14 @@ ParseResult parse_print_stmt(int idx) {
 
     if (!val_seq.success) {
         printf("couldnt handle the vals!! \n");
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx = val_seq.endpos;
 
     if (get_token(idx).type != STMT_END) {
         print_err("forgor semi colon on print?");
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1206,14 +1216,14 @@ ParseResult parse_print_stmt(int idx) {
 ParseResult parse_while_stmt(int idx) {
 
     if (!check_keyword(get_token(idx), "while")) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
 
 
     if (get_token(idx).type != LPAREN) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1222,14 +1232,14 @@ ParseResult parse_while_stmt(int idx) {
     ParseResult expr_res = parse_expr(idx);
 
     if (!expr_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx = expr_res.endpos;
 
     if (get_token(idx).type != RPAREN) {
         free_ast(expr_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1238,7 +1248,7 @@ ParseResult parse_while_stmt(int idx) {
 
     if (!stmt_res.success) {
         free_ast(expr_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx = stmt_res.endpos;
@@ -1255,7 +1265,7 @@ ParseResult parse_while_stmt(int idx) {
 ParseResult parse_vardecl_stmt(int idx) {
 
     if (get_token(idx).type != TYPE) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     int type_idx = idx;
@@ -1263,7 +1273,7 @@ ParseResult parse_vardecl_stmt(int idx) {
     idx += 1;
 
     if (get_token(idx).type != NAME) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     int name_idx = idx;
@@ -1271,7 +1281,7 @@ ParseResult parse_vardecl_stmt(int idx) {
     idx += 1;
 
     if (get_token(idx).type != STMT_END) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx += 1;
@@ -1289,14 +1299,14 @@ ParseResult parse_vardecl_stmt(int idx) {
 #define check_semicolon() do { \
     if (get_token(idx).type != STMT_END) { \
         print_err("forgot semicolon!"); \
-        return null(ParseResult); \
+        return PARSE_FAILED; \
     } \
 } while (0)
 
 ParseResult parse_assign_stmt(int idx) {
     
     if (get_token(idx).type != NAME) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     int name_idx = idx;
@@ -1304,7 +1314,7 @@ ParseResult parse_assign_stmt(int idx) {
     idx += 1;
     
     if (get_token(idx).type != OP_ASSIGN) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx += 1;
@@ -1312,7 +1322,7 @@ ParseResult parse_assign_stmt(int idx) {
     ParseResult expr_res = parse_expr(idx);
     
     if (!expr_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx = expr_res.endpos;
@@ -1321,7 +1331,7 @@ ParseResult parse_assign_stmt(int idx) {
     if (get_token(idx).type != STMT_END) {
         free_ast(expr_res.node);
         print_err("forgot semicolon!");
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx += 1;
@@ -1337,7 +1347,7 @@ ParseResult parse_assign_stmt(int idx) {
 
 ParseResult parse_vardecl_assign_stmt(int idx) {
     if (get_token(idx).type != TYPE) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     
@@ -1347,7 +1357,7 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
     idx += 1;
     
     if (get_token(idx).type != NAME) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     int name_idx = idx;
@@ -1355,7 +1365,7 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
     idx += 1;
     
     if (get_token(idx).type != OP_ASSIGN) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx += 1;
@@ -1363,7 +1373,7 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
     ParseResult expr_res = parse_expr(idx);
     
     if (!expr_res.success) {
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx = expr_res.endpos;
@@ -1372,7 +1382,7 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
     if (get_token(idx).type != STMT_END) {
         free_ast(expr_res.node);
         print_err("forgot semicolon!");
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     
     idx += 1;
@@ -1390,17 +1400,17 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
 
 ParseResult parse_input_stmt(int idx) {
 
-    if (!check_keyword(get_token(idx), "input")) return null(ParseResult);
+    if (!check_keyword(get_token(idx), "input")) return PARSE_FAILED;
 
     idx += 1;
 
-    if (get_token(idx).type != NAME) return null(ParseResult);
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
 
     Token var_token = get_token(idx);
 
     idx += 1;
 
-    if (get_token(idx).type != STMT_END) return null(ParseResult);
+    if (get_token(idx).type != STMT_END) return PARSE_FAILED;
 
     idx += 1;
 
@@ -1412,10 +1422,10 @@ ParseResult parse_input_stmt(int idx) {
 }
 
 ParseResult parse_func_arg(int idx) {
-    if (get_token(idx).type != TYPE) return null(ParseResult);
+    if (get_token(idx).type != TYPE) return PARSE_FAILED;
     int type_idx = idx;
     idx += 1;
-    if (get_token(idx).type != NAME) return null(ParseResult);
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
     int name_idx = idx;
     idx += 1;
     ASTNode node = create_ast_node((Token){.type = FUNC_ARG}, true);
@@ -1432,13 +1442,13 @@ ParseResult parse_func_args_seq(int idx) {
     if (get_token(idx).type == COMMA) {
         idx += 1;
         ParseResult func_arg_res = parse_func_arg(idx);
-        if (!func_arg_res.success) return null(ParseResult);
+        if (!func_arg_res.success) return PARSE_FAILED;
         idx = func_arg_res.endpos;
 
         ParseResult func_args_res = parse_func_args_seq(idx);
         if (!func_args_res.success) {
             free_ast(func_arg_res.node);
-            return null(ParseResult);
+            return PARSE_FAILED;
         }
         idx = func_args_res.endpos;
 
@@ -1484,26 +1494,26 @@ ParseResult parse_func_args_seq(int idx) {
 
 ParseResult parse_func_decl_stmt(int idx) {
 
-    if (get_token(idx++).type != TYPE) return null(ParseResult);
+    if (get_token(idx++).type != TYPE) return PARSE_FAILED;
     int type_idx = idx - 1;
-    if (get_token(idx++).type != NAME) return null(ParseResult);
+    if (get_token(idx++).type != NAME) return PARSE_FAILED;
     int name_idx = idx - 1;
-    if (get_token(idx++).type != LPAREN) return null(ParseResult);
+    if (get_token(idx++).type != LPAREN) return PARSE_FAILED;
 
     ParseResult func_args_res = parse_func_args_seq(idx);
-    if (!func_args_res.success) return null(ParseResult);
+    if (!func_args_res.success) return PARSE_FAILED;
     idx = func_args_res.endpos;
 
     if (get_token(idx++).type != RPAREN) {
         if (!is_null_ast(func_args_res.node)) free_ast(func_args_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     ParseResult stmt_res = parse_stmt(idx);
 
     if (!stmt_res.success) {
         if (!is_null_ast(func_args_res.node)) free_ast(func_args_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx = stmt_res.endpos;
@@ -1537,11 +1547,11 @@ ParseResult parse_func_decl_stmt(int idx) {
 
 ParseResult parse_func_call(int idx) {
 
-    if (get_token(idx).type != NAME) return null(ParseResult);
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
     int name_idx = idx;
     idx += 1;
 
-    if (get_token(idx).type != LPAREN) return null(ParseResult);
+    if (get_token(idx).type != LPAREN) return PARSE_FAILED;
     idx += 1;
 
     ParseResult val_seq_res = parse_val_seq(idx);
@@ -1554,13 +1564,13 @@ ParseResult parse_func_call(int idx) {
             array_append(node.children, create_ast_node((Token){.type = VAL_SEQ}, true));
             return create_parse_result(true, node, idx);
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     idx = val_seq_res.endpos;
 
     if (get_token(idx).type != RPAREN) {
         free_ast(val_seq_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     idx += 1;
 
@@ -1572,7 +1582,7 @@ ParseResult parse_func_call(int idx) {
 }
 
 ParseResult parse_return_stmt(int idx) {
-    if (!check_keyword(get_token(idx), "return")) return null(ParseResult);
+    if (!check_keyword(get_token(idx), "return")) return PARSE_FAILED;
 
     idx += 1;
 
@@ -1582,14 +1592,14 @@ ParseResult parse_return_stmt(int idx) {
             idx += 1;
             return create_parse_result(true, create_ast_node((Token){.type = RETURN_STMT}, true), idx);
         }
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
 
     idx = expr_res.endpos;
 
     if (get_token(idx).type != STMT_END) {
         free_ast(expr_res.node);
-        return null(ParseResult);
+        return PARSE_FAILED;
     }
     idx += 1;
 
@@ -1602,19 +1612,19 @@ ParseResult parse_return_stmt(int idx) {
 }
 
 ParseResult parse_modify_stmt(int idx) {
-    if (get_token(idx).type != NAME) return null(ParseResult);
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
     int name_idx = idx;
     idx += 1;
-    if (!in_range(get_token(idx).type, MODIFY_TOKENS_START, MODIFY_TOKENS_END)) return null(ParseResult);
+    if (!in_range(get_token(idx).type, MODIFY_TOKENS_START, MODIFY_TOKENS_END)) return PARSE_FAILED;
     int op_idx = idx;
     idx += 1;
 
     ParseResult expr_res = parse_expr(idx);
 
-    if (!expr_res.success) return null(ParseResult);
+    if (!expr_res.success) return PARSE_FAILED;
     idx = expr_res.endpos;
 
-    if (get_token(idx).type != STMT_END) return null(ParseResult);
+    if (get_token(idx).type != STMT_END) return PARSE_FAILED;
     idx += 1;
 
 
@@ -1650,6 +1660,25 @@ ParseResult parse_modify_stmt(int idx) {
     return create_parse_result(true, node, idx);
 
 }
+
+ParseResult parse_defer_stmt(int idx) {
+    if (!check_keyword(get_token(idx), "defer")) return PARSE_FAILED;
+
+    idx += 1;
+
+    ParseResult stmt_res = parse_stmt(idx);
+
+    if (!stmt_res.success) return PARSE_FAILED;
+
+    idx = stmt_res.endpos;
+
+
+    ASTNode node = create_ast_node((Token){.type = DEFER_STMT}, true);
+    array_append(node.children, stmt_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
 
 
 /*
@@ -1864,6 +1893,43 @@ void typeify_tree_wrapper(ASTNode *node) {
     typeify_tree(node, var_map);
     
     HashMap_free(var_map);
+}
+
+
+void move_defers_to_end(ASTNode *node) {
+    ASTNode *defers = array(ASTNode, 2);
+    
+    //                 changes during loop VVV
+    for (int i = 0; i < array_length(node->children); i++) {
+        if (node->children[i].token.type == DEFER_STMT) {
+            array_append(defers, node->children[i]);
+            array_remove(node->children, i);
+            i--; // because we deleted an item from the array while iterating over it (what could possibly go wrong)
+        }
+    }
+    
+    int defer_count = array_length(defers);
+    for (int i = 0; i < defer_count; i++) {
+        array_append(node->children, defers[i].children[0]); // we dont actually care about the defer, only about it's statement
+    }
+    
+    // guranteed to be the same
+    // child_count = array_length(node->children);
+    int child_count = array_length(node->children);
+    
+    for (int i = 0; i < child_count; i++) {
+        move_defers_to_end(&node->children[i]);
+    }
+
+
+    array_free(defers);
+}
+
+
+void preprocess_ast(ASTNode *ast) {
+    typeify_tree_wrapper(ast);
+    move_defers_to_end(ast);
+    // and anything else i might wanna do
 }
 
 
@@ -3179,6 +3245,49 @@ void run_benchmark(Inst *instructions) {
     print_text_buffer();
 }
 
+// void compile_instructions(Inst *instructions) {
+//     FILE *file = fopen("out.asm", "w");
+
+//     if (file == NULL) {
+//         print_err("Failed to open output file!");
+//         return;
+//     }
+
+//     #define write(...) fprintf(file, __VA_ARGS__)
+
+//     int len = array_length(instructions);
+
+//     write("section .text \n");
+//     write("\tglobal _start \n");
+//     write("_start: \n");
+
+//     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
+//         Inst inst = instructions[inst_ptr];
+
+//         printf("; %s\n", inst_names[inst.type]);
+//         write("; %s\n", inst_names[inst.type]);
+//         switch (inst.type) {
+//             case I_STACK_PTR_ADD:
+//                 write("\tadd rsp, %d \n", inst.arg1.i_val);
+//                 break;
+//             case I_PUSH:
+//                 if (inst.arg1.type == T_INT) {
+//                     write("\tpush %d \n", inst.arg1.i_val);
+//                 }
+//                 break;
+//             case I_ADD:
+//                 write("\tpop rax \n\tpop rbx \n\tadd rax, rbx \n\tpush rax \n");
+//                 break;
+//             default:
+//                 break;
+//         }
+//     }
+
+//     fclose(file);
+
+// }
+
+
 
 
 
@@ -3444,7 +3553,9 @@ int main() {
         set_parse_tokens(tokens);
 
         ParseResult res = parse_stmt_seq(0);
-        typeify_tree_wrapper(&res.node);
+        
+        preprocess_ast(&res.node);
+
         if (res.endpos < array_length(tokens))res.success = false;
         else {
             printf(">>> RESULT AST <<<\n");
@@ -3458,6 +3569,8 @@ int main() {
         Inst *instructions = generate_instructions(res.node);
 
         print_instructions(instructions);
+
+        // compile_instructions(instructions);
 
         // place for chaos. increment when this made you want to kys: 2
         if (benchmark) {

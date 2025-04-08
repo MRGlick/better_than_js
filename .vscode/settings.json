@@ -9,6 +9,7 @@
         "utility": "c",
         "initializer_list": "c",
         "sstream": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "inttypes.h": "c"
     }
 }
