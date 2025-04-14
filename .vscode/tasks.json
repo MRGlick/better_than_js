@@ -7,7 +7,7 @@
             "args": [
                 "-fcolor-diagnostics",
                 "-fansi-escape-codes",
-                "-pg",
+                "-O3",
                 "-g",
                 "${file}",
                 "-o",

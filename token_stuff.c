@@ -75,6 +75,7 @@
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)
 #define VAR_TYPES \
+    X(T_NULL) \
     X(T_VOID) \
     X(T_BOOL) \
     X(T_INT) \
@@ -89,6 +90,7 @@ typedef enum VarType {
 } VarType;
 
 char *var_type_names[] = {
+    "null(bad)",
     "void",
     "bool",
     "int",

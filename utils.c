@@ -16,9 +16,9 @@
 
 #endif
 
-#define print_err(...) {printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n");}
+#define print_err(...) {printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n"); getchar();}
 
-#define pause_err(...) {print_err(__VA_ARGS__); getchar();}
+// #define pause_err(...) {print_err(__VA_ARGS__); getchar();}
 
 #define in_range(a, b, c) ((a >= b) && (a <= c))
 
@@ -29,5 +29,15 @@ double get_current_process_time_seconds() {
 long get_current_process_time() {
     return clock();
 }
+
+double trunc(double a) {
+    return a > 0 ? (long long)a : -(long long)(-a);
+}
+
+double fmod(double a, double b) {
+    return a - trunc(a / b) * b;
+}
+
+#define lerp(a, b, w) (a + (b - a) * w)
 
 #endif

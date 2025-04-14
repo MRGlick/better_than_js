@@ -6,8 +6,8 @@ avg_time = 0
 
 laps = 0
 while laps < 100:
-    start = time.process_time()
-    num = 2000003
+    start = time.time()
+    num = 78953803
     is_prime = True
 
     i = 2
@@ -16,7 +16,7 @@ while laps < 100:
         if num % i == 0:
             is_prime = False
         i = i + 1
-    end = time.process_time()
+    end = time.time()
 
     avg_time += end - start
     if laps % 10 == 0: print("Time: ", end - start)

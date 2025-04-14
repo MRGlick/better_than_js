@@ -1,12 +1,13 @@
 int num = 78953803;
 
 bool prime = true;
-
 int i = 2;
 
-while (i < num / 2 && prime) {
-    if (num % i == 0) prime = false;
-    i = i + 1;
+int helper = num / 2;
+
+while (i < helper && prime) {
+    prime = prime && (num % i);
+    i += 1;
 }
 
 if (prime) print "It's prime!";

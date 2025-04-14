@@ -1,0 +1,10 @@
+
+int i = 0;
+int sum = 0;
+int number = 2;
+while (i < 1000000) {
+    sum += number;
+    i += 1;
+}
+
+print sum;

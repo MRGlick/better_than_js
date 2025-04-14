@@ -36,14 +36,14 @@ void * _create_array(int item_size, int size) {
     return header + 1;
 } 
 
-int array_length(void *array) {
+int array_length(const void *array) {
     if (array == NULL) return -1;
     ArrayHeader *header = array_header(array);
 
     return header->length;
 }
 
-int array_size(void *array) {
+int array_size(const void *array) {
     if (array == NULL) return -1;
     ArrayHeader *header = array_header(array);
 

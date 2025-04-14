@@ -1,0 +1,7 @@
+bool boolean = true;
+
+print boolean;
+
+boolean = false;
+
+print boolean;
