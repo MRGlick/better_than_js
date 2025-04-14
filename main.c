@@ -2111,7 +2111,7 @@ void _fold(ASTNode *node) {
         node->token.type = FLOAT; \
         node->token.double_val = fmod(num1, num2); \
         node_clear_children(node); \
-
+    }
 
     switch (node->token.type) {
         case OP_ADD:
