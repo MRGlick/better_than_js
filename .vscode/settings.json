@@ -11,5 +11,12 @@
         "sstream": "c",
         "stdlib.h": "c",
         "inttypes.h": "c"
+    },
+    "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false,
+        "c": false
     }
 }

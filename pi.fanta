@@ -1,0 +1,13 @@
+float t = 1;
+float res = 0;
+
+int m = 1;
+while (m < 4000000) {
+
+    res += t / m;
+    t *= -1;
+
+    m += 2;
+}
+
+print res * 4;

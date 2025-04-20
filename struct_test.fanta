@@ -1,0 +1,11 @@
+
+struct Foo {
+    float x;
+    int y = 2;
+}
+
+void make_foo(int x, int y) {
+    int z = x + y;
+
+    return z;
+}

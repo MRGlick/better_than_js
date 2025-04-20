@@ -14,7 +14,7 @@ typedef struct ArrayHeader {
     int padding;
 } ArrayHeader;
 
-ArrayHeader *array_header(void *array) {
+ArrayHeader *array_header(const void *array) {
     return ((ArrayHeader *)array - 1);
 }
 

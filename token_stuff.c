@@ -12,6 +12,7 @@
     X(STRING_LITERAL) \
     X(INTEGER) \
     X(FLOAT) \
+    X(OP_UNARY_MINUS) \
     X(BOOLOPS_START) \
     X(OP_NOT) \
     X(BINOPS_START) \
@@ -99,6 +100,26 @@ char *var_type_names[] = {
     "struct"
 };
 
+static inline int get_vartype_size(VarType t) {
+    switch (t) {
+        case T_INT:
+            return 4;
+            break;
+        case T_STRING:
+        case T_FLOAT:
+        case T_STRUCT:
+            return 8;
+            break;
+        case T_BOOL:
+            return 1;
+            break;
+        default:
+            print_err("Can't get vartype size of type [%d]!", (int)t);
+            return -1;
+            break;
+    }
+}
+
 // Generate the enum
 typedef enum TokenType {
     #define X(name) name,
@@ -116,13 +137,13 @@ struct TokenNode;
 
 typedef struct Token {
     TokenType type;
+    VarType var_type; 
     union {
         String text;
         struct TokenNode *unresolved_tokens;
         double double_val;
         int int_val;
         char symbol;
-        VarType var_type; 
     };
 } Token;
 

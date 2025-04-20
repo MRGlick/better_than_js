@@ -1,10 +1,14 @@
 
-struct Box {
-    int x;
-    int y;
-    int w;
-    int h;
+struct Vec2 {
+    float x;
+    float y;
 }
 
+struct Rect {
+    Vec2 pos;
+    Vec2 size;
+}
 
-print 1;
+Rect rect;
+
+print rect.pos.x;

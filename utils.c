@@ -18,6 +18,8 @@
 
 #define print_err(...) {printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n"); getchar();}
 
+#define print_todo(...) {printf("TODO: \n\t"); printf(__VA_ARGS__); printf("\n\t on line #%d \n", __LINE__);}
+
 // #define pause_err(...) {print_err(__VA_ARGS__); getchar();}
 
 #define in_range(a, b, c) ((a >= b) && (a <= c))
