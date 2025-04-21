@@ -2236,7 +2236,10 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         printf("putting func %s of type %s \n", node->children[1].token.text.data, var_type_names[node->children[0].token.var_type]);
 
-        HashMap_put(var_map, node->children[1].token.text, (int)node->children[0].token.var_type);
+        VarHeader vh = create_func_header(node->children[1].token.text, node->children[0].token.var_type, -1
+            , node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null);
+
+        HashMap_put(var_map, node->children[1].token.text, &vh);
         
         var_map = HashMap_copy(var_map);
 
@@ -2254,7 +2257,9 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             VarType var_type = func_args.children[i].children[0].token.var_type;
 
-            HashMap_put(var_map, var_name, (int)var_type);
+            VarHeader vh = create_var_header(var_name, var_type, -1, var_type == T_STRUCT ? func_args.children[i].children[0].token.text : String_null);
+
+            HashMap_put(var_map, var_name, &vh);
         }
 
         ASTNode *func_scope = &node->children[3];
@@ -2826,7 +2831,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
     gi_stack_pos += size;
 }
 
-
+// #UPDATE FOR STRUCTS
 void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     String var_name = ast.children[0].token.text;
 
@@ -3052,7 +3057,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
 
     String func_name = ast.children[1].token.text;
     VarType var_type = ast.children[0].token.var_type;
-    VarHeader vh = create_func_header(func_name, var_type, array_length(instructions) - 1, var_type == T_STRUCT ? ast.children[0].token.text : String_null);
+    VarHeader vh = create_func_header(func_name, var_type, array_length(*instructions) - 1, var_type == T_STRUCT ? ast.children[0].token.text : String_null);
 
     add_varheader_to_map_list(var_map_list, func_name, &vh);
 
@@ -3099,6 +3104,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
     (*instructions)[jump_inst_idx].arg1.i_val = array_length(*instructions);
 }
 
+// #UPDATE FOR STRUCTS
 void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
 
     ASTNode func_args = ast.children[1];

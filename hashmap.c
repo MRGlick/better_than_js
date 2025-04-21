@@ -182,7 +182,7 @@ void *HashMap_get(HashMap *map, String key) {
         current = current->next;
     }
 
-    nokey: printf("Key doesn't exist in HashMap! \n");
+    nokey: printf("Key '%s' doesn't exist in HashMap! \n", key.data);
     printf("map: \n");
     HashMap_print(map);
 
