@@ -1,14 +1,15 @@
 
-struct Vec2 {
-    float x;
-    float y;
+struct Contract {
+    int days;
+    int cost;
+    int size;
 }
 
-struct Rect {
-    Vec2 pos;
-    Vec2 size;
+struct House {
+    Contract c;
 }
 
-Rect rect;
+Contract c = new Contract();
+defer delete c;
 
-print rect.pos.x;
+print c.days;

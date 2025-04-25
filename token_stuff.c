@@ -34,6 +34,8 @@
     X(ARITHOPS_END) \
     X(BINOPS_END) \
     X(OP_ASSIGN) \
+    X(ASSIGN_SEQ) \
+    X(OP_NEW) \
     X(MODIFY_TOKENS_START) \
     X(OP_ASSIGN_ADD) \
     X(OP_ASSIGN_SUB) \
@@ -71,6 +73,7 @@
     X(DECL_SEQ) \
     X(DEFER_STMT) \
     X(STRUCT_DECL_STMT) \
+    X(DELETE_STMT) \
     X(TOKEN_TYPE_COUNT)
 
 //              term i made up VVV

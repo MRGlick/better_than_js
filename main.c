@@ -22,7 +22,9 @@ char *KEYWORDS[] = {
     "input",
     "return",
     "defer", // TODO
-    "struct" // TODO
+    "struct", // TODO
+    "new",
+    "delete"
 };
 
 // dont ask
@@ -480,6 +482,7 @@ typedef struct ParseResult {
 
 #define PARSE_FAILED_SUCCESSFULLY(idx) ((ParseResult){.success = true, .node = null(ASTNode), .endpos = idx})
 #define PARSE_FAILED ((ParseResult){0})
+#define PARSE_FAILED_PRINT ({printf("Parse failed on line %d! \n", __LINE__); PARSE_FAILED;})
 int parse_idx = 0;
 int parse_anchor = 0;
 Token *parse_tokens = NULL;
@@ -525,6 +528,7 @@ Token *get_token_ref(int idx) {
 // +: [+: [2, 3]]
 // +: [1, +: [2, 3]]
 
+// #PARSE START
 
 ParseResult parse_expr(int idx);
 
@@ -565,7 +569,10 @@ ParseResult parse_postfix_seq(int idx);
 ParseResult parse_primary(int idx);
 
 ParseResult parse_unary_rule(int idx);
-// ParseResult parse_func_call(int idx);
+
+ParseResult parse_new_rule(int idx);
+
+ParseResult parse_delete_stmt(int idx);
 
 void print_ast(ASTNode node, int level);
 
@@ -573,8 +580,6 @@ void print_ast(ASTNode node, int level);
 
 ParseResult parse_value(int idx) {
     
-    printf("parsing value \n");
-
     if (get_token(idx).type == BOOL
         || get_token(idx).type == STRING_LITERAL
         || get_token(idx).type == INTEGER
@@ -583,7 +588,6 @@ ParseResult parse_value(int idx) {
     ) { 
         int token_idx = idx;
         idx += 1;
-        printf("successfully parsed value \n");
         return ((ParseResult){.success = 1, .node = create_ast_node(get_token(token_idx), 1), .endpos = idx});
     }
     
@@ -594,12 +598,13 @@ ParseResult parse_value(int idx) {
 
 ParseResult parse_base_rule(int idx) {
 
-    printf("parsing base rule \n");
-
     ParseResult value_res = parse_value(idx);
+    if (value_res.success) return value_res;
     
-    if (value_res.success) {
-        return value_res;
+
+    ParseResult new_res = parse_new_rule(idx);
+    if (new_res.success) {
+        return new_res;
     }
 
     if (get_token(idx).type == LPAREN) {
@@ -664,16 +669,9 @@ ParseResult parse_attr_rule_h(int idx) {
 
 ParseResult parse_attr_rule(int idx) {
     
-
-
-    printf("parsing attr rule \n");
-    printf("idx: %d \n", idx);
-
     ParseResult base_rule_res = parse_base_rule(idx);
     if (!base_rule_res.success) return PARSE_FAILED;
     idx = base_rule_res.endpos;
-
-    printf("parsed base rule \n");
 
     ParseResult attr_h_res = parse_attr_rule_h(idx);
 
@@ -1154,8 +1152,6 @@ ParseResult parse_if_stmt(int idx) {
 
 ParseResult parse_stmt(int idx) {
 
-    printf("hello?? \n");
-
     int start_idx = idx;
 
     ParseResult expr_res = parse_expr(idx);
@@ -1174,12 +1170,8 @@ ParseResult parse_stmt(int idx) {
         
     }
 
-    printf("tried expr \n");
-
     ParseResult if_stmt_res = parse_if_stmt(idx);
     if (if_stmt_res.success) return if_stmt_res;
-
-    printf("tried if \n");
 
     ParseResult block_res = parse_block(idx);
     if (block_res.success) return block_res;
@@ -1216,6 +1208,9 @@ ParseResult parse_stmt(int idx) {
 
     ParseResult struct_res = parse_struct_decl(idx);
     if (struct_res.success) return struct_res;
+
+    ParseResult delete_res = parse_delete_stmt(idx);
+    if (delete_res.success) return delete_res;
 
     return PARSE_FAILED;
 }
@@ -1316,7 +1311,7 @@ ParseResult parse_print_stmt(int idx) {
     idx = val_seq.endpos;
 
     if (get_token(idx).type != STMT_END) {
-        print_err("forgor semi colon on print? at idx: %d ", idx);
+        print_err("forgor semi colon on print? expected 'STMT_END' but got: '%s' ", token_type_names[get_token(idx).type]);
         return PARSE_FAILED;
     }
 
@@ -1572,8 +1567,6 @@ ParseResult parse_func_arg(int idx) {
 
 ParseResult parse_func_args_seq(int idx) {
     
-    printf("parsing func args from idx: %d \n", idx);
-
     if (get_token(idx).type == COMMA) {
         idx += 1;
         ParseResult func_arg_res = parse_func_arg(idx);
@@ -1860,12 +1853,8 @@ ParseResult _parse_decl_seq(int idx) {
 
 ParseResult parse_struct_decl(int idx) {
 
-    printf("parsing struct decl \n ");
-
     if (!check_keyword(get_token(idx), "struct")) return PARSE_FAILED;
     idx += 1;
-
-    printf("parsed struct kw \n");
 
     if (get_token(idx).type != NAME) return PARSE_FAILED;
     int name_idx = idx;
@@ -1874,8 +1863,6 @@ ParseResult parse_struct_decl(int idx) {
     idx += 1;
 
     ParseResult decl_seq_res = _parse_decl_seq(idx);
-
-    printf("parsed decl seq \n");
 
     if (!decl_seq_res.success) return PARSE_FAILED;
 
@@ -1892,13 +1879,10 @@ ParseResult parse_struct_decl(int idx) {
     array_append(node.children, create_ast_node(get_token(name_idx), true));
     array_append(node.children, decl_seq_res.node);
 
-    printf("struct successful \n");
-
     return create_parse_result(true, node, idx);
 }
 
 ParseResult parse_postfix(int idx) {
-    printf("parsing postfix \n");
     if (get_token(idx).type == ATTR_ACCESS) {
         idx += 1;
         if (get_token(idx).type != NAME) return PARSE_FAILED;
@@ -1906,12 +1890,21 @@ ParseResult parse_postfix(int idx) {
         idx += 1;
         ASTNode node = create_ast_node((Token){.type = ATTR_ACCESS}, false);
         array_append(node.children, create_ast_node(get_token(name_idx), true));
-        printf("parsed postfix \n");
         return create_parse_result(true, node, idx);
     }
 
     if (get_token(idx).type == LPAREN) {
         idx += 1;
+
+        if (get_token(idx).type == RPAREN) {
+            idx++;
+
+            ASTNode node = create_ast_node((Token){.type = FUNC_CALL}, false);
+
+            array_append(node.children, create_ast_node((Token){.type = VAL_SEQ}, true));
+            return create_parse_result(true, node, idx);
+        }
+
         ParseResult val_seq_res = parse_val_seq(idx);
         if (!val_seq_res.success) return PARSE_FAILED;
         idx = val_seq_res.endpos;
@@ -1926,11 +1919,9 @@ ParseResult parse_postfix(int idx) {
         ASTNode node = create_ast_node((Token){.type = FUNC_CALL}, false);
 
         array_append(node.children, val_seq_res.node);
-        printf("parsed postfix \n");
         return create_parse_result(true, node, idx);
     }
 
-    printf("parsed postfix \n");
     return PARSE_FAILED_SUCCESSFULLY(idx);
 }
 // .b.c.d
@@ -1938,33 +1929,29 @@ ParseResult parse_postfix_seq(int idx) {
     ParseResult postfix_res = parse_postfix(idx);
 
     if (!postfix_res.success) {
-        printf("early return 1\n");
         return PARSE_FAILED;
     }
 
     idx = postfix_res.endpos;
     
     if (is_null_ast(postfix_res.node)) {
-        printf("early return 2\n");
         return PARSE_FAILED_SUCCESSFULLY(idx);
     }
 
     ASTNode node = postfix_res.node;
-    ASTNode curr = node;
+    ASTNode *curr = &node;
 
-    printf("parsing other postfix \n");
     postfix_res = parse_postfix(idx);
 
 
     while (postfix_res.success && !is_null_ast(postfix_res.node)) {
         printf("%d \n", idx);
         idx = postfix_res.endpos;
-        array_insert(curr.children, postfix_res.node, 0);
-        curr = curr.children[0];
+        array_insert(postfix_res.node.children, node, 0);
+        node = postfix_res.node;
         postfix_res = parse_postfix(idx);
     }
 
-    printf("finished postfix thing \n");
     print_ast(node, 0);
 
     return create_parse_result(true, node, idx);
@@ -1972,7 +1959,6 @@ ParseResult parse_postfix_seq(int idx) {
 
 ParseResult parse_primary(int idx) {
 
-    printf("parsing primary \n");
 
     ParseResult base_rule_res = parse_base_rule(idx);
 
@@ -2001,8 +1987,6 @@ ParseResult parse_primary(int idx) {
 
 ParseResult parse_unary_rule(int idx) {
     
-    printf("parsing unary rule \n");
-
     ParseResult primary_res = parse_primary(idx);
     if (primary_res.success) return primary_res;
 
@@ -2013,7 +1997,6 @@ ParseResult parse_unary_rule(int idx) {
         idx = unary_res.endpos; \
         ASTNode node = create_ast_node((Token){.type = tok}, true); \
         array_append(node.children, unary_res.node); \
-        printf("successfully parsed unary_rule \n"); \
         print_ast(node, 0); \
         return create_parse_result(true, node, idx); \
     }
@@ -2025,6 +2008,108 @@ ParseResult parse_unary_rule(int idx) {
     #undef UNARY_OP_LOGIC
 
     return PARSE_FAILED;
+}
+
+ParseResult _parse_assign(int idx) {
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
+    int name_idx = idx;
+    idx++;
+    if (get_token(idx).type != OP_ASSIGN) return PARSE_FAILED;
+    idx++;
+    ParseResult expr_res = parse_expr(idx);
+    if (!expr_res.success) return PARSE_FAILED;
+    idx = expr_res.endpos;
+
+    ASTNode node = create_ast_node((Token){.type = OP_ASSIGN}, true);
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    array_append(node.children, expr_res.node);
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_assign_seq(int idx) {
+
+    ParseResult assign_res = _parse_assign(idx);
+
+    if (!assign_res.success) {
+        return PARSE_FAILED;
+    }
+
+    ASTNode node = create_ast_node((Token){.type = ASSIGN_SEQ}, true);
+
+    do {
+
+        
+        idx = assign_res.endpos;
+        
+        array_append(node.children, assign_res.node);
+        
+        if (get_token(idx).type != COMMA) {
+            return create_parse_result(true, node, idx);
+        }
+        
+        idx += 1;
+        
+        assign_res = _parse_assign(idx);
+    } while(assign_res.success);
+    
+    
+    return create_parse_result(true, node, idx);
+
+}
+
+ParseResult parse_new_rule(int idx) {
+    if (!check_keyword(get_token(idx), "new")) return PARSE_FAILED_PRINT;
+    idx++;
+    if (get_token(idx).type != NAME) return PARSE_FAILED_PRINT;
+    int name_idx = idx++;
+
+    if (get_token(idx).type != LPAREN) return PARSE_FAILED_PRINT;
+    idx++;
+
+    if (get_token(idx).type == RPAREN) { // explicitly handle the empty case
+        idx++;
+        ASTNode node = create_ast_node((Token){.type = OP_NEW}, true);
+        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        array_append(node.children, create_ast_node((Token){.type = ASSIGN_SEQ}, true));
+
+        return create_parse_result(true, node, idx);
+    }
+
+    ParseResult assign_seq_res = parse_assign_seq(idx);
+    if (!assign_seq_res.success) return PARSE_FAILED_PRINT;
+    idx = assign_seq_res.endpos;
+
+    print_ast(assign_seq_res.node, 0);
+
+    if (get_token(idx).type != RPAREN) {
+        free_ast(assign_seq_res.node);
+        return PARSE_FAILED_PRINT;
+    }
+    idx++;
+
+    ASTNode node = create_ast_node((Token){.type = OP_NEW}, true);
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    array_append(node.children, assign_seq_res.node);
+
+    return create_parse_result(true, node, idx);
+    
+}
+
+ParseResult parse_delete_stmt(int idx) {
+    if (!check_keyword(get_token(idx), "delete")) return PARSE_FAILED;
+    idx++;
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
+    int name_idx = idx;
+    idx++;
+    if (get_token(idx).type != STMT_END) return PARSE_FAILED;
+    idx++;
+
+    ASTNode node = create_ast_node((Token){.type = DELETE_STMT}, true);
+    array_append(node.children, create_ast_node(get_token(name_idx), true));
+
+
+    return create_parse_result(true, node, idx);
 }
 
 
@@ -2234,8 +2319,6 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         }
     } else if (node->token.type == FUNC_DECL_STMT) {
 
-        printf("putting func %s of type %s \n", node->children[1].token.text.data, var_type_names[node->children[0].token.var_type]);
-
         VarHeader vh = create_func_header(node->children[1].token.text, node->children[0].token.var_type, -1
             , node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null);
 
@@ -2244,8 +2327,6 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         var_map = HashMap_copy(var_map);
 
         HashMap_print(var_map);
-
-        printf("copied hashmap \n");
 
         ASTNode func_args = node->children[2];
 
@@ -2294,8 +2375,6 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         VarHeader vh = create_struct_header(name, arr, offset);
 
-        printf("putting struct '%s' \n", name.data);
-
         HashMap_put(var_map, name, &vh);
 
         HashMap_print(var_map);
@@ -2327,8 +2406,30 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         node->expected_return_type = attr_header->var_type;
         node->return_type_name = attr_header->var_type == T_STRUCT ? attr_header->var_struct_name : StringRef(var_type_names[attr_header->var_type]);
 
-        printf("assigned return type name '%s' \n", node->return_type_name.data);
+    } else if (node->token.type == OP_NEW) {
+        String struct_name = node->children[0].token.text;
+        VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
+        if (!struct_vh) {
+            print_err("can't create new '%s', as that struct is not defined!", struct_name.data);
+            return;
+        }
 
+        node->expected_return_type = T_STRUCT;
+        node->return_type_name = struct_name;
+
+
+        ASTNode *assign_seq = &node->children[1];
+        for (int i = 0; i < array_length(assign_seq->children); i++) {
+            ASTNode *member = &assign_seq->children[i].children[0];
+            ASTNode *expr = &assign_seq->children[i].children[1];
+
+            VarHeader *member_vh = find_attr_in_struct(struct_vh, member->token.text);
+
+            member->expected_return_type = member_vh->var_type;
+            member->return_type_name = member->expected_return_type == T_STRUCT ? member_vh->var_struct_name : String_null;
+            
+            typeify_tree(expr, var_map);
+        }
     } else if (node->token.type == OP_UNARY_MINUS) {
         typeify_tree(&node->children[0], var_map);
         node->expected_return_type = node->children[0].expected_return_type;
@@ -2571,11 +2672,17 @@ X(I_PRINT_END) \
 X(I_INPUT) \
 X(I_STACK_STORE) \
 X(I_STACK_STORE_GLOBAL) \
+X(I_HEAP_STORE) \
 X(I_STORE_STACK_PTR) \
 X(I_SET_STACK_PTR) \
 X(I_STACK_PTR_ADD) \
 X(I_RETURN) \
 X(I_CALL) \
+X(I_READ_ATTR) \
+X(I_READ_ATTR_GLOBAL) \
+X(I_ALLOC) \
+X(I_FREE) \
+X(I_DUP) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -2591,7 +2698,7 @@ char *inst_names[] = {
 };
 
 
-Inst create_inst(VarType type, Val arg1, Val arg2) {
+Inst create_inst(InstType type, Val arg1, Val arg2) {
     return (Inst){.type = type, .arg1 = arg1, .arg2 = arg2};
 }
 
@@ -2647,7 +2754,12 @@ void print_instruction(Inst inst) {
         case I_READ_GLOBAL:
             printf(", sz: %d, pos: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
-
+        case I_READ_ATTR:
+            printf(", sz: %d, offset: %d", inst.arg1.i_val, inst.arg2.i_val);
+            break;
+        case I_ALLOC:
+            printf(", sz: %d", inst.arg1.i_val);
+            break;
         default:
             break;
     }
@@ -3137,8 +3249,62 @@ void generate_instructions_for_unary_minus(ASTNode ast, Inst **instructions, Lin
     }
 }
 
+void generate_instructions_for_struct_decl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+    // print_todo("figure out if there's anything to implement (types are a lie) for struct decl statement instruction gen");
+    String name = ast.children[0].token.text;
+    ASTNode members = ast.children[1];
+
+    VarHeader *arr = array(VarHeader, 2);
+
+    int offset = 0;
+
+    for (int i = 0; i < array_length(members.children); i++) {
+        
+        String var_name = members.children[i].children[1].token.text;
+        VarType var_type = members.children[i].children[0].token.var_type;
+        
+        VarHeader vh = create_var_header(var_name, var_type, offset, var_type == T_STRUCT ? members.children[i].children[0].token.text : String_null);
+
+        array_append(arr, vh);
+        offset += get_vartype_size(var_type);
+    }
+
+    VarHeader vh = create_struct_header(name, arr, offset);
+
+    add_varheader_to_map_list(var_map_list, name, &vh);
+
+}   
+
 void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-    print_todo("implement instruction gen for attr access");
+    // print_todo("implement instruction gen for attr access");
+
+    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+
+    // find member offset
+    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].return_type_name, NULL);
+
+    VarHeader *member_vh = find_attr_in_struct(struct_vh, ast.children[1].token.text);
+
+    array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
+
+}
+
+void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+    // print_todo("implement instruction gen for new");
+
+    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].token.text, NULL);
+
+    array_append(*instructions, create_inst(I_ALLOC, (Val){.type = T_INT, .i_val = struct_vh->struct_size}, null(Val)));
+
+    print_todo("implement member construction for new");
+
+}
+
+void generate_instructions_for_delete(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+
+    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+
+    array_append(*instructions, create_inst(I_FREE, null(Val), null(Val)));
 }
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
@@ -3192,13 +3358,22 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
     }
 
     if (ast.token.type == STRUCT_DECL_STMT) {
-        // maybe?
-        print_todo("figure out if there's anything to implement (types are a lie) for struct decl statement instruction gen");
+        generate_instructions_for_struct_decl(ast, instructions, var_map_list);
         return;
     }
 
     if (ast.token.type == ATTR_ACCESS) {
         generate_instructions_for_attr_access(ast, instructions, var_map_list);
+        return;
+    }
+
+    if (ast.token.type == OP_NEW) {
+        generate_instructions_for_new(ast, instructions, var_map_list);
+        return;
+    }
+
+    if (ast.token.type == DELETE_STMT) {
+        generate_instructions_for_delete(ast, instructions, var_map_list);
         return;
     }
 
@@ -3392,7 +3567,7 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 
 #define append(ptr, size) my_memcpy(temp_stack + temp_stack_ptr++, ptr, size)
 #define pop(type) (*(type *)(temp_stack + --temp_stack_ptr))
-#define dup() temp_stack[temp_stack_ptr++] = temp_stack_ptr[temp_stack_ptr - 1]
+#define dup() temp_stack[temp_stack_ptr++] = temp_stack[temp_stack_ptr - 1]
 #define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
 #define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr * 8); val;})
 
@@ -3742,6 +3917,8 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
     } \
 }
 
+// #EXECUTE INSTRUCTIONS
+
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
     case I_PUSH:; \
         int size = *(int *)&byte_arr[++inst_ptr]; \
@@ -3752,6 +3929,10 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         bool m = rand() % 2; \
         temp_stack[temp_stack_ptr++] = m; \
         break; \
+    case I_DUP: { \
+        dup(); \
+        break; \
+    } \
     case I_READ: { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
@@ -3770,6 +3951,16 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         append(var_stack + pos, size); \
         break; \
     } \
+    case I_READ_ATTR: { \
+        inst_ptr += 1; \
+        int size = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int); \
+        int offset = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        char *addr = pop(char *); \
+        append(addr + offset, size); \
+        break; \
+    } \
     case I_STACK_STORE: { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
@@ -3786,6 +3977,29 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         int pos = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         my_memcpy(var_stack + pos, temp_stack + --temp_stack_ptr, size); \
+        break; \
+    } \
+    case I_HEAP_STORE: { \
+        inst_ptr += 1; \
+        int size = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        char *addr = pop(char *); \
+        memcpy(addr, temp_stack + --temp_stack_ptr, size); \
+        break; \
+    } \
+    case I_ALLOC: { \
+        inst_ptr += 1; \
+        int size = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        void *addr = malloc(size); \
+        append(&addr, sizeof(addr)); \
+        break; \
+    } \
+    case I_FREE: { \
+        inst_ptr += 1; \
+        void *addr = *(void **)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(void *) - 1; \
+        free(addr); \
         break; \
     } \
     case I_JUMP: { \
@@ -4284,7 +4498,7 @@ void run_program(Inst *instructions) {
 
     double time;
 
-    run_instructions(instructions, &time);
+    run_bytecode_instructions(instructions, &time);
 
     printf("Program finished successfully after %.2f seconds! \n", time);
 
@@ -4654,7 +4868,7 @@ int main() {
 
         print_instructions(instructions);
 
-        // compile_instructions(instructions);
+        // // compile_instructions(instructions);
 
         // place for chaos. increment when this made you want to kys: 2
         if (benchmark) {
