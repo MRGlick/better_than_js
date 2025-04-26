@@ -1,0 +1,7 @@
+struct Node {
+    int val;
+    Node next;
+}
+
+
+void print_list

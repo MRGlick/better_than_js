@@ -1,15 +1,9 @@
-
-struct Contract {
-    int days;
-    int cost;
-    int size;
+struct Vec2 {
+    float x;
+    float y;
 }
 
-struct House {
-    Contract c;
-}
 
-Contract c = new Contract();
-defer delete c;
+Vec2 v = null;
 
-print c.days;
+print v.x;

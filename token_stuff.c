@@ -12,6 +12,7 @@
     X(STRING_LITERAL) \
     X(INTEGER) \
     X(FLOAT) \
+    X(NULL_REF) \
     X(OP_UNARY_MINUS) \
     X(BOOLOPS_START) \
     X(OP_NOT) \
@@ -85,7 +86,8 @@
     X(T_INT) \
     X(T_FLOAT) \
     X(T_STRING) \
-    X(T_STRUCT)
+    X(T_STRUCT) \
+    X(T_NULL_REF) 
 
 typedef enum VarType {
     #define X(a) a, 
@@ -100,7 +102,8 @@ char *var_type_names[] = {
     "int",
     "float",
     "string",
-    "struct"
+    "struct",
+    "null"
 };
 
 static inline int get_vartype_size(VarType t) {
@@ -111,6 +114,7 @@ static inline int get_vartype_size(VarType t) {
         case T_STRING:
         case T_FLOAT:
         case T_STRUCT:
+        case T_NULL_REF:
             return 8;
             break;
         case T_BOOL:

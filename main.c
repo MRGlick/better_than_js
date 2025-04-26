@@ -241,6 +241,12 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
+        if (String_equal(parts[i], StringRef("null"))) {
+            Token tk = {.type = NULL_REF, .var_type = T_STRUCT};
+            array_append(tokens, tk);
+            continue;
+        }
+
         if (String_equal(parts[i], StringRef("."))) { // check this early because it conflicts with float
             Token tk = {.type = ATTR_ACCESS};
             array_append(tokens, tk);
@@ -585,6 +591,7 @@ ParseResult parse_value(int idx) {
         || get_token(idx).type == INTEGER
         || get_token(idx).type == FLOAT
         || get_token(idx).type == NAME
+        || get_token(idx).type == NULL_REF
     ) { 
         int token_idx = idx;
         idx += 1;
@@ -1552,12 +1559,19 @@ ParseResult parse_input_stmt(int idx) {
 }
 
 ParseResult parse_func_arg(int idx) {
-    if (get_token(idx).type != TYPE) return PARSE_FAILED;
+    if (get_token(idx).type != TYPE && get_token(idx).type != NAME) return PARSE_FAILED;
     int type_idx = idx;
     idx += 1;
     if (get_token(idx).type != NAME) return PARSE_FAILED;
     int name_idx = idx;
     idx += 1;
+
+    if (get_token(type_idx).type == NAME) {
+        get_token_ref(type_idx)->type = TYPE;
+        get_token_ref(type_idx)->var_type = T_STRUCT;        
+    }
+
+
     ASTNode node = create_ast_node((Token){.type = FUNC_ARG}, true);
     array_append(node.children, create_ast_node(get_token(type_idx), true));
     array_append(node.children, create_ast_node(get_token(name_idx), true));
@@ -2059,12 +2073,12 @@ ParseResult parse_assign_seq(int idx) {
 }
 
 ParseResult parse_new_rule(int idx) {
-    if (!check_keyword(get_token(idx), "new")) return PARSE_FAILED_PRINT;
+    if (!check_keyword(get_token(idx), "new")) return PARSE_FAILED;
     idx++;
-    if (get_token(idx).type != NAME) return PARSE_FAILED_PRINT;
+    if (get_token(idx).type != NAME) return PARSE_FAILED;
     int name_idx = idx++;
 
-    if (get_token(idx).type != LPAREN) return PARSE_FAILED_PRINT;
+    if (get_token(idx).type != LPAREN) return PARSE_FAILED;
     idx++;
 
     if (get_token(idx).type == RPAREN) { // explicitly handle the empty case
@@ -2269,23 +2283,20 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         VarHeader vh = create_var_header(var_name, var_type, -1, var_type == T_STRUCT ? node->children[0].token.text : String_null);
         HashMap_put(var_map, var_name, &vh);
     }
+
+    #define HANDLE_LITERAL(t, vt) if (node->token.type == t) { \
+        node->expected_return_type = vt; \
+        node->return_type_name = StringRef(var_type_names[vt]); \
+    } 
     
-    if (node->token.type == INTEGER) {
-        node->expected_return_type = T_INT;
-        node->return_type_name = StringRef(var_type_names[T_INT]);
-    }
-    if (node->token.type == FLOAT) {
-        node->expected_return_type = T_FLOAT;
-        node->return_type_name = StringRef(var_type_names[T_FLOAT]);
-    }
-    if (node->token.type == STRING_LITERAL) {
-        node->expected_return_type = T_STRING;
-        node->return_type_name = StringRef(var_type_names[T_STRING]);
-    }
-    if (node->token.type == BOOL) {
-        node->expected_return_type = T_BOOL;
-        node->return_type_name = StringRef(var_type_names[T_BOOL]);
-    }
+    HANDLE_LITERAL(INTEGER, T_INT);
+    HANDLE_LITERAL(FLOAT, T_FLOAT);
+    HANDLE_LITERAL(BOOL, T_BOOL);
+    HANDLE_LITERAL(STRING_LITERAL, T_STRING);
+    HANDLE_LITERAL(NULL_REF, T_STRUCT);
+
+    #undef HANDLE_LITERAL
+
     if (node->token.type == NAME) {
         VarHeader *vh = HashMap_get(var_map, node->token.text);
         node->expected_return_type = vh->var_type;
@@ -2637,10 +2648,12 @@ X(I_EQUAL) \
 X(I_EQUAL_FLOAT) \
 X(I_EQUAL_BOOL) \
 X(I_EQUAL_STR) \
+X(I_EQUAL_REF) \
 X(I_NOT_EQUAL) \
 X(I_NOT_EQUAL_FLOAT) \
 X(I_NOT_EQUAL_BOOL) \
 X(I_NOT_EQUAL_STR) \
+X(I_NOT_EQUAL_REF) \
 X(I_AND) \
 X(I_OR) \
 X(I_NOT) \
@@ -2679,7 +2692,7 @@ X(I_STACK_PTR_ADD) \
 X(I_RETURN) \
 X(I_CALL) \
 X(I_READ_ATTR) \
-X(I_READ_ATTR_GLOBAL) \
+X(I_GET_ATTR_ADDR) \
 X(I_ALLOC) \
 X(I_FREE) \
 X(I_DUP) \
@@ -2722,6 +2735,8 @@ void print_val(Val val) {
         case T_STRING:
             printf("\"%s\"", val.s_val);
             break;
+        case T_STRUCT:
+            printf("%p", val.any_val);
         default:
             printf("dunno");
             break;
@@ -2755,6 +2770,7 @@ void print_instruction(Inst inst) {
             printf(", sz: %d, pos: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
         case I_READ_ATTR:
+        case I_GET_ATTR_ADDR:
             printf(", sz: %d, offset: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
         case I_ALLOC:
@@ -2844,6 +2860,7 @@ InstType get_inst_type_for_op(TokenType op, VarType var_type) {
         if (var_type == T_FLOAT) return I_EQUAL_FLOAT;
         if (var_type == T_BOOL) return I_EQUAL_BOOL;
         if (var_type == T_STRING) return I_EQUAL_STR;
+        if (var_type == T_STRUCT) return I_EQUAL_REF;
     }
     if (op == OP_NOTEQ) {
         if (var_type == T_INT) return I_NOT_EQUAL;
@@ -2943,30 +2960,48 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
     gi_stack_pos += size;
 }
 
+void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list);
+
 // #UPDATE FOR STRUCTS
 void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-    String var_name = ast.children[0].token.text;
-
-    bool isglobal;
-
-    VarHeader *vh = get_varheader_from_map_list(var_map_list, var_name, &isglobal);
-
-    generate_instructions_for_node(ast.children[1], instructions, var_map_list);
     
-    VarType goal_type = vh->var_type;
+    ASTNode left_side = ast.children[0];
+    ASTNode right_side = ast.children[1];
 
-    if (goal_type != ast.children[1].expected_return_type) {
-        InstType inst_type = get_cvt_inst_type_for_types(ast.children[1].expected_return_type, goal_type);
-        if (inst_type == I_INVALID) {
-            print_err("Invalid conversion!");
-            printf("Tried to convert from type '%s' to '%s' \n", var_type_names[ast.children[1].expected_return_type], var_type_names[goal_type]);
-        } else {
-            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
+    if (left_side.token.type == NAME) {
+        String var_name = left_side.token.text;
+
+        bool isglobal;
+
+        VarHeader *vh = get_varheader_from_map_list(var_map_list, var_name, &isglobal);
+
+        generate_instructions_for_node(right_side, instructions, var_map_list);
+        
+        VarType goal_type = vh->var_type;
+
+        if (goal_type != right_side.expected_return_type) {
+            InstType inst_type = get_cvt_inst_type_for_types(right_side.expected_return_type, goal_type);
+            if (inst_type == I_INVALID) {
+                print_err("Invalid conversion!");
+                printf("Tried to convert from type '%s' to '%s' \n", var_type_names[right_side.expected_return_type], var_type_names[goal_type]);
+            } else {
+                array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
+            }
         }
+
+        array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = T_INT, .i_val = get_vartype_size(vh->var_type)}, (Val){.type = T_INT, .i_val = vh->var_pos}));
+
+    } else if (left_side.token.type == ATTR_ACCESS) {
+        
+        print_todo("add implicit type conversion for attribute assignment");
+
+        generate_instructions_for_node(right_side, instructions, var_map_list);
+        generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
+
+        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(left_side.expected_return_type)}, null(Val)));
     }
-
-    array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = T_INT, .i_val = get_vartype_size(vh->var_type)}, (Val){.type = T_INT, .i_val = vh->var_pos}));
-
+    
+    
 }
 
 
@@ -2990,6 +3025,8 @@ void generate_instructions_for_binop(ASTNode ast, Inst **instructions, LinkedLis
     VarType goal_type = is_pure_bool_op ? T_BOOL : (is_bool_op ? highest_prec_type : ast.expected_return_type);
 
     for (int i = 0; i < len; i++) {
+
+        printf("%d \n", ast.children[i].expected_return_type);
 
         generate_instructions_for_node(ast.children[i], instructions, var_map_list);
 
@@ -3288,6 +3325,19 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
     array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
 
 }
+void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+    // print_todo("implement instruction gen for attr access");
+
+    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+
+    // find member offset
+    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].return_type_name, NULL);
+
+    VarHeader *member_vh = find_attr_in_struct(struct_vh, ast.children[1].token.text);
+
+    array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
+
+}
 
 void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     // print_todo("implement instruction gen for new");
@@ -3302,7 +3352,14 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
 
 void generate_instructions_for_delete(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
 
-    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+    ASTNode thing = ast.children[0];
+
+    if (thing.expected_return_type != T_STRUCT) {
+        print_err("Tried to delete a non-struct! Are you trying to ruin my program on purpose?");
+        return;
+    }
+
+    generate_instructions_for_node(thing, instructions, var_map_list);
 
     array_append(*instructions, create_inst(I_FREE, null(Val), null(Val)));
 }
@@ -3417,6 +3474,9 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
             } else {
                 array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 1}, (Val){.type = T_BOOL, .b_val = ast.token.int_val}));
             }
+            break;
+        case NULL_REF:
+            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, (Val){.type = T_STRUCT, .any_val = NULL}));
             break;
         case STRING_LITERAL:
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, (Val){.type = T_STRING, .s_val = ast.token.text.data}));
@@ -3958,7 +4018,21 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         int offset = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         char *addr = pop(char *); \
+        if (!addr) print_err("Tried to get attribute of 'null'!"); \
+        else printf("%p \n", addr); \
         append(addr + offset, size); \
+        break; \
+    } \
+    case I_GET_ATTR_ADDR: { \
+        inst_ptr += 1; \
+        inst_ptr += sizeof(int); \
+        int offset = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        char *addr = pop(char *); \
+        if (!addr) print_err("Tried to get attribute of 'null'!"); \
+        else printf("%p \n", addr); \
+        addr += offset; \
+        append(&addr, sizeof(char *)); \
         break; \
     } \
     case I_STACK_STORE: { \
@@ -3991,14 +4065,12 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
-        void *addr = malloc(size); \
+        void *addr = calloc(size, 1); \
         append(&addr, sizeof(addr)); \
         break; \
     } \
     case I_FREE: { \
-        inst_ptr += 1; \
-        void *addr = *(void **)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(void *) - 1; \
+        void *addr = pop(void *); \
         free(addr); \
         break; \
     } \
@@ -4389,6 +4461,10 @@ char *convert_insts_to_byte_arr(const Inst *instructions) {
 
         if (instructions[i].arg1.type != T_NULL) {
 
+            if (instructions[i].type == I_FREE) {
+                print_err("what the fuck %d ", instructions[i].arg1.type);
+            }
+
             int byte_count = get_vartype_size(instructions[i].arg1.type);
 
             char value[8] = {0};
@@ -4407,6 +4483,10 @@ char *convert_insts_to_byte_arr(const Inst *instructions) {
             }
         }
         if (instructions[i].arg2.type != T_NULL) {
+
+            if (instructions[i].type == I_FREE) {
+                print_err("what the fuck %d ", instructions[i].arg1.type);
+            }
 
             int byte_count = get_vartype_size(instructions[i].arg2.type);
 
@@ -4434,11 +4514,13 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
 
-    // printf("bytecode: \n");
-    // for (int i = 0; i < array_length(byte_arr); i++) {
-    //     printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
-    // }
-    // printf("\n");
+    printf("bytecode: \n");
+    for (int i = 0; i < array_length(byte_arr); i++) {
+        printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
+    }
+    printf("\n");
+
+    
 
     double start = get_current_process_time_seconds();
 
