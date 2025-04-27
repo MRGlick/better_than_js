@@ -1,0 +1,69 @@
+struct Node {
+    int val;
+    Node next;
+}
+
+struct BinNode {
+    Node val;
+    BinNode left;
+    BinNode right;
+}
+
+bool is_noble_tree(BinNode bin) {
+    
+    if (bin == null) return true;
+
+    if (!is_noble_tree(bin.left)) return false;
+    if (!is_noble_tree(bin.right)) return false;
+    
+    Node curr = bin.val;
+    int min = curr.val;
+    while (curr.next != null) curr = curr.next;
+    int max = curr.val;
+
+    if (bin.left != null) {
+        curr = bin.left.val;
+        int left_min = curr.val;
+        if (left_min <= min) return false;
+    }
+    if (bin.right != null) {
+        curr = bin.right.val;
+        while (curr.next != null) curr = curr.next;
+        int left_max = curr.val;
+        if (left_max <= max) return false;
+    }
+
+    return true;
+
+}
+
+void free_list(Node node) {
+    if (node == null) return;
+    free_list(node.next);
+    delete node;
+}
+
+void free_tree(BinNode bin) {
+    if (bin == null) return;
+    free_tree(bin.left);
+    free_tree(bin.right);
+
+    free_list(bin.val);
+    delete bin;
+}
+
+
+BinNode noble_tree = new BinNode(
+    val = new Node(val = 2, next = new Node(val = 5)),
+    left = new BinNode(
+        val = new Node(val = 3, next = new Node(val = 4))
+    ),
+    right = new BinNode(
+        val = new Node(val = 3, next = new Node(val = 4))
+    )
+);
+
+defer free_tree(noble_tree);
+
+
+print is_noble_tree(noble_tree);

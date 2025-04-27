@@ -1,7 +1,26 @@
 struct Node {
-    int val;
     Node next;
+    int val;
 }
 
+void print_node(Node n) print "Node[val = ", n.val, "]";
 
-void print_list
+void print_nodes(Node n) {
+    Node curr = n;
+    while (curr != null) {
+        print_node(curr);
+        curr = curr.next;
+    }
+}
+
+void delete_list(Node head) {
+    if (head == null) return;
+    delete_list(head.next);
+    delete head;
+}
+
+Node lst = new Node(val = 5, next = new Node(val = 7, next = new Node(val = 9, next = new Node(val = 10))));
+defer delete_list(lst);
+
+print_nodes(lst);
+

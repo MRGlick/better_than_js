@@ -2736,7 +2736,9 @@ void print_val(Val val) {
             printf("\"%s\"", val.s_val);
             break;
         case T_STRUCT:
-            printf("%p", val.any_val);
+            if (val.any_val == NULL) printf("null");
+            else printf("%p", val.any_val);
+            break;
         default:
             printf("dunno");
             break;
@@ -2770,10 +2772,13 @@ void print_instruction(Inst inst) {
             printf(", sz: %d, pos: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
         case I_READ_ATTR:
-        case I_GET_ATTR_ADDR:
             printf(", sz: %d, offset: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
+        case I_GET_ATTR_ADDR:
+            printf(", offset: %d", inst.arg1.i_val);
+            break;
         case I_ALLOC:
+        case I_HEAP_STORE:
             printf(", sz: %d", inst.arg1.i_val);
             break;
         default:
@@ -2867,6 +2872,7 @@ InstType get_inst_type_for_op(TokenType op, VarType var_type) {
         if (var_type == T_FLOAT) return I_NOT_EQUAL_FLOAT;
         if (var_type == T_BOOL) return I_NOT_EQUAL_BOOL;
         if (var_type == T_STRING) return I_NOT_EQUAL_STR;
+        if (var_type == T_STRUCT) return I_NOT_EQUAL_REF;
     }
     if (op == OP_AND && var_type == T_BOOL) {
         return I_AND;
@@ -2995,8 +3001,8 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
         
         print_todo("add implicit type conversion for attribute assignment");
 
-        generate_instructions_for_node(right_side, instructions, var_map_list);
         generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
+        generate_instructions_for_node(right_side, instructions, var_map_list);
 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(left_side.expected_return_type)}, null(Val)));
     }
@@ -3335,7 +3341,7 @@ void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, Linke
 
     VarHeader *member_vh = find_attr_in_struct(struct_vh, ast.children[1].token.text);
 
-    array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
+    array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = member_vh->var_pos}, null(Val)));
 
 }
 
@@ -3346,7 +3352,22 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
 
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = T_INT, .i_val = struct_vh->struct_size}, null(Val)));
 
-    print_todo("implement member construction for new");
+    ASTNode *member_assigns = &ast.children[1];
+
+    for (int i = 0; i < array_length(member_assigns->children); i++) {
+        String member_name = member_assigns->children[i].children[0].token.text;
+        VarHeader *member_vh = find_attr_in_struct(struct_vh, member_name);
+
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
+        array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = member_vh->var_pos}, null(Val)));
+
+        generate_instructions_for_node(member_assigns->children[i].children[1], instructions, var_map_list);
+
+        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, null(Val)));
+
+    }
+
+    // print_todo("implement member construction for new");
 
 }
 
@@ -3627,7 +3648,7 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 
 #define append(ptr, size) my_memcpy(temp_stack + temp_stack_ptr++, ptr, size)
 #define pop(type) (*(type *)(temp_stack + --temp_stack_ptr))
-#define dup() temp_stack[temp_stack_ptr++] = temp_stack[temp_stack_ptr - 1]
+#define dup() ({temp_stack[temp_stack_ptr] = temp_stack[temp_stack_ptr - 1]; temp_stack_ptr++;})
 #define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
 #define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr * 8); val;})
 
@@ -4018,19 +4039,16 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         int offset = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         char *addr = pop(char *); \
-        if (!addr) print_err("Tried to get attribute of 'null'!"); \
-        else printf("%p \n", addr); \
+        if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr); \
         append(addr + offset, size); \
         break; \
     } \
     case I_GET_ATTR_ADDR: { \
         inst_ptr += 1; \
-        inst_ptr += sizeof(int); \
         int offset = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         char *addr = pop(char *); \
-        if (!addr) print_err("Tried to get attribute of 'null'!"); \
-        else printf("%p \n", addr); \
+        if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr); \
         addr += offset; \
         append(&addr, sizeof(char *)); \
         break; \
@@ -4057,11 +4075,13 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
+        u64 value = pop(u64); \
         char *addr = pop(char *); \
-        memcpy(addr, temp_stack + --temp_stack_ptr, size); \
+        memcpy(addr, &value, size); \
         break; \
     } \
     case I_ALLOC: { \
+        runtime_mallocs++; \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
@@ -4070,6 +4090,7 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         break; \
     } \
     case I_FREE: { \
+        runtime_frees++; \
         void *addr = pop(void *); \
         free(addr); \
         break; \
@@ -4345,6 +4366,13 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         append(&res, 1); \
         break; \
     } \
+    case I_EQUAL_REF: { \
+        char *p1 = pop(char *); \
+        char *p2 = pop(char *); \
+        bool res = p1 == p2; \
+        append(&res, 1); \
+        break; \
+    } \
     case I_NOT_EQUAL: { \
         int num = pop(int); \
         bool res = pop(int) != num; \
@@ -4367,6 +4395,13 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         char *str = pop(char *); \
         char *str2 = pop(char *); \
         bool res = !(!strcmp(str, str2)); \
+        append(&res, 1); \
+        break; \
+    } \
+    case I_NOT_EQUAL_REF: { \
+        char *p1 = pop(char *); \
+        char *p2 = pop(char *); \
+        bool res = p1 != p2; \
         append(&res, 1); \
         break; \
     } \
@@ -4414,6 +4449,8 @@ char text_buffer[TEXT_BUF_SIZE] = {0};
 int text_buffer_ptr = 0;
 int stack_ptr = 0;
 int frame_ptr = 0;
+int runtime_mallocs = 0;
+int runtime_frees = 0;
 
 void *append_to_text_buffer(const char *text, int len) {
     memcpy(text_buffer + text_buffer_ptr, text, len);
@@ -4509,6 +4546,8 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     text_buffer_ptr = 0;
     stack_ptr = 0;
     frame_ptr = 0;
+    runtime_frees = 0;
+    runtime_mallocs = 0;
 
     preprocess_string_literals(instructions);
 
@@ -4531,6 +4570,14 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     }
 
     double end = get_current_process_time_seconds();
+
+    if (runtime_mallocs > runtime_frees) {
+        print_err("Detected a memory leak! Where? you figure it out.");
+    } else if (runtime_frees > runtime_mallocs) {
+        print_err("Detected excess memory deletions! How did the program even survive this far?");
+    } else {
+        printf("No memory leaks. \n");
+    }
 
     if (time != NULL) *time = end - start;
 
