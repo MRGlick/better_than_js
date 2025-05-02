@@ -18,6 +18,7 @@ char *KEYWORDS[] = {
     "while",
     "for",
     "print",
+    "write",
     "else",
     "input",
     "return",
@@ -798,17 +799,11 @@ ParseResult parse_add_rule_h(int idx) {
                     }
                     array_insert(leaf.children, node, 0);
                     
-                    // printf("expr h current tree: \n");
-                    // print_ast(expr_h_result.node, 0);
-
                     expr_h_result.node.complete = true;
 
                     return create_parse_result(true, expr_h_result.node, idx);
                 }
 
-
-                // printf("expr h current tree: \n");
-                // print_ast(node, 0);
                 return create_parse_result(true, node, idx);
             }
 
@@ -882,17 +877,11 @@ ParseResult parse_rel_rule_h(int idx) {
                     }
                     array_insert(leaf.children, node, 0);
                     
-                    // printf("expr h current tree: \n");
-                    // print_ast(expr_h_result.node, 0);
-
                     rel_rule_h_result.node.complete = true;
 
                     return create_parse_result(true, rel_rule_h_result.node, idx);
                 }
 
-
-                // printf("expr h current tree: \n");
-                // print_ast(node, 0);
                 return create_parse_result(true, node, idx);
             }
 
@@ -1028,17 +1017,11 @@ ParseResult parse_expr_h(int idx) {
                     }
                     array_insert(leaf.children, node, 0);
                     
-                    // printf("expr h current tree: \n");
-                    // print_ast(expr_h_result.node, 0);
-
                     expr_h_res.node.complete = true;
 
                     return create_parse_result(true, expr_h_res.node, idx);
                 }
 
-
-                // printf("expr h current tree: \n");
-                // print_ast(node, 0);
                 return create_parse_result(true, node, idx);
             }
 
@@ -1302,9 +1285,10 @@ ParseResult parse_val_seq(int idx) {
 
 ParseResult parse_print_stmt(int idx) {
 
-    if (!check_keyword(get_token(idx), "print")) {
-        return PARSE_FAILED;
-    }
+    bool newline;
+    if (check_keyword(get_token(idx), "print")) newline = true;
+    else if (check_keyword(get_token(idx), "write")) newline = false;
+    else return PARSE_FAILED;
 
     idx += 1;
 
@@ -1324,7 +1308,7 @@ ParseResult parse_print_stmt(int idx) {
 
     idx += 1;
 
-    val_seq.node.token.type = PRINT_STMT;
+    val_seq.node.token.type = newline ? PRINT_STMT : WRITE_STMT;
 
     return create_parse_result(true, val_seq.node, idx);
 }
@@ -1476,7 +1460,6 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
         return PARSE_FAILED;
     }
     
-    
     int type_idx = idx;
     
     idx += 1;
@@ -1509,20 +1492,15 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
         print_err("forgot semicolon!");
         return PARSE_FAILED;
     }
+
+    idx += 1;
     
 
     if (get_token(type_idx).type == NAME) {
         Token *tk = get_token_ref(type_idx);
-        if (tk != NULL) {
-            tk->type = TYPE;
-            tk->var_type = T_STRUCT;
-        }else {
-            print_err("token is null!");
-        }
+        tk->type = TYPE;
+        tk->var_type = T_STRUCT;
     }
-
-
-    idx += 1;
     
     ASTNode node = create_ast_node((Token){.type = DECL_ASSIGN_STMT}, true);
     
@@ -1940,6 +1918,9 @@ ParseResult parse_postfix(int idx) {
 }
 // .b.c.d
 ParseResult parse_postfix_seq(int idx) {
+
+    int start_idx = idx;
+
     ParseResult postfix_res = parse_postfix(idx);
 
     if (!postfix_res.success) {
@@ -1953,22 +1934,25 @@ ParseResult parse_postfix_seq(int idx) {
     }
 
     ASTNode node = postfix_res.node;
-    ASTNode *curr = &node;
 
     postfix_res = parse_postfix(idx);
 
 
     while (postfix_res.success && !is_null_ast(postfix_res.node)) {
-        printf("%d \n", idx);
         idx = postfix_res.endpos;
         array_insert(postfix_res.node.children, node, 0);
         node = postfix_res.node;
         postfix_res = parse_postfix(idx);
     }
 
-    print_ast(node, 0);
-
     return create_parse_result(true, node, idx);
+}
+
+void _make_ast_complete(ASTNode *ast) {
+    ast->complete = true;
+    for (int i = 0; i < array_length(ast->children); i++) {
+        _make_ast_complete(&ast->children[i]);
+    }
 }
 
 ParseResult parse_primary(int idx) {
@@ -1989,12 +1973,14 @@ ParseResult parse_primary(int idx) {
 
     ASTNode node = postfix_seq_res.node;
     
-    ASTNode leaf_parent = node;
-    while (!leaf_parent.children[0].complete) {
-        leaf_parent = leaf_parent.children[0];
+    ASTNode *leaf_parent = &node;
+    while (!leaf_parent->children[0].complete) {
+        leaf_parent = &leaf_parent->children[0];
     }
 
-    array_insert(leaf_parent.children, base_rule_res.node, 0);
+    _make_ast_complete(&node);
+
+    array_insert(leaf_parent->children, base_rule_res.node, 0);
     
     return create_parse_result(true, node, idx);
 }
@@ -2011,7 +1997,6 @@ ParseResult parse_unary_rule(int idx) {
         idx = unary_res.endpos; \
         ASTNode node = create_ast_node((Token){.type = tok}, true); \
         array_append(node.children, unary_res.node); \
-        print_ast(node, 0); \
         return create_parse_result(true, node, idx); \
     }
 
@@ -2094,8 +2079,6 @@ ParseResult parse_new_rule(int idx) {
     if (!assign_seq_res.success) return PARSE_FAILED_PRINT;
     idx = assign_seq_res.endpos;
 
-    print_ast(assign_seq_res.node, 0);
-
     if (get_token(idx).type != RPAREN) {
         free_ast(assign_seq_res.node);
         return PARSE_FAILED_PRINT;
@@ -2113,14 +2096,14 @@ ParseResult parse_new_rule(int idx) {
 ParseResult parse_delete_stmt(int idx) {
     if (!check_keyword(get_token(idx), "delete")) return PARSE_FAILED;
     idx++;
-    if (get_token(idx).type != NAME) return PARSE_FAILED;
-    int name_idx = idx;
-    idx++;
+    ParseResult primary_res = parse_primary(idx);
+    if (!primary_res.success) return PARSE_FAILED;
+    idx = primary_res.endpos;
     if (get_token(idx).type != STMT_END) return PARSE_FAILED;
     idx++;
 
     ASTNode node = create_ast_node((Token){.type = DELETE_STMT}, true);
-    array_append(node.children, create_ast_node(get_token(name_idx), true));
+    array_append(node.children, primary_res.node);
 
 
     return create_parse_result(true, node, idx);
@@ -2329,8 +2312,27 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             typeify_tree(&node->children[i], var_map);
         }
     } else if (node->token.type == FUNC_DECL_STMT) {
+        ASTNode func_args = node->children[2];
 
-        VarHeader vh = create_func_header(node->children[1].token.text, node->children[0].token.var_type, -1
+        String func_name = node->children[1].token.text;
+
+        VarHeader *args = array(VarHeader, 2);
+
+        for (int i = 0; i < array_length(func_args.children); i++) {
+            String var_name = func_args.children[i].children[1].token.text;
+            VarType var_type = func_args.children[i].children[0].token.var_type;
+            String var_struct_name = func_args.children[i].children[0].token.text;
+            VarHeader vh = create_var_header(var_name, var_type, -1, var_struct_name);
+            array_append(args, vh);
+        }
+
+        func_name = generate_func_name_from_args(func_name, args);
+
+        array_free(args);
+
+        printf("%s \n", func_name.data);
+
+        VarHeader vh = create_func_header(func_name, node->children[0].token.var_type, -1
             , node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null);
 
         HashMap_put(var_map, node->children[1].token.text, &vh);
@@ -2339,9 +2341,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         HashMap_print(var_map);
 
-        ASTNode func_args = node->children[2];
 
-        // print_ast(func_args->children[0].children[1], 0);
         int len = array_length(func_args.children);
         for (int i = 0; i < len; i++) {
 
@@ -2999,10 +2999,23 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
 
     } else if (left_side.token.type == ATTR_ACCESS) {
         
-        print_todo("add implicit type conversion for attribute assignment");
+        VarType goal_type = left_side.expected_return_type;
 
         generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
         generate_instructions_for_node(right_side, instructions, var_map_list);
+
+        if (right_side.expected_return_type != goal_type) {
+            InstType cvt_inst = get_cvt_inst_type_for_types(right_side.expected_return_type, left_side.expected_return_type);
+            if (cvt_inst == I_INVALID) {
+                print_err("Couldn't convert type '%s' to type '%s' in attribute assignment!", 
+                    var_type_names[right_side.expected_return_type],
+                    var_type_names[goal_type]
+                );
+                exit(1);
+            }
+
+            array_append(*instructions, create_inst(cvt_inst, null(Val), null(Val)));
+        }
 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(left_side.expected_return_type)}, null(Val)));
     }
@@ -3031,8 +3044,6 @@ void generate_instructions_for_binop(ASTNode ast, Inst **instructions, LinkedLis
     VarType goal_type = is_pure_bool_op ? T_BOOL : (is_bool_op ? highest_prec_type : ast.expected_return_type);
 
     for (int i = 0; i < len; i++) {
-
-        printf("%d \n", ast.children[i].expected_return_type);
 
         generate_instructions_for_node(ast.children[i], instructions, var_map_list);
 
@@ -3082,7 +3093,7 @@ void generate_instructions_for_print(ASTNode ast, Inst **instructions, LinkedLis
         }
     }
 
-    array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val), null(Val)));
+    if (ast.token.type == PRINT_STMT) array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val), null(Val)));
 }
 
 void generate_instructions_for_if(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
@@ -3201,6 +3212,24 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedLis
 
 }
 
+String generate_func_name_from_args(String name, VarHeader *args) {
+    String res = String_copy(name);
+    for (int i = 0; i < array_length(args); i++) {
+        res = String_concatf_first(res, StringRef("-"));
+        if (args[i].var_type == T_STRUCT) {
+            res = String_concatf_first(res, StringRef("struct "));
+            res = String_concatf_first(res, args[i].var_struct_name);
+        } else {
+            res = String_concatf_first(res, StringRef(var_type_names[args[i].var_type]));
+        }
+    }
+    
+    print_todo("Free me! generate_func_name_from_args()");
+
+    return res;
+}
+
+
 void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     
     array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = -1}, null(Val)));
@@ -3211,6 +3240,23 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
     ASTNode var_args = ast.children[2];
 
     String func_name = ast.children[1].token.text;
+
+    VarHeader *args = array(VarHeader, 2);
+
+    for (int i = 0; i < array_length(var_args.children); i++) {
+        String var_name = var_args.children[i].children[1].token.text;
+        VarType var_type = var_args.children[i].children[0].token.var_type;
+        String var_struct_name = var_args.children[i].children[0].token.text;
+        VarHeader vh = create_var_header(var_name, var_type, -1, var_struct_name);
+        array_append(args, vh);
+    }
+
+    func_name = generate_func_name_from_args(func_name, args);
+
+    printf("%s \n", func_name.data);
+
+    array_free(args);
+
     VarType var_type = ast.children[0].token.var_type;
     VarHeader vh = create_func_header(func_name, var_type, array_length(*instructions) - 1, var_type == T_STRUCT ? ast.children[0].token.text : String_null);
 
@@ -3261,18 +3307,36 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
 
 // #UPDATE FOR STRUCTS
 void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-
+    
     ASTNode func_args = ast.children[1];
 
+    String func_name = ast.children[0].token.text;
+    
     int len = array_length(func_args.children);
+
+    VarHeader *args = array(VarHeader, 2);
+
+    for (int i = 0; i <  len; i++) {
+        VarHeader current_vh = create_var_header(String_null, func_args.children[i].expected_return_type, -1, func_args.children[i].return_type_name);
+
+        array_append(args, current_vh);
+    }
+
+    func_name = generate_func_name_from_args(func_name, args);
+    
+
+    VarHeader *vh = get_varheader_from_map_list(var_map_list, func_name, NULL);
+    
+    if (vh == NULL) {
+        print_err("Tried to call function '%s' which doesn't exist! Double check the function name, and whether you passed the right arguments..", func_name);
+    }
+
+
 
     for (int i = 0; i < len; i++) {
         generate_instructions_for_node(func_args.children[i], instructions, var_map_list);
     }
 
-    String func_name = ast.children[0].token.text;
-
-    VarHeader *vh = get_varheader_from_map_list(var_map_list, func_name, NULL);
 
     array_append(*instructions, create_inst(I_CALL, (Val){.type = T_INT, .i_val = vh->func_pos}, null(Val)));
 }
@@ -3363,6 +3427,22 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
 
         generate_instructions_for_node(member_assigns->children[i].children[1], instructions, var_map_list);
 
+        VarType goal_type = member_vh->var_type;
+        VarType curr_type = member_assigns->children[i].children[1].expected_return_type;
+
+        if (curr_type != goal_type) {
+            InstType cvt_inst = get_cvt_inst_type_for_types(curr_type, goal_type);
+            if (cvt_inst == I_INVALID) {
+                print_err("Couldn't convert type '%s' to type '%s' in attribute assignment!", 
+                    var_type_names[curr_type],
+                    var_type_names[goal_type]
+                );
+                exit(1);
+            }
+
+            array_append(*instructions, create_inst(cvt_inst, null(Val), null(Val)));
+        }
+
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, null(Val)));
 
     }
@@ -3380,7 +3460,12 @@ void generate_instructions_for_delete(ASTNode ast, Inst **instructions, LinkedLi
         return;
     }
 
-    generate_instructions_for_node(thing, instructions, var_map_list);
+    if (thing.token.type == ATTR_ACCESS) {
+        generate_instructions_for_attr_addr(thing, instructions, var_map_list);
+    } else {
+        generate_instructions_for_node(thing, instructions, var_map_list);
+    }
+
 
     array_append(*instructions, create_inst(I_FREE, null(Val), null(Val)));
 }
@@ -3400,7 +3485,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         generate_instructions_for_binop(ast, instructions, var_map_list);
         return;
     }
-    if (ast.token.type == PRINT_STMT) {
+    if (ast.token.type == PRINT_STMT || ast.token.type == WRITE_STMT) {
         generate_instructions_for_print(ast, instructions, var_map_list);
         return;
     }
@@ -4553,11 +4638,11 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
 
-    printf("bytecode: \n");
-    for (int i = 0; i < array_length(byte_arr); i++) {
-        printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
-    }
-    printf("\n");
+    // printf("bytecode: \n");
+    // for (int i = 0; i < array_length(byte_arr); i++) {
+    //     printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
+    // }
+    // printf("\n");
 
     
 
@@ -4723,7 +4808,7 @@ void print_ast(ASTNode node, int level) {
     for (int i = 0; i < level; i++) {
         printf("|---");
     }
-
+    if (!node.complete) printf("!!");
     printf("<%s>", node.expected_return_type == T_STRUCT ? node.return_type_name.data : var_type_names[node.expected_return_type]);
     print_token(node.token, 0);
     for (int i = 0; i < array_length(node.children); i++) {
@@ -4934,10 +5019,8 @@ int main() {
             FILE *file = fopen(filepath, "r");
 
             if (file == NULL) {
-                print_err("Couldn't open file!");
-                printf("%d \n", errno);
-                
-                exit(1);
+                print_err("Couldn't open file! errno: %d ", errno);                
+                continue;
             }
 
             char *buf_ptr = buf;
@@ -4973,9 +5056,9 @@ int main() {
 
         Token *tokens = tokenize_parts(parts);
 
-        print_str_parts(parts);
+        //print_str_parts(parts);
 
-        print_tokens(tokens);
+        //print_tokens(tokens);
 
         set_parse_tokens(tokens);
 
@@ -5003,7 +5086,7 @@ int main() {
         if (benchmark) {
             run_benchmark(instructions);
         } else {
-            run_program(instructions);
+            // run_program(instructions);
         }
 
         array_free(instructions);

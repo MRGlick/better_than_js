@@ -63,6 +63,7 @@
     X(ASSIGN_STMT) \
     X(DECL_ASSIGN_STMT) \
     X(PRINT_STMT) \
+    X(WRITE_STMT) \
     X(INPUT_STMT) \
     X(FUNC_DECL_STMT) \
     X(FUNC_ARGS_SEQ) \

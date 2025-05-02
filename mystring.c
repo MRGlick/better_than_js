@@ -107,6 +107,18 @@ String String_concatf(String a, String b) {
     return new;
 }
 
+// Only free the first argument
+String String_concatf_first(String a, String b) {
+    String new = String_new(a.len + b.len);
+
+    memcpy(new.data, a.data, a.len);
+    memcpy(new.data + a.len, b.data, b.len);
+
+    free(a.data);
+
+    return new;
+}
+
 void String_append(String *a, StringRef other) {
     String temp = *a;
     *a = String_concat(*a, other);

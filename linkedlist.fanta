@@ -19,7 +19,21 @@ void delete_list(Node head) {
     delete head;
 }
 
-Node lst = new Node(val = 5, next = new Node(val = 7, next = new Node(val = 9, next = new Node(val = 10))));
+Node lst = new Node(
+    val = 5, 
+    next = new Node(
+        val = 7, 
+        next = new Node(
+            val = 9, 
+            next = new Node(
+                val = 10,
+                next = new Node(
+                    val = 11
+                )
+            )
+        )
+    )
+);
 defer delete_list(lst);
 
 print_nodes(lst);
