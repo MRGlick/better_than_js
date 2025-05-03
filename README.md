@@ -10,7 +10,7 @@ This project is mainly for learning about how compilers and interpreters work. I
 The language currently supports:
 
 * Basic data types: `int`, `float`, `bool` (which can be `true`, `false` or `maybe`, obviously.), `string`
-* Variable declaration and assignment (`=`, `+=`, `-=`, etc.).
+* Variable declaration and assignment (`=`, `+=`, `-=`, etc.) as well as implicit type coercion.
 * Control flow: `if`/`else`, `while` (didnt add `for` yet because lazy).
 * Functions: Declaration and calls similar to C or Java, with the only difference being support for one line functions (e.g. `int square(int a) return a * a`).
 * Structs: Definition (`struct Foo {int x; float y;}`), heap allocation (`Foo f = new Foo(x = 2); // unmentioned members are default allocated (y = 0.0)`), member access (`print f.x;`), deallocation (`delete foo;`).
@@ -92,14 +92,15 @@ Took ~2.5s to check whether 78,953,803 is prime (which, the same unoptimized cod
 
 ## Future Goals
 
-* **Compilation:** Potentially compile the language to x86 assembly.
-* **Garbage Collection:** Not likely. Mostly because of a lack of skill (But if I do add it, it will be a togglable option and not [enforced](https://en.wikipedia.org/wiki/Java_(programming_language))).
-* **Graphics Support:** Add capabilities for graphical output.
-* **Input Handling:** Allow real time input handling (mainly for graphical applications).
-* **File Support:** Allow programs to read from and write to files.
+* **Explicit Type coercion** Self explanatory.
 * **Arrays:** Introduce array data structures.
+* **File Support:** Allow programs to read from and write to files.
 * **Generic Types:** I might add them later on.
+* **Graphics Support:** Add capabilities for graphical output.
+* **Input Handling:** Allow real time input hazndling (mainly for graphical applications).
 * **Web support** (Maybe) compile the language to WASM (if it's not on the web, does it even exist?).
+* **Compilation:** Potentially compile the language to x86_64 Assembly.
+* **Garbage Collection:** Not likely. Mostly because of a lack of skill (But if I do add it, it will be a togglable option and not [enforced](https://en.wikipedia.org/wiki/Java_(programming_language))).
 
 ## How to Build and Run
 
