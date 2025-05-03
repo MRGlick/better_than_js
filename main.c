@@ -2317,8 +2317,6 @@ int _validate_return_paths(ASTNode *ast, VarType return_type) {
         print_err("I don't know what to do here! look into this further. node type: '%s'", token_type_names[ast->token.type]);
         return false;
     }
-
-    int res = MISSING_RETURN_PATHS;
     for (int i = 0; i < array_length(ast->children); i++) {
         ASTNode *child = &ast->children[i];
         if (child->token.type == RETURN_STMT && child->children[0].expected_return_type == return_type) {
@@ -2336,9 +2334,13 @@ int _validate_return_paths(ASTNode *ast, VarType return_type) {
                 return m;
             }
         }
+        if (child->token.type == BLOCK) {
+            int r = _validate_return_paths(&child->children[0], return_type);
+            if (r > MISSING_RETURN_PATHS) return r;
+        }
     }
 
-    return res;
+    return MISSING_RETURN_PATHS;
 }
 
 int validate_return_paths(ASTNode *ast) {
