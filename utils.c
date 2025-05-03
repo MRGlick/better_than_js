@@ -18,11 +18,18 @@
 
 #define print_err(...) ({printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n"); getchar();})
 
+#define print_warning(...) ({printf("WARNING on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n");})
+
 #define print_todo(...) {printf("TODO: \n\t"); printf(__VA_ARGS__); printf("\n\t on line #%d \n", __LINE__);}
 
 // #define pause_err(...) {print_err(__VA_ARGS__); getchar();}
 
 #define in_range(a, b, c) ((a >= b) && (a <= c))
+
+#define debug if (1)
+
+#define min(a, b) (a < b ? a : b)
+#define max(a, b) (a > b ? a : b)
 
 double get_current_process_time_seconds() {
     return (double)clock() / CLOCKS_PER_SEC; 
@@ -39,6 +46,7 @@ double trunc(double a) {
 double fmod(double a, double b) {
     return a - trunc(a / b) * b;
 }
+
 
 #define lerp(a, b, w) (a + (b - a) * w)
 

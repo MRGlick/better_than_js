@@ -22,16 +22,14 @@ char *KEYWORDS[] = {
     "else",
     "input",
     "return",
-    "defer", // TODO
-    "struct", // TODO
+    "defer",
+    "struct",
     "new",
     "delete"
 };
 
 // dont ask
 #define MAYBE 2
-
-
 
 typedef struct Val {
     union {
@@ -69,6 +67,7 @@ typedef struct VarHeader {
             String func_return_type_struct_name;
             i32 func_return_type;
             i32 func_pos;
+            struct VarHeader *func_args;
         };
         struct { // VH_STRUCT
             struct VarHeader *struct_members;
@@ -95,8 +94,15 @@ VarHeader create_var_header(String name, int var_type, int var_pos, String var_s
     return (VarHeader){.type = VH_VAR, .var_type = var_type, .var_pos = var_pos, .var_struct_name = var_struct_name, .name = name};
 }
 
-VarHeader create_func_header(String name, int return_type, int pos, String struct_name) {
-    return (VarHeader){.name = name, .type = VH_FUNC, .func_return_type = return_type, .func_pos = pos, .func_return_type_struct_name = struct_name};
+VarHeader create_func_header(String name, int return_type, int pos, String struct_name, VarHeader *args) {
+    return (VarHeader){
+        .name = name, 
+        .type = VH_FUNC, 
+        .func_return_type = return_type, 
+        .func_pos = pos, 
+        .func_return_type_struct_name = struct_name,
+        .func_args = args
+    };
 }
 
 VarHeader create_struct_header(String name, VarHeader *struct_members, int size) {
@@ -465,7 +471,7 @@ ASTNode create_ast_node(Token tk, bool complete) {
 
 int _free_ast(ASTNode ast) {
     
-    if (ast.children == NULL) {
+    if (!ast.children) {
         print_err("Tried to free an AST with null children!");
         return -1;
     }
@@ -500,7 +506,7 @@ void set_parse_tokens(Token *tokens) {
 }
 
 Token get_token(int idx) {
-    if (parse_tokens == NULL) {
+    if (!parse_tokens) {
         print_err("Tried to match tokens, but there aren't any!");
         return null(Token);
     }
@@ -512,7 +518,7 @@ Token get_token(int idx) {
 }
 
 Token *get_token_ref(int idx) {
-    if (parse_tokens == NULL) {
+    if (!parse_tokens) {
         print_err("Tried to match tokens, but there aren't any!");
         return NULL;
     }
@@ -602,7 +608,7 @@ ParseResult parse_value(int idx) {
     return PARSE_FAILED;
 }
 
-#define is_null_ast(ast) (ast.children == NULL)
+#define is_null_ast(ast) (!ast.children)
 
 ParseResult parse_base_rule(int idx) {
 
@@ -1118,6 +1124,19 @@ ParseResult parse_if_stmt(int idx) {
             ASTNode node = create_ast_node((Token){.type = IF_ELSE_STMT}, true);
 
             array_append(node.children, expr_res.node);
+            if (stmt_res.node.token.type != BLOCK) {
+                ASTNode stmt1_block = create_ast_node((Token){.type = BLOCK}, true);
+                array_append(stmt1_block.children, stmt_res.node);
+                stmt_res.node = stmt1_block;
+            }
+            
+            if (stmt2_res.node.token.type != BLOCK) {
+                ASTNode stmt2_block = create_ast_node((Token){.type = BLOCK}, true);
+                array_append(stmt2_block.children, stmt2_res.node);
+                stmt2_res.node = stmt2_block;
+            }
+            
+
             array_append(node.children, stmt_res.node);
             array_append(node.children, stmt2_res.node);
 
@@ -1131,6 +1150,13 @@ ParseResult parse_if_stmt(int idx) {
     } else {
         ASTNode node = create_ast_node((Token){.type = IF_STMT}, true);
         array_append(node.children, expr_res.node);
+
+        if (stmt_res.node.token.type != BLOCK) {
+            ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
+            array_append(block.children, stmt_res.node);
+            stmt_res.node = block;
+        }
+        
         array_append(node.children, stmt_res.node);
 
         return create_parse_result(true, node, idx);
@@ -1356,6 +1382,12 @@ ParseResult parse_while_stmt(int idx) {
     ASTNode node = create_ast_node((Token){.type =  WHILE_STMT}, true);
 
     array_append(node.children, expr_res.node);
+
+    if (stmt_res.node.token.type != BLOCK) {
+        ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
+        array_append(block.children, stmt_res.node);
+        stmt_res.node = block;
+    }
 
     array_append(node.children, stmt_res.node);
 
@@ -2252,6 +2284,73 @@ VarHeader *find_attr_in_struct(VarHeader *struct_vh, String attr_name) {
     return NULL;
 }
 
+VarHeader *get_args_from_func_header_ast(ASTNode *ast) {
+    VarHeader *args = array(VarHeader, 2);
+
+    ASTNode *func_args = ast;
+
+    int offset = 0;
+
+    for (int i = 0; i < array_length(func_args->children); i++) {
+        ASTNode *child = &func_args->children[i];
+        VarType var_type = child->children[0].token.var_type;
+        String var_struct_name = child->children[0].token.text;
+        String var_name = child->children[1].token.text;
+
+        VarHeader vh = create_var_header(var_name, var_type, offset, var_struct_name);
+        offset += get_vartype_size(var_type);
+
+        array_append(args, vh);
+    }
+
+    return args;
+}
+
+#define RETURN_PATHS_OK 1
+#define UNREACHABLE_CODE 0
+#define MISSING_RETURN_PATHS -1
+
+// TODO: A BLOCK CAN BE A BLOCKER!
+int _validate_return_paths(ASTNode *ast, VarType return_type) {
+
+    if (ast->token.type != BLOCK) {
+        print_err("I don't know what to do here! look into this further. node type: '%s'", token_type_names[ast->token.type]);
+        return false;
+    }
+
+    int res = MISSING_RETURN_PATHS;
+    for (int i = 0; i < array_length(ast->children); i++) {
+        ASTNode *child = &ast->children[i];
+        if (child->token.type == RETURN_STMT && child->children[0].expected_return_type == return_type) {
+            if (i < array_length(ast->children) - 1) return UNREACHABLE_CODE;
+            return RETURN_PATHS_OK;
+        }
+        if (child->token.type == IF_ELSE_STMT) {
+
+            int r_if = _validate_return_paths(&child->children[1], return_type);
+            int r_else = _validate_return_paths(&child->children[2], return_type);  
+
+            int m = min(r_if, r_else);
+            if (m > MISSING_RETURN_PATHS) {
+                if (i < array_length(ast->children) - 1) return UNREACHABLE_CODE;
+                return m;
+            }
+        }
+    }
+
+    return res;
+}
+
+int validate_return_paths(ASTNode *ast) {
+    if (ast->token.type != FUNC_DECL_STMT) {
+        print_err("Invalid call to validate_return_paths()!");
+        return false;
+    }
+    VarType target_type = ast->children[0].token.var_type;
+
+    return _validate_return_paths(&ast->children[3], target_type);
+}
+
 // anything this function doesn't touch is meant to return void
 void typeify_tree(ASTNode *node, HashMap *var_map) {
     
@@ -2281,7 +2380,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
     #undef HANDLE_LITERAL
 
     if (node->token.type == NAME) {
-        VarHeader *vh = HashMap_get(var_map, node->token.text);
+        VarHeader *vh = HashMap_get_safe(var_map, node->token.text, NULL);
+        if (!vh) return print_err("Identifier '%s' Doesn't exist within the current scope!", node->token.text.data);
         node->expected_return_type = vh->var_type;
         node->return_type_name = vh->var_type == T_STRUCT ? vh->var_struct_name : StringRef(var_type_names[vh->var_type]);
     }
@@ -2316,43 +2416,30 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         String func_name = node->children[1].token.text;
 
-        VarHeader *args = array(VarHeader, 2);
-
-        for (int i = 0; i < array_length(func_args.children); i++) {
-            String var_name = func_args.children[i].children[1].token.text;
-            VarType var_type = func_args.children[i].children[0].token.var_type;
-            String var_struct_name = func_args.children[i].children[0].token.text;
-            VarHeader vh = create_var_header(var_name, var_type, -1, var_struct_name);
-            array_append(args, vh);
-        }
-
-        func_name = generate_func_name_from_args(func_name, args);
-
-        array_free(args);
-
-        printf("%s \n", func_name.data);
-
-        VarHeader vh = create_func_header(func_name, node->children[0].token.var_type, -1
-            , node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null);
-
-        HashMap_put(var_map, node->children[1].token.text, &vh);
-        
+        HashMap *old_map = var_map;
         var_map = HashMap_copy(var_map);
-
-        HashMap_print(var_map);
-
-
+        
         int len = array_length(func_args.children);
         for (int i = 0; i < len; i++) {
-
+            
             StringRef var_name = func_args.children[i].children[1].token.text;
-
+            
             VarType var_type = func_args.children[i].children[0].token.var_type;
-
+            
             VarHeader vh = create_var_header(var_name, var_type, -1, var_type == T_STRUCT ? func_args.children[i].children[0].token.text : String_null);
-
+            
             HashMap_put(var_map, var_name, &vh);
         }
+        
+        VarHeader vh = create_func_header(
+            func_name, 
+            node->children[0].token.var_type, 
+            -1, 
+            node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null, 
+            get_args_from_func_header_ast(&func_args)
+        );
+        HashMap_put(old_map, func_name, &vh);
+
 
         ASTNode *func_scope = &node->children[3];
 
@@ -2363,6 +2450,12 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         HashMap_free(var_map);
 
+        int result = validate_return_paths(node);
+        if (result == UNREACHABLE_CODE) 
+            return print_err("Return might cause unreachable code in function '%s()'!", func_name.data);
+        if (result == MISSING_RETURN_PATHS)
+            return print_err("Not all return paths return type '%s' in function '%s()'!", 
+                var_type_names[node->children[0].token.var_type], func_name.data);
 
     } else if (node->token.type == STRUCT_DECL_STMT) {
 
@@ -2388,16 +2481,13 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         HashMap_put(var_map, name, &vh);
 
-        HashMap_print(var_map);
-
     } else if (node->token.type == ATTR_ACCESS) {
 
         typeify_tree(&node->children[0], var_map);
         VarType left_type = node->children[0].expected_return_type;
 
         if (left_type != T_STRUCT) {
-            print_err("Tried accessing attribute in '%s' type instead of struct!", var_type_names[left_type]);
-            return;
+            return print_err("Tried accessing attribute in '%s' type instead of struct!", var_type_names[left_type]);
         }
 
         String attr_name = node->children[1].token.text;
@@ -2407,9 +2497,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         VarHeader *struct_header = HashMap_get_safe(var_map, struct_name, NULL);
 
-        if (struct_header == NULL) {
-            print_err("Tried accessing attribute of struct '%s' which is not defined!", struct_name.data);
-            return;
+        if (!struct_header) {
+            return print_err("Tried accessing attribute of struct '%s' which is not defined!", struct_name.data);
         }
 
         VarHeader *attr_header = find_attr_in_struct(struct_header, attr_name);
@@ -2421,8 +2510,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         String struct_name = node->children[0].token.text;
         VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
         if (!struct_vh) {
-            print_err("can't create new '%s', as that struct is not defined!", struct_name.data);
-            return;
+            return print_err("can't create new '%s', as that struct is not defined!", struct_name.data);
         }
 
         node->expected_return_type = T_STRUCT;
@@ -2736,7 +2824,7 @@ void print_val(Val val) {
             printf("\"%s\"", val.s_val);
             break;
         case T_STRUCT:
-            if (val.any_val == NULL) printf("null");
+            if (!val.any_val) printf("null");
             else printf("%p", val.any_val);
             break;
         default:
@@ -2797,7 +2885,7 @@ void print_instructions(Inst *arr) {
 
 
 
-InstType get_cvt_inst_type_for_types(VarType from, VarType to) {
+InstType _get_cvt_inst_type_for_types(VarType from, VarType to) {
     // avert your eyes
     if (from == T_BOOL) {
         if (to == T_INT) return I_CONVERT_BOOL_INT;
@@ -2821,6 +2909,14 @@ InstType get_cvt_inst_type_for_types(VarType from, VarType to) {
     }
 
     return I_INVALID;
+}
+
+bool generate_cvt_inst_for_types(VarType from, VarType to, Inst **instructions) {
+    InstType inst = _get_cvt_inst_type_for_types(from, to);
+    if (inst == I_INVALID) return false;
+
+    array_append(*instructions, create_inst(inst, null(Val), null(Val)));
+    return true;
 }
 
 InstType get_inst_type_for_op(TokenType op, VarType var_type) {
@@ -2890,12 +2986,12 @@ int gi_label_idx = 0;
 
 
 VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bool *global) {
-    if (global != NULL) *global = false;
+    if (global) *global = false;
     LLNode *current = var_map_list->head;
     while (current != NULL) {
         VarHeader *vh = HashMap_get_safe(current->val, name, NULL);
         if (vh != NULL) {
-            if (current->next == NULL && global != NULL) *global = true;
+            if (!current->next && global) *global = true;
             return vh;
         }
         current = current->next;
@@ -2948,13 +3044,13 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
         VarType child_return_type = ast.children[2].expected_return_type;
         
         if (child_return_type != var_type) {
-            InstType inst_type = get_cvt_inst_type_for_types(child_return_type, var_type);
-            if (inst_type == I_INVALID) {
-                print_err("Invalid conversion on variable declaration!");
-                printf("Tried to convert from type '%s' to '%s' \n", var_type_names[child_return_type], var_type_names[var_type]);
-            } else {
-                array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
-            }
+            bool result = generate_cvt_inst_for_types(child_return_type, var_type, instructions);
+            if (!result) return print_err(
+                    "Invalid conversion on variable declaration! Tried to convert from type '%s' to '%s'", 
+                    var_type_names[child_return_type], 
+                    var_type_names[var_type]
+                );
+            
         }
     } else {
         Val val = null(Val);
@@ -2986,13 +3082,12 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
         VarType goal_type = vh->var_type;
 
         if (goal_type != right_side.expected_return_type) {
-            InstType inst_type = get_cvt_inst_type_for_types(right_side.expected_return_type, goal_type);
-            if (inst_type == I_INVALID) {
-                print_err("Invalid conversion!");
-                printf("Tried to convert from type '%s' to '%s' \n", var_type_names[right_side.expected_return_type], var_type_names[goal_type]);
-            } else {
-                array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
-            }
+            bool result = generate_cvt_inst_for_types(right_side.expected_return_type, goal_type, instructions);
+            if (!result) return print_err(
+                "Invalid conversion on assignment! Tried to convert from type '%s' to '%s'", 
+                var_type_names[right_side.expected_return_type], 
+                var_type_names[goal_type]
+            );
         }
 
         array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = T_INT, .i_val = get_vartype_size(vh->var_type)}, (Val){.type = T_INT, .i_val = vh->var_pos}));
@@ -3005,16 +3100,12 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
         generate_instructions_for_node(right_side, instructions, var_map_list);
 
         if (right_side.expected_return_type != goal_type) {
-            InstType cvt_inst = get_cvt_inst_type_for_types(right_side.expected_return_type, left_side.expected_return_type);
-            if (cvt_inst == I_INVALID) {
-                print_err("Couldn't convert type '%s' to type '%s' in attribute assignment!", 
-                    var_type_names[right_side.expected_return_type],
-                    var_type_names[goal_type]
-                );
-                exit(1);
-            }
-
-            array_append(*instructions, create_inst(cvt_inst, null(Val), null(Val)));
+            bool result = generate_cvt_inst_for_types(right_side.expected_return_type, goal_type, instructions);
+            if (!result) return print_err(
+                "Invalid conversion on assignment! Tried to convert from type '%s' to '%s'", 
+                var_type_names[right_side.expected_return_type], 
+                var_type_names[goal_type]
+            );
         }
 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(left_side.expected_return_type)}, null(Val)));
@@ -3048,13 +3139,12 @@ void generate_instructions_for_binop(ASTNode ast, Inst **instructions, LinkedLis
         generate_instructions_for_node(ast.children[i], instructions, var_map_list);
 
         if (goal_type != ast.children[i].expected_return_type) {
-            InstType inst_type = get_cvt_inst_type_for_types(ast.children[i].expected_return_type, goal_type);
-            if (inst_type == I_INVALID) {
-                print_err("Invalid conversion!");
-                printf("Tried to convert from type '%s' to '%s' \n", var_type_names[ast.children[i].expected_return_type], var_type_names[goal_type]);
-            } else {
-                array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
-            }
+            bool result = generate_cvt_inst_for_types(ast.children[i].expected_return_type, goal_type, instructions);
+            if (!result) return print_err(
+                "Invalid conversion in binary operation! Tried to convert between '%s' and '%s'!",
+                ast.children[i].expected_return_type,
+                goal_type
+            );
         }
     }
 
@@ -3108,13 +3198,12 @@ void generate_instructions_for_if(ASTNode ast, Inst **instructions, LinkedList *
     generate_instructions_for_node(ast.children[0], instructions, var_map_list);
 
     if (ast.children[0].expected_return_type != T_BOOL) {
-        InstType inst_type = get_cvt_inst_type_for_types(ast.children[0].expected_return_type, T_BOOL);
-
-        if (inst_type == I_INVALID) {
-            print_err("Type is ambigous! Cannot be used as an if condition. (you did badly.)");
-            printf("type: %s \n", var_type_names[ast.children[0].expected_return_type]);
-        } else {
-            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
+        bool result = generate_cvt_inst_for_types(ast.children[0].expected_return_type, T_BOOL, instructions);
+        if (!result) {
+            return print_err(
+                "Type '%s' is ambigous! Cannot be used as an if condition. (you did badly.)",
+                ast.children[0].expected_return_type
+            );
         }
     }
     
@@ -3159,14 +3248,12 @@ void generate_instructions_for_while(ASTNode ast, Inst **instructions, LinkedLis
     generate_instructions_for_node(ast.children[0], instructions, var_map_list);
 
     if (ast.children[0].expected_return_type != T_BOOL) {
-        InstType inst_type = get_cvt_inst_type_for_types(ast.children[0].expected_return_type, T_BOOL);
+        bool result = generate_cvt_inst_for_types(ast.children[0].expected_return_type, T_BOOL, instructions);
 
-        if (inst_type == I_INVALID) {
-            print_err("Type is ambigous! Cannot be used as an while condition. (you did badly.)");
-            printf("type: %s \n", var_type_names[ast.children[0].expected_return_type]);
-        } else {
-            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
-        }
+        if (!result) return print_err(
+            "Type '%s' is ambigous! Cannot be used as a while condition. (you did badly.)",
+            ast.children[0].expected_return_type
+        );
     }
 
     int jump_not_inst_idx = array_length(*instructions);
@@ -3196,12 +3283,8 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedLis
     VarType goal_type = ast.children[0].expected_return_type;
 
     if (goal_type != T_STRING) {
-        InstType cvt_inst = get_cvt_inst_type_for_types(T_STRING, goal_type);
-        if (cvt_inst == I_INVALID) {
-            print_err("Can't convert string to this type!");
-            exit(1);
-        }
-        array_append(*instructions, create_inst(cvt_inst, null(Val), null(Val)));
+        bool result = generate_cvt_inst_for_types(T_STRING, goal_type, instructions);
+        if (!result) return print_err("Can't convert string to '%s'!", var_type_names[goal_type]);
     }
 
     bool isglobal;
@@ -3212,22 +3295,23 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedLis
 
 }
 
-String generate_func_name_from_args(String name, VarHeader *args) {
-    String res = String_copy(name);
-    for (int i = 0; i < array_length(args); i++) {
-        res = String_concatf_first(res, StringRef("-"));
-        if (args[i].var_type == T_STRUCT) {
-            res = String_concatf_first(res, StringRef("struct "));
-            res = String_concatf_first(res, args[i].var_struct_name);
-        } else {
-            res = String_concatf_first(res, StringRef(var_type_names[args[i].var_type]));
-        }
-    }
+// String generate_func_name_from_args(String name, VarHeader *args) {
+//     String res = String_copy(name);
+//     for (int i = 0; i < array_length(args); i++) {
+//         res = String_concatf_first(res, StringRef("-"));
+//         if (args[i].var_type == T_STRUCT) {
+//             res = String_concatf_first(res, StringRef("struct "));
+//             res = String_concatf_first(res, args[i].var_struct_name);
+//         } else {
+//             res = String_concatf_first(res, StringRef(var_type_names[args[i].var_type]));
+//         }
+//     }
     
-    print_todo("Free me! generate_func_name_from_args()");
+//     print_todo("Free me! generate_func_name_from_args()");
 
-    return res;
-}
+//     return res;
+// }
+
 
 
 void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
@@ -3241,24 +3325,14 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
 
     String func_name = ast.children[1].token.text;
 
-    VarHeader *args = array(VarHeader, 2);
-
-    for (int i = 0; i < array_length(var_args.children); i++) {
-        String var_name = var_args.children[i].children[1].token.text;
-        VarType var_type = var_args.children[i].children[0].token.var_type;
-        String var_struct_name = var_args.children[i].children[0].token.text;
-        VarHeader vh = create_var_header(var_name, var_type, -1, var_struct_name);
-        array_append(args, vh);
-    }
-
-    func_name = generate_func_name_from_args(func_name, args);
-
-    printf("%s \n", func_name.data);
-
-    array_free(args);
-
     VarType var_type = ast.children[0].token.var_type;
-    VarHeader vh = create_func_header(func_name, var_type, array_length(*instructions) - 1, var_type == T_STRUCT ? ast.children[0].token.text : String_null);
+    VarHeader vh = create_func_header(
+        func_name, 
+        var_type, 
+        array_length(*instructions) - 1, 
+        var_type == T_STRUCT ? ast.children[0].token.text : String_null,
+        get_args_from_func_header_ast(&var_args)
+    );
 
     add_varheader_to_map_list(var_map_list, func_name, &vh);
 
@@ -3299,7 +3373,8 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
     HashMap_free(var_map_list->head->val);
     LL_pop_head(var_map_list);
 
-    array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
+    if ((*instructions)[array_length(*instructions) - 1].type != I_RETURN)
+        array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
 
 
     (*instructions)[jump_inst_idx].arg1.i_val = array_length(*instructions);
@@ -3313,28 +3388,34 @@ void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, Linke
     String func_name = ast.children[0].token.text;
     
     int len = array_length(func_args.children);
-
-    VarHeader *args = array(VarHeader, 2);
-
-    for (int i = 0; i <  len; i++) {
-        VarHeader current_vh = create_var_header(String_null, func_args.children[i].expected_return_type, -1, func_args.children[i].return_type_name);
-
-        array_append(args, current_vh);
-    }
-
-    func_name = generate_func_name_from_args(func_name, args);
     
 
     VarHeader *vh = get_varheader_from_map_list(var_map_list, func_name, NULL);
     
-    if (vh == NULL) {
-        print_err("Tried to call function '%s' which doesn't exist! Double check the function name, and whether you passed the right arguments..", func_name);
-    }
+    if (!vh) return print_err("Tried to call function '%s' which doesn't exist!", func_name.data);
+    
 
+    if (len != array_length(vh->func_args)) return print_err(
+        "function '%s' expected %d arguments but got %d!",
+        func_name.data,
+        array_length(vh->func_args),
+        len
+    );
 
 
     for (int i = 0; i < len; i++) {
-        generate_instructions_for_node(func_args.children[i], instructions, var_map_list);
+        ASTNode arg = func_args.children[i];
+        generate_instructions_for_node(arg, instructions, var_map_list);
+        VarType goal_type = vh->func_args[i].var_type;
+        if (arg.expected_return_type != goal_type) {
+            bool result = generate_cvt_inst_for_types(arg.expected_return_type, goal_type, instructions);
+            if (!result) return print_err(
+                "Function argument #%d expected type '%s' but got '%s'!",
+                i,
+                var_type_names[goal_type],
+                var_type_names[arg.expected_return_type]
+            );
+        }
     }
 
 
@@ -3431,16 +3512,11 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
         VarType curr_type = member_assigns->children[i].children[1].expected_return_type;
 
         if (curr_type != goal_type) {
-            InstType cvt_inst = get_cvt_inst_type_for_types(curr_type, goal_type);
-            if (cvt_inst == I_INVALID) {
-                print_err("Couldn't convert type '%s' to type '%s' in attribute assignment!", 
+            bool result = generate_cvt_inst_for_types(curr_type, goal_type, instructions);
+            if (!result) return print_err("Couldn't convert type '%s' to type '%s' in attribute assignment!", 
                     var_type_names[curr_type],
                     var_type_names[goal_type]
-                );
-                exit(1);
-            }
-
-            array_append(*instructions, create_inst(cvt_inst, null(Val), null(Val)));
+            );
         }
 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, null(Val)));
@@ -5018,7 +5094,7 @@ int main() {
 
             FILE *file = fopen(filepath, "r");
 
-            if (file == NULL) {
+            if (!file) {
                 print_err("Couldn't open file! errno: %d ", errno);                
                 continue;
             }
@@ -5037,8 +5113,6 @@ int main() {
 
 
             fclose(file);
-
-            printf("result: '%s' \n", buf);
 
         } else if (!strncmp(answer, "code", 4)) {
             printf("Write the program here:\n>");
@@ -5086,7 +5160,7 @@ int main() {
         if (benchmark) {
             run_benchmark(instructions);
         } else {
-            // run_program(instructions);
+            run_program(instructions);
         }
 
         array_free(instructions);
