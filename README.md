@@ -3,7 +3,7 @@
 ## Description
 
 This is a personal project developing a stack-based interpreter for a custom programming language, written entirely in C. It currently processes code through lexing, parsing, bytecode compilation, and execution via a custom virtual machine (VM).
-This project is mainly for learning about how compilers and interpreters work. I have not followed any specific tutorial or book, and I mainly figured everything out with research (also no AI codegen!)
+This project is mainly for learning about how compilers and interpreters work. I haven't followed any specific tutorial or book, so I mainly figured everything out with research (also no AI codegen!)
 
 ## Current Language Features
 
@@ -93,6 +93,7 @@ Took ~2.5s to check whether 78,953,803 is prime (which, the same unoptimized cod
 ## Future Goals
 
 * **Explicit Type coercion** Self explanatory.
+* **Better error reporting** Improve and add as many helpful error messages as I can.
 * **Arrays:** Introduce array data structures.
 * **File Support:** Allow programs to read from and write to files.
 * **Generic Types:** I might add them later on.
