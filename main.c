@@ -2309,6 +2309,7 @@ VarHeader *get_args_from_func_header_ast(ASTNode *ast) {
 #define RETURN_PATHS_OK 1
 #define UNREACHABLE_CODE 0
 #define MISSING_RETURN_PATHS -1
+#define RETURN_FROM_VOID_FUNCTION -2
 
 // TODO: A BLOCK CAN BE A BLOCKER!
 int _validate_return_paths(ASTNode *ast, VarType return_type) {
@@ -2343,12 +2344,24 @@ int _validate_return_paths(ASTNode *ast, VarType return_type) {
     return MISSING_RETURN_PATHS;
 }
 
+bool has_returns(ASTNode *ast) {
+    for (int i = 0; i < array_length(ast->children); i++) {
+        ASTNode *child = &ast->children[i];
+        if (child->token.type == RETURN_STMT) return true;
+        if (has_returns(child)) return true;
+    }
+
+    return false;
+}
+
 int validate_return_paths(ASTNode *ast) {
     if (ast->token.type != FUNC_DECL_STMT) {
         print_err("Invalid call to validate_return_paths()!");
         return false;
     }
     VarType target_type = ast->children[0].token.var_type;
+
+    if (target_type == T_VOID) return has_returns(ast) ? RETURN_FROM_VOID_FUNCTION : RETURN_PATHS_OK;
 
     return _validate_return_paths(&ast->children[3], target_type);
 }
@@ -2458,6 +2471,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         if (result == MISSING_RETURN_PATHS)
             return print_err("Not all return paths return type '%s' in function '%s()'!", 
                 var_type_names[node->children[0].token.var_type], func_name.data);
+        if (result == RETURN_FROM_VOID_FUNCTION)
+            return print_err("Tried to return a value from '%s()', which returns void!", func_name.data);
 
     } else if (node->token.type == STRUCT_DECL_STMT) {
 
