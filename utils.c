@@ -22,7 +22,7 @@
 
 #define print_todo(...) {printf("TODO: \n\t"); printf(__VA_ARGS__); printf("\n\t on line #%d \n", __LINE__);}
 
-// #define pause_err(...) {print_err(__VA_ARGS__); getchar();}
+#define return_err(...) do {print_err(__VA_ARGS__); return;} while (0);
 
 #define in_range(a, b, c) ((a >= b) && (a <= c))
 
