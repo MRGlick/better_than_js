@@ -39,6 +39,10 @@ void * _create_array(int item_size, int size) {
 int array_length(const void *array) {
     if (array == NULL) return -1;
     ArrayHeader *header = array_header(array);
+    if (header->padding != 1) {
+        printf("Tried calling array_length() on a non-array! \n");
+        return -1;
+    }
 
     return header->length;
 }

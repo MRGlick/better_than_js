@@ -51,6 +51,7 @@ typedef struct Inst {
 
 typedef enum VHType {
     VH_FUNC,
+    VH_FUNCS,
     VH_VAR,
     VH_STRUCT
 } VHType;
@@ -69,6 +70,9 @@ typedef struct VarHeader {
             i32 func_return_type;
             i32 func_pos;
             struct VarHeader *func_args;
+        };
+        struct { // VH_FUNCS
+            struct VarHeader *funcs;
         };
         struct { // VH_STRUCT
             struct VarHeader *struct_members;
@@ -103,6 +107,13 @@ VarHeader create_func_header(String name, int return_type, int pos, String struc
         .func_pos = pos, 
         .func_return_type_struct_name = struct_name,
         .func_args = args
+    };
+}
+
+VarHeader create_funcs_header(String name, VarHeader *funcs) {
+    return (VarHeader) {
+        .name = name,
+        .funcs = funcs
     };
 }
 
@@ -2286,7 +2297,7 @@ VarHeader *find_attr_in_struct(VarHeader *struct_vh, String attr_name) {
     return NULL;
 }
 
-VarHeader *get_args_from_func_header_ast(ASTNode *ast) {
+VarHeader *get_args_from_func_decl_ast(ASTNode *ast) {
     VarHeader *args = array(VarHeader, 2);
 
     ASTNode *func_args = ast;
@@ -2368,6 +2379,84 @@ int validate_return_paths(ASTNode *ast) {
     return _validate_return_paths(&ast->children[3], target_type);
 }
 
+int get_match_score_for_types(VarType t1, VarType t2) {
+    if (t1 == t2) return 4;
+    if (t1 == T_INT) {
+        if (t2 == T_FLOAT) return 3;
+        if (t2 == T_BOOL) return 2;
+        if (t2 == T_STRING) return 1;
+    }
+    if (t1 == T_FLOAT) {
+        if (t2 == T_INT) return 3;
+        if (t2 == T_BOOL) return 2;
+        if (t2 == T_STRING) return 1;
+    }
+    if (t1 == T_BOOL) {
+        if (t2 == T_INT) return 3;
+        if (t2 == T_FLOAT) return 2;
+        if (t2 == T_STRING) return 1;
+    }
+    if (t1 == T_STRING) {
+        if (t2 == T_INT) return 1;
+        if (t2 == T_FLOAT) return 1;
+        if (t2 == T_BOOL) return 1;
+    }
+
+    return 0;
+}
+
+int get_overload_match_score(VarHeader *func_args, ASTNode *call_args_ast) {
+    
+    assert(
+        array_length(func_args) == array_length(call_args_ast->children), 
+        "Invalid call to get_overload_match_score()! lengths are %d and %d",
+        array_length(func_args),
+        array_length(call_args_ast->children)
+    );
+
+    int score = 0;
+
+    for (int i = 0; i < array_length(func_args); i++) {
+        score += get_match_score_for_types(func_args[i].var_type, call_args_ast->children[i].expected_return_type);
+    }
+
+    return score;
+}
+
+VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
+
+    VarHeader *best_match = NULL;
+    int best_score = 0;
+
+    for (int i = 0; i < array_length(overloads->funcs); i++) {
+        VarHeader *func = &overloads->funcs[i];
+
+        if (array_length(func->func_args) != array_length(call_args_ast->children)) continue;
+
+        int current_score = get_overload_match_score(func->func_args, call_args_ast);
+
+        if (current_score > best_score) {
+            best_score = current_score;
+            best_match = func;
+        }
+
+    }
+
+    if (!best_match) {
+        print_err("Tried to call function '%s()' with invalid arguments!", overloads->name.data);
+
+        printf("Argument types: ");
+        for (int i = 0; i < array_length(call_args_ast->children); i++) {
+            printf("%s, ", var_type_names[call_args_ast->children[i].expected_return_type]);
+        }
+    }
+
+
+
+    return best_match;
+    
+}
+
 // anything this function doesn't touch is meant to return void
 void typeify_tree(ASTNode *node, HashMap *var_map) {
     
@@ -2402,13 +2491,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         node->expected_return_type = vh->var_type;
         node->return_type_name = vh->var_type == T_STRUCT ? vh->var_struct_name : StringRef(var_type_names[vh->var_type]);
     }
-    if (node->token.type == FUNC_CALL) {
-        VarHeader *vh = HashMap_get_safe(var_map, node->children[0].token.text, NULL);
-        if (!vh) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
-
-        node->expected_return_type = vh->func_return_type;
-        node->return_type_name = vh->func_return_type == T_STRUCT ? vh->func_return_type_struct_name : StringRef(var_type_names[vh->func_return_type]);
-    }
+    
             
     if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {
         int highest_precedence_type = T_VOID;
@@ -2435,7 +2518,38 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         String func_name = node->children[1].token.text;
 
-        HashMap *old_map = var_map;
+        VarHeader vh = create_func_header(
+            func_name, 
+            node->children[0].token.var_type, 
+            -1, 
+            node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null, 
+            get_args_from_func_decl_ast(&func_args)
+        );
+
+        VarHeader *overloads_ptr = HashMap_get_safe(var_map, func_name, NULL);
+        if (overloads_ptr) {
+            array_append(overloads_ptr->funcs, vh);
+        } else {
+            VarHeader overloads = create_funcs_header(func_name, array(VarHeader, 2));
+            array_append(overloads.funcs, vh);
+            
+            HashMap_put(var_map, func_name, &overloads);
+
+            overloads_ptr = HashMap_get(var_map, func_name);
+        }
+
+        debug {
+            for (int i = 0; i < array_length(overloads_ptr->funcs); i++) {
+                printf("#%d: ", i);
+                for (int j = 0; j < array_length(overloads_ptr->funcs[i].func_args); j++) {
+
+                    printf("%s ", var_type_names[overloads_ptr->funcs[i].func_args[j].var_type]);
+                }
+                printf("\n");
+            }
+        }
+
+
         var_map = HashMap_copy(var_map);
         
         int len = array_length(func_args.children);
@@ -2449,19 +2563,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             
             HashMap_put(var_map, var_name, &vh);
         }
-        
-        VarHeader vh = create_func_header(
-            func_name, 
-            node->children[0].token.var_type, 
-            -1, 
-            node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null, 
-            get_args_from_func_header_ast(&func_args)
-        );
-        HashMap_put(old_map, func_name, &vh);
 
-        // since var_map is a copy, we have to add the function header to both the old map and the copy. 
-        // If we don't do this, we can't call the function recursively from within itself.
-        HashMap_put(var_map, func_name, &vh); 
 
         ASTNode *func_scope = &node->children[3];
 
@@ -2472,12 +2574,17 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         HashMap_free(var_map);
 
+
+
         int result = validate_return_paths(node);
+        
         if (result == UNREACHABLE_CODE) 
             return_err("Return might cause unreachable code in function '%s()'!", func_name.data);
+
         if (result == MISSING_RETURN_PATHS)
             return_err("Not all return paths return type '%s' in function '%s()'!", 
                 var_type_names[node->children[0].token.var_type], func_name.data);
+
         if (result == RETURN_FROM_VOID_FUNCTION)
             return_err("Tried to return a value from '%s()', which returns void!", func_name.data);
 
@@ -2556,14 +2663,28 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
     } else if (node->token.type == OP_UNARY_MINUS) {
         typeify_tree(&node->children[0], var_map);
         node->expected_return_type = node->children[0].expected_return_type;
+    } else if (node->token.type == FUNC_CALL) {
+        VarHeader *overloads = HashMap_get_safe(var_map, node->children[0].token.text, NULL);
+        if (!overloads) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
+
+        (&node->children[0])->expected_return_type = T_VOID;
+
+        ASTNode *args_ast = &node->children[1];
+
+        for (int i = 0; i < array_length(args_ast->children); i++) {
+            typeify_tree(&args_ast->children[i], var_map);
+        }
+
+        VarHeader *vh = get_best_overload(overloads, args_ast);
+
+        node->expected_return_type = vh->func_return_type;
+        node->return_type_name = vh->func_return_type == T_STRUCT ? vh->func_return_type_struct_name : StringRef(var_type_names[vh->func_return_type]);
     } else {
         int len = array_length(node->children);
         for (int i = 0; i < len; i++) {
             typeify_tree(&node->children[i], var_map);
         }
     } 
-    
-    
     
     
     
@@ -3021,7 +3142,6 @@ VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bo
         current = current->next;
     }
     print_err("Identifier '%s' doesn't exist within the current scope!", name.data);
-    exit(1);
     return NULL;
 }
 
@@ -3046,10 +3166,6 @@ int calc_stack_space_for_scope(ASTNode ast) {
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list);
 
 void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-    if (ast.children[0].token.type != TYPE) {
-        print_err("Invalid variable declaration!");
-        exit(1);
-    }
     
     String var_name = ast.children[1].token.text;
 
@@ -3355,7 +3471,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
         var_type, 
         array_length(*instructions) - 1, 
         var_type == T_STRUCT ? ast.children[0].token.text : String_null,
-        get_args_from_func_header_ast(&var_args)
+        get_args_from_func_decl_ast(&var_args)
     );
 
     add_varheader_to_map_list(var_map_list, func_name, &vh);
@@ -5162,6 +5278,7 @@ int main() {
 
         ParseResult res = parse_stmt_seq(0);
         
+        debug printf("about to preprocess_ast() \n");
         preprocess_ast(&res.node);
 
         if (res.endpos < array_length(tokens))res.success = false;
@@ -5174,20 +5291,20 @@ int main() {
             printf("INVALID EXPRESSION \n");
         }
 
-        Inst *instructions = generate_instructions(res.node);
+        // Inst *instructions = generate_instructions(res.node);
 
-        print_instructions(instructions);
+        // print_instructions(instructions);
 
         // // compile_instructions(instructions);
 
         // place for chaos. increment when this made you want to kys: 2
-        if (benchmark) {
-            run_benchmark(instructions);
-        } else {
-            run_program(instructions);
-        }
+        // if (benchmark) {
+        //     run_benchmark(instructions);
+        // } else {
+        //     // run_program(instructions);
+        // }
 
-        array_free(instructions);
+        // array_free(instructions);
 
         free_tokens(tokens);
 

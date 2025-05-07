@@ -1,0 +1,5 @@
+int foo(int a, int b) return a * b;
+float foo (int a, float b) return a / b;
+void foo(string a, string b) print a, " ", b;
+
+print foo(5.0, 2.5);
