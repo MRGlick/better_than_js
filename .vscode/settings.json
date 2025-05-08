@@ -10,7 +10,8 @@
         "initializer_list": "c",
         "sstream": "c",
         "stdlib.h": "c",
-        "inttypes.h": "c"
+        "inttypes.h": "c",
+        "stdbool.h": "c"
     },
     "github.copilot.enable": {
         "*": false,

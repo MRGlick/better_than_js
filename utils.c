@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <time.h>
+#include "match.h"
 //#define PRINT_NULLS
 
 #ifdef PRINT_NULLS

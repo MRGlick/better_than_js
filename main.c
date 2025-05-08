@@ -1,4 +1,6 @@
 
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
 #include <stdio.h>
 #include "utils.c"
 #include "mystring.c"
@@ -2457,241 +2459,283 @@ VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
     
 }
 
+String get_type_str_from_varheader(VarHeader *vh) {
+    if (!vh) {
+        print_err("Tried to get return type name of null varheader! \n");
+        return String_null;
+    }
+    if (vh->type != VH_VAR && vh->type != VH_FUNC) {
+        print_err("Tried to call get_type_str_from_varheader(), but passed in a header with an unsupported type! \n");
+        return String_null;
+    }
+
+    if (vh->type == VH_FUNC) return vh->func_return_type == T_STRUCT ? vh->func_return_type_struct_name : StringRef(var_type_names[vh->func_return_type]);
+
+    return vh->var_type == T_STRUCT ? vh->var_struct_name : StringRef(var_type_names[vh->var_type]);
+}
+
+String get_type_str_from_node(ASTNode *node) {
+    if (!node) {
+        print_err("Tried to get return type name of null varheader!");
+        return String_null;
+    }
+    if (node->token.type != TYPE) {
+        print_err("Tried to call get_type_str_from_node() on non-type node!");
+        return String_null;
+    }
+
+    return node->token.var_type == T_STRUCT ? node->token.text : String_null;
+}
+
 // anything this function doesn't touch is meant to return void
 void typeify_tree(ASTNode *node, HashMap *var_map) {
     
-    if (node->token.type == BLOCK) {
-        var_map = HashMap_copy(var_map); // make further use be limited to this scope
-    }
-    
-    if (node->token.type == DECL_STMT || node->token.type == DECL_ASSIGN_STMT) {
-        String var_name = node->children[1].token.text;
-        VarType var_type = node->children[0].token.var_type;
-        
-        VarHeader vh = create_var_header(var_name, var_type, -1, var_type == T_STRUCT ? node->children[0].token.text : String_null);
-        HashMap_put(var_map, var_name, &vh);
-    }
-
     #define HANDLE_LITERAL(t, vt) if (node->token.type == t) { \
         node->expected_return_type = vt; \
         node->return_type_name = StringRef(var_type_names[vt]); \
     } 
     
-    HANDLE_LITERAL(INTEGER, T_INT);
-    HANDLE_LITERAL(FLOAT, T_FLOAT);
-    HANDLE_LITERAL(BOOL, T_BOOL);
-    HANDLE_LITERAL(STRING_LITERAL, T_STRING);
-    HANDLE_LITERAL(NULL_REF, T_STRUCT);
+    match (node->token.type) {
+        case(BLOCK) then({
+            HashMap *copy = HashMap_copy(var_map);
 
-    #undef HANDLE_LITERAL
-
-    if (node->token.type == NAME) {
-        VarHeader *vh = HashMap_get_safe(var_map, node->token.text, NULL);
-        if (!vh) return_err("Identifier '%s' Doesn't exist within the current scope!", node->token.text.data);
-        node->expected_return_type = vh->var_type;
-        node->return_type_name = vh->var_type == T_STRUCT ? vh->var_struct_name : StringRef(var_type_names[vh->var_type]);
-    }
-    
-            
-    if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {
-        int highest_precedence_type = T_VOID;
-        int len = array_length(node->children);
-        for (int i = 0; i < len; i++) {
-            typeify_tree(&node->children[i], var_map);
-            if (get_type_precedence(node->children[i].expected_return_type) > get_type_precedence(highest_precedence_type)) {
-                highest_precedence_type = node->children[i].expected_return_type;
+            for (int i = 0; i < array_length(node->children); i++) {
+                typeify_tree(&node->children[i], copy);
             }
-        }
-        node->expected_return_type = highest_precedence_type;
-        node->return_type_name = StringRef(var_type_names[highest_precedence_type]);
-    } else if (in_range(node->token.type, BOOLOPS_START, BOOLOPS_END)) {
 
-        node->expected_return_type = T_BOOL;
-        node->return_type_name = StringRef(var_type_names[T_BOOL]);
+            HashMap_free(copy);
+        })
+        case(DECL_STMT, DECL_ASSIGN_STMT) then({
 
-        int len = array_length(node->children);
-        for (int i = 0; i < len; i++) {
-            typeify_tree(&node->children[i], var_map);
-        }
-    } else if (node->token.type == FUNC_DECL_STMT) {
-        ASTNode func_args = node->children[2];
-
-        String func_name = node->children[1].token.text;
-
-        VarHeader vh = create_func_header(
-            func_name, 
-            node->children[0].token.var_type, 
-            -1, 
-            node->children[0].token.var_type == T_STRUCT ? node->children[0].token.text : String_null, 
-            get_args_from_func_decl_ast(&func_args)
-        );
-
-        VarHeader *overloads_ptr = HashMap_get_safe(var_map, func_name, NULL);
-        if (overloads_ptr) {
-            array_append(overloads_ptr->funcs, vh);
-        } else {
-            VarHeader overloads = create_funcs_header(func_name, array(VarHeader, 2));
-            array_append(overloads.funcs, vh);
+            String var_name = node->children[1].token.text;
+            VarType var_type = node->children[0].token.var_type;
             
-            HashMap_put(var_map, func_name, &overloads);
-
-            overloads_ptr = HashMap_get(var_map, func_name);
-        }
-
-        debug {
-            for (int i = 0; i < array_length(overloads_ptr->funcs); i++) {
-                printf("#%d: ", i);
-                for (int j = 0; j < array_length(overloads_ptr->funcs[i].func_args); j++) {
-
-                    printf("%s ", var_type_names[overloads_ptr->funcs[i].func_args[j].var_type]);
-                }
-                printf("\n");
-            }
-        }
-
-
-        var_map = HashMap_copy(var_map);
-        
-        int len = array_length(func_args.children);
-        for (int i = 0; i < len; i++) {
-            
-            StringRef var_name = func_args.children[i].children[1].token.text;
-            
-            VarType var_type = func_args.children[i].children[0].token.var_type;
-            
-            VarHeader vh = create_var_header(var_name, var_type, -1, var_type == T_STRUCT ? func_args.children[i].children[0].token.text : String_null);
-            
+            VarHeader vh = create_var_header(var_name, var_type, -1, get_type_str_from_node(&node->children[0]));
             HashMap_put(var_map, var_name, &vh);
-        }
+
+            for (int i = 0; i < array_length(node->children); i++) {
+                typeify_tree(&node->children[i], var_map);
+            }
+        })
+        case(INTEGER) then({
+            node->expected_return_type = T_INT;
+            node->return_type_name = StringRef(var_type_names[T_INT]);
+        })
+        case(FLOAT) then({
+            node->expected_return_type = T_FLOAT;
+            node->return_type_name = StringRef(var_type_names[T_FLOAT]);
+        })
+        case(BOOL) then({
+            node->expected_return_type = T_BOOL;
+            node->return_type_name = StringRef(var_type_names[T_BOOL]);
+        })
+        case(STRING_LITERAL) then({
+            node->expected_return_type = T_STRING;
+            node->return_type_name = StringRef(var_type_names[T_STRING]);
+        })
+        case(NULL_REF) then({
+            node->expected_return_type = T_STRUCT;
+            node->return_type_name = StringRef(var_type_names[T_STRUCT]);
+        })
+        case(NAME) then({
+            VarHeader *vh = HashMap_get_safe(var_map, node->token.text, NULL);
+            if (!vh) 
+                return_err("Identifier '%s' Doesn't exist within the current scope!", node->token.text.data);
+            
+            node->expected_return_type = vh->var_type;
+            node->return_type_name = get_type_str_from_varheader(vh);
+        })
+        case(FUNC_DECL_STMT) then({
+            ASTNode func_args = node->children[2];
+
+            String func_name = node->children[1].token.text;
+
+            VarHeader vh = create_func_header(
+                func_name, 
+                node->children[0].token.var_type, 
+                -1, 
+                get_type_str_from_node(&node->children[0]), 
+                get_args_from_func_decl_ast(&func_args)
+            );
+
+            VarHeader *overloads_ptr = HashMap_get_safe(var_map, func_name, NULL);
+            if (overloads_ptr) {
+                array_append(overloads_ptr->funcs, vh);
+            } else {
+                VarHeader overloads = create_funcs_header(func_name, array(VarHeader, 2));
+                array_append(overloads.funcs, vh);
+                
+                HashMap_put(var_map, func_name, &overloads);
+
+                overloads_ptr = HashMap_get(var_map, func_name);
+            }
+
+            var_map = HashMap_copy(var_map);
+            
+            int len = array_length(func_args.children);
+            for (int i = 0; i < len; i++) {
+                
+                StringRef var_name = func_args.children[i].children[1].token.text;
+                
+                VarType var_type = func_args.children[i].children[0].token.var_type;
+                
+                VarHeader vh = create_var_header(var_name, var_type, -1, get_type_str_from_node(&func_args.children[i].children[0]));
+                
+                HashMap_put(var_map, var_name, &vh);
+            }
 
 
-        ASTNode *func_scope = &node->children[3];
+            ASTNode *func_scope = &node->children[3];
 
-        // this ensures we don't copy the hashmap twice because of the scope
-        for (int i = 0; i < array_length(func_scope->children); i++) {
-            typeify_tree(&func_scope->children[i], var_map);
-        }
+            // this ensures we don't copy the hashmap twice because of the scope
+            for (int i = 0; i < array_length(func_scope->children); i++) {
+                typeify_tree(&func_scope->children[i], var_map);
+            }
 
-        HashMap_free(var_map);
+            HashMap_free(var_map);
 
 
 
-        int result = validate_return_paths(node);
+            int result = validate_return_paths(node);
+            
+            match (result) {
+                case(UNREACHABLE_CODE) then (
+                    return_err("Return might cause unreachable code in function '%s()'!", func_name.data);
+                )
+                case(MISSING_RETURN_PATHS) then (
+                    return_err("Not all return paths return type '%s' in function '%s()'!", 
+                        var_type_names[node->children[0].token.var_type], func_name.data);    
+                )
+                case(RETURN_FROM_VOID_FUNCTION) then (
+                    return_err("Tried to return a value from '%s()', which returns void!", func_name.data);
+                )
+            }
+
+        })
+        case (STRUCT_DECL_STMT) then({
+            String name = node->children[0].token.text;
+            ASTNode members = node->children[1];
+    
+            VarHeader *arr = array(VarHeader, 2);
+    
+            int offset = 0;
+    
+            for (int i = 0; i < array_length(members.children); i++) {
+                
+                String var_name = members.children[i].children[1].token.text;
+                VarType var_type = members.children[i].children[0].token.var_type;
+                
+                VarHeader vh = create_var_header(var_name, var_type, offset, get_type_str_from_node(&members.children[i].children[0]));
+    
+                array_append(arr, vh);
+                offset += get_vartype_size(var_type);
+            }
+    
+            VarHeader vh = create_struct_header(name, arr, offset);
+    
+            HashMap_put(var_map, name, &vh);    
+        })
+        case (ATTR_ACCESS) then({
+            typeify_tree(&node->children[0], var_map);
+            VarType left_type = node->children[0].expected_return_type;
+
+            if (left_type != T_STRUCT) {
+                return_err("Tried accessing attribute in '%s' type instead of struct!", var_type_names[left_type]);
+            }
+
+            String attr_name = node->children[1].token.text;
+
+            String struct_name = node->children[0].return_type_name;
+
+            VarHeader *struct_header = HashMap_get_safe(var_map, struct_name, NULL);
+
+            if (!struct_header) {
+                return_err("Tried accessing attribute of struct '%s' which is not defined!", struct_name.data);
+            }
+
+            VarHeader *attr_header = find_attr_in_struct(struct_header, attr_name);
+
+            node->expected_return_type = attr_header->var_type;
+            node->return_type_name = get_type_str_from_varheader(attr_header);
+        })
+
+        case (OP_NEW) then({
+            String struct_name = node->children[0].token.text;
+            VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
+            if (!struct_vh) {
+                return_err("can't create new '%s', as that struct is not defined!", struct_name.data);
+            }
+
+            node->expected_return_type = T_STRUCT;
+            node->return_type_name = struct_name;
+
+
+            ASTNode *assign_seq = &node->children[1];
+            for (int i = 0; i < array_length(assign_seq->children); i++) {
+                ASTNode *member = &assign_seq->children[i].children[0];
+                ASTNode *expr = &assign_seq->children[i].children[1];
+
+                VarHeader *member_vh = find_attr_in_struct(struct_vh, member->token.text);
+
+                member->expected_return_type = member_vh->var_type;
+                member->return_type_name = get_type_str_from_varheader(member_vh);
+                
+                typeify_tree(expr, var_map);
+            }
+        })
+
+        case (OP_UNARY_MINUS) then({
+            typeify_tree(&node->children[0], var_map);
+            node->expected_return_type = node->children[0].expected_return_type;    
+        })
+
+        case (FUNC_CALL) then({
+            VarHeader *overloads = HashMap_get_safe(var_map, node->children[0].token.text, NULL);
+            if (!overloads) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
+    
+            (&node->children[0])->expected_return_type = T_VOID;
+    
+            ASTNode *args_ast = &node->children[1];
+    
+            for (int i = 0; i < array_length(args_ast->children); i++) {
+                typeify_tree(&args_ast->children[i], var_map);
+            }
+    
+            VarHeader *vh = get_best_overload(overloads, args_ast);
+    
+            node->expected_return_type = vh->func_return_type;
+            node->return_type_name = get_type_str_from_varheader(vh);    
+        })
+
+        default({
+            if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {
+                int highest_precedence_type = T_VOID;
+                int len = array_length(node->children);
+                for (int i = 0; i < len; i++) {
+                    typeify_tree(&node->children[i], var_map);
+                    if (get_type_precedence(node->children[i].expected_return_type) > get_type_precedence(highest_precedence_type)) {
+                        highest_precedence_type = node->children[i].expected_return_type;
+                    }
+                }
+                node->expected_return_type = highest_precedence_type;
+                node->return_type_name = StringRef(var_type_names[highest_precedence_type]);
+            } else if (in_range(node->token.type, BOOLOPS_START, BOOLOPS_END)) {
         
-        if (result == UNREACHABLE_CODE) 
-            return_err("Return might cause unreachable code in function '%s()'!", func_name.data);
-
-        if (result == MISSING_RETURN_PATHS)
-            return_err("Not all return paths return type '%s' in function '%s()'!", 
-                var_type_names[node->children[0].token.var_type], func_name.data);
-
-        if (result == RETURN_FROM_VOID_FUNCTION)
-            return_err("Tried to return a value from '%s()', which returns void!", func_name.data);
-
-    } else if (node->token.type == STRUCT_DECL_STMT) {
-
-        String name = node->children[0].token.text;
-        ASTNode members = node->children[1];
-
-        VarHeader *arr = array(VarHeader, 2);
-
-        int offset = 0;
-
-        for (int i = 0; i < array_length(members.children); i++) {
-            
-            String var_name = members.children[i].children[1].token.text;
-            VarType var_type = members.children[i].children[0].token.var_type;
-            
-            VarHeader vh = create_var_header(var_name, var_type, offset, var_type == T_STRUCT ? members.children[i].children[0].token.text : String_null);
-
-            array_append(arr, vh);
-            offset += get_vartype_size(var_type);
-        }
-
-        VarHeader vh = create_struct_header(name, arr, offset);
-
-        HashMap_put(var_map, name, &vh);
-
-    } else if (node->token.type == ATTR_ACCESS) {
-
-        typeify_tree(&node->children[0], var_map);
-        VarType left_type = node->children[0].expected_return_type;
-
-        if (left_type != T_STRUCT) {
-            return_err("Tried accessing attribute in '%s' type instead of struct!", var_type_names[left_type]);
-        }
-
-        String attr_name = node->children[1].token.text;
-
-        // #TODO - return_type_name
-        String struct_name = node->children[0].return_type_name;
-
-        VarHeader *struct_header = HashMap_get_safe(var_map, struct_name, NULL);
-
-        if (!struct_header) {
-            return_err("Tried accessing attribute of struct '%s' which is not defined!", struct_name.data);
-        }
-
-        VarHeader *attr_header = find_attr_in_struct(struct_header, attr_name);
-
-        node->expected_return_type = attr_header->var_type;
-        node->return_type_name = attr_header->var_type == T_STRUCT ? attr_header->var_struct_name : StringRef(var_type_names[attr_header->var_type]);
-
-    } else if (node->token.type == OP_NEW) {
-        String struct_name = node->children[0].token.text;
-        VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
-        if (!struct_vh) {
-            return_err("can't create new '%s', as that struct is not defined!", struct_name.data);
-        }
-
-        node->expected_return_type = T_STRUCT;
-        node->return_type_name = struct_name;
-
-
-        ASTNode *assign_seq = &node->children[1];
-        for (int i = 0; i < array_length(assign_seq->children); i++) {
-            ASTNode *member = &assign_seq->children[i].children[0];
-            ASTNode *expr = &assign_seq->children[i].children[1];
-
-            VarHeader *member_vh = find_attr_in_struct(struct_vh, member->token.text);
-
-            member->expected_return_type = member_vh->var_type;
-            member->return_type_name = member->expected_return_type == T_STRUCT ? member_vh->var_struct_name : String_null;
-            
-            typeify_tree(expr, var_map);
-        }
-    } else if (node->token.type == OP_UNARY_MINUS) {
-        typeify_tree(&node->children[0], var_map);
-        node->expected_return_type = node->children[0].expected_return_type;
-    } else if (node->token.type == FUNC_CALL) {
-        VarHeader *overloads = HashMap_get_safe(var_map, node->children[0].token.text, NULL);
-        if (!overloads) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
-
-        (&node->children[0])->expected_return_type = T_VOID;
-
-        ASTNode *args_ast = &node->children[1];
-
-        for (int i = 0; i < array_length(args_ast->children); i++) {
-            typeify_tree(&args_ast->children[i], var_map);
-        }
-
-        VarHeader *vh = get_best_overload(overloads, args_ast);
-
-        node->expected_return_type = vh->func_return_type;
-        node->return_type_name = vh->func_return_type == T_STRUCT ? vh->func_return_type_struct_name : StringRef(var_type_names[vh->func_return_type]);
-    } else {
-        int len = array_length(node->children);
-        for (int i = 0; i < len; i++) {
-            typeify_tree(&node->children[i], var_map);
-        }
-    } 
-    
-    
-    
-    if (node->token.type == BLOCK) {
-        HashMap_free(var_map);
+                node->expected_return_type = T_BOOL;
+                node->return_type_name = StringRef(var_type_names[T_BOOL]);
+        
+                int len = array_length(node->children);
+                for (int i = 0; i < len; i++) {
+                    typeify_tree(&node->children[i], var_map);
+                }
+            } else {
+                int len = array_length(node->children);
+                for (int i = 0; i < len; i++) {
+                    typeify_tree(&node->children[i], var_map);
+                }
+            } 
+        })
     }
-    
 }
 
 void typeify_tree_wrapper(ASTNode *node) {
@@ -3171,7 +3215,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
 
     VarType var_type = ast.children[0].token.var_type;
     
-    VarHeader vh = create_var_header(var_name, var_type, gi_stack_pos, var_type == T_STRUCT ? ast.children[0].token.text : String_null);
+    VarHeader vh = create_var_header(var_name, var_type, gi_stack_pos, get_type_str_from_node(&ast.children[0]));
 
     add_varheader_to_map_list(var_map_list, var_name, &vh);
     
@@ -3470,7 +3514,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
         func_name, 
         var_type, 
         array_length(*instructions) - 1, 
-        var_type == T_STRUCT ? ast.children[0].token.text : String_null,
+        get_type_str_from_node(&ast.children[0]),
         get_args_from_func_decl_ast(&var_args)
     );
 
@@ -3495,7 +3539,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
         String var_name = var_args.children[i].children[1].token.text;
         VarType var_type = var_args.children[i].children[0].token.var_type;
         array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}, (Val){.type = T_INT, .i_val = gi_stack_pos}));
-        VarHeader vh = create_var_header(var_name, var_type, gi_stack_pos, var_type == T_STRUCT ? var_args.children[i].children[0].token.text : String_null);
+        VarHeader vh = create_var_header(var_name, var_type, gi_stack_pos, get_type_str_from_node(&var_args.children[i].children[0]));
         add_varheader_to_map_list(var_map_list, var_name, &vh);
         gi_stack_pos += get_vartype_size(var_type);
         size += get_vartype_size(var_type);
@@ -3591,7 +3635,7 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
         String var_name = members.children[i].children[1].token.text;
         VarType var_type = members.children[i].children[0].token.var_type;
         
-        VarHeader vh = create_var_header(var_name, var_type, offset, var_type == T_STRUCT ? members.children[i].children[0].token.text : String_null);
+        VarHeader vh = create_var_header(var_name, var_type, offset, get_type_str_from_node(&members.children[i].children[0]));
 
         array_append(arr, vh);
         offset += get_vartype_size(var_type);
@@ -5278,7 +5322,6 @@ int main() {
 
         ParseResult res = parse_stmt_seq(0);
         
-        debug printf("about to preprocess_ast() \n");
         preprocess_ast(&res.node);
 
         if (res.endpos < array_length(tokens))res.success = false;
