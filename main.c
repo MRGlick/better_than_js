@@ -3732,90 +3732,75 @@ void generate_instructions_for_delete(ASTNode ast, Inst **instructions, LinkedLi
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     
-    // independently defined operators
-    if (ast.token.type == DECL_ASSIGN_STMT || ast.token.type == DECL_STMT) {
-        generate_instructions_for_vardecl(ast, instructions, var_map_list);
-        return;
-    }
-    if (ast.token.type == ASSIGN_STMT) {
-        generate_instructions_for_assign(ast, instructions, var_map_list);
-        return;
-    }
-    if (in_range(ast.token.type, BINOPS_START, BINOPS_END)) {
-        generate_instructions_for_binop(ast, instructions, var_map_list);
-        return;
-    }
-    if (ast.token.type == PRINT_STMT || ast.token.type == WRITE_STMT) {
-        generate_instructions_for_print(ast, instructions, var_map_list);
-        return;
+    bool handled = true;
+
+    match (ast.token.type) {
+        case (DECL_ASSIGN_STMT, DECL_STMT) then (
+            generate_instructions_for_vardecl(ast, instructions, var_map_list);
+        )
+        case (ASSIGN_STMT) then (
+            generate_instructions_for_assign(ast, instructions, var_map_list);
+        )
+        case (PRINT_STMT, WRITE_STMT) then (
+            generate_instructions_for_print(ast, instructions, var_map_list);
+        )
+        case (IF_STMT, IF_ELSE_STMT) then (
+            generate_instructions_for_if(ast, instructions, var_map_list);
+        )
+        case (WHILE_STMT) then (
+            generate_instructions_for_while(ast, instructions, var_map_list);
+        )
+        case (INPUT_STMT) then (
+            generate_instructions_for_input(ast, instructions, var_map_list);
+        )
+        case (FUNC_DECL_STMT) then (
+            generate_instructions_for_func_decl(ast, instructions, var_map_list);
+        )
+        case (FUNC_CALL) then (
+            generate_instructions_for_func_call(ast, instructions, var_map_list);
+        )
+        case (OP_UNARY_MINUS) then (
+            generate_instructions_for_unary_minus(ast, instructions, var_map_list);
+        )
+        case (STRUCT_DECL_STMT) then (
+            generate_instructions_for_struct_decl(ast, var_map_list);
+        )
+        case (ATTR_ACCESS) then (
+            generate_instructions_for_attr_access(ast, instructions, var_map_list);
+        )
+        case (OP_NEW) then (
+            generate_instructions_for_new(ast, instructions, var_map_list);
+        )
+        case (DELETE_STMT) then (
+            generate_instructions_for_delete(ast, instructions, var_map_list);
+        )
+        default (
+            if (in_range(ast.token.type, BINOPS_START, BINOPS_END)) {
+                generate_instructions_for_binop(ast, instructions, var_map_list);
+            } else {
+                handled = false;
+            }
+        )
     }
 
-    if (ast.token.type == IF_STMT || ast.token.type == IF_ELSE_STMT) {
-        generate_instructions_for_if(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == WHILE_STMT) {
-        generate_instructions_for_while(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == INPUT_STMT) {
-        generate_instructions_for_input(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == FUNC_DECL_STMT) {
-        generate_instructions_for_func_decl(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == FUNC_CALL) {
-        generate_instructions_for_func_call(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == OP_UNARY_MINUS) { // give me a break okay??
-        generate_instructions_for_unary_minus(ast, instructions, var_map_list); 
-        return;
-    }
-
-    if (ast.token.type == STRUCT_DECL_STMT) {
-        generate_instructions_for_struct_decl(ast, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == ATTR_ACCESS) {
-        generate_instructions_for_attr_access(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == OP_NEW) {
-        generate_instructions_for_new(ast, instructions, var_map_list);
-        return;
-    }
-
-    if (ast.token.type == DELETE_STMT) {
-        generate_instructions_for_delete(ast, instructions, var_map_list);
-        return;
-    }
+    if (handled) return;
 
     int temp_stack_ptr;
 
     // pre children operators
-    switch (ast.token.type) {
-        case STMT_SEQ: ;
+    match (ast.token.type) {
+        case (STMT_SEQ) then ( ;
             int size = calc_stack_space_for_scope(ast);
             array_append(*instructions, create_inst(I_STACK_PTR_ADD, (Val){.type = T_INT, .i_val = size}, null(Val)));
-            break;
-        case BLOCK:
+        )
+        case (BLOCK) then (
             temp_stack_ptr = gi_stack_pos;
             LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));
-            // array_append(*instructions, create_inst(I_STORE_STACK_PTR, null(Val)));
-            break;
+        )
         
-        default:
-            break;
+        default (
+
+        )
     }
         
     for (int i = 0; i < array_length(ast.children); i++) {
@@ -3824,81 +3809,89 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
 
 
     // post children operators
-    switch (ast.token.type) {
-        case RETURN_STMT:
+    match (ast.token.type) {
+        case (RETURN_STMT) then (
             array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
-            break;
-        case INTEGER:
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 4}, (Val){.type = T_INT, .i_val = ast.token.int_val}));
-            break;
-        case FLOAT:
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, (Val){.type = T_FLOAT, .f_val = ast.token.double_val}));
-            break;
-        case BOOL:
+        )
+        case (INTEGER) then (
+            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 4}, 
+                                                    (Val){.type = T_INT, .i_val = ast.token.int_val}));
+        )
+        case (FLOAT) then (
+            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, 
+                                                    (Val){.type = T_FLOAT, .f_val = ast.token.double_val}));
+        )
+        case (BOOL) then (
             if (ast.token.int_val == MAYBE) {
                 array_append(*instructions, create_inst(I_PUSH_MAYBE, null(Val), null(Val)));
             } else {
-                array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 1}, (Val){.type = T_BOOL, .b_val = ast.token.int_val}));
+                array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 1}, 
+                                                        (Val){.type = T_BOOL, .b_val = ast.token.int_val}));
             }
-            break;
-        case NULL_REF:
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, (Val){.type = T_STRUCT, .any_val = NULL}));
-            break;
-        case STRING_LITERAL:
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, (Val){.type = T_STRING, .s_val = ast.token.text.data}));
-            break;
-        case OP_ADD:
+        )
+        case (NULL_REF) then (
+            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, 
+                                                    (Val){.type = T_STRUCT, .any_val = NULL}));
+        )
+        case (STRING_LITERAL) then (
+            array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, 
+                                                    (Val){.type = T_STRING, .s_val = ast.token.text.data}));
+        )
+        case (OP_ADD) then (
             array_append(*instructions, create_inst(I_ADD, null(Val), null(Val)));
-            break;
-        case OP_SUB:
+        )
+        case (OP_SUB) then (
             array_append(*instructions, create_inst(I_SUB, null(Val), null(Val)));
-            break;
-        case OP_MUL:
+        )
+        case (OP_MUL) then (
             array_append(*instructions, create_inst(I_MUL, null(Val), null(Val)));
-            break;
-        case OP_DIV:
+        )
+        case (OP_DIV) then (
             array_append(*instructions, create_inst(I_DIV, null(Val), null(Val)));
-            break;
-        case OP_MOD:
+        )
+        case (OP_MOD) then (
             array_append(*instructions, create_inst(I_MOD, null(Val), null(Val)));
-            break;
-        case OP_GREATER:
+        )
+        case (OP_GREATER) then (
             array_append(*instructions, create_inst(I_GREATER, null(Val), null(Val)));
-            break;
-        case OP_GREATEREQ:
+        )
+        case (OP_GREATEREQ) then (
             array_append(*instructions, create_inst(I_GREATER_EQUAL, null(Val), null(Val)));
-            break;
-        case OP_LESS:
+        )
+        case (OP_LESS) then (
             array_append(*instructions, create_inst(I_LESS, null(Val), null(Val)));
-            break;
-        case OP_LESSEQ:
+        )
+        case (OP_LESSEQ) then (
             array_append(*instructions, create_inst(I_LESS_EQUAL, null(Val), null(Val)));
-            break;
-        case OP_EQ:
+        )
+        case (OP_EQ) then (
             array_append(*instructions, create_inst(I_EQUAL, null(Val), null(Val)));
-            break;
-        case OP_NOTEQ:
+        )
+        case (OP_NOTEQ) then (
             array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val), null(Val)));
-            break;
-        case OP_NOT:
+        )
+        case (OP_NOT) then (
             array_append(*instructions, create_inst(I_NOT, null(Val), null(Val)));
-            break;
-        case NAME: ;
+        )
+        case (NAME) then ( ;
             bool isglobal;
             VarHeader *vh = get_varheader_from_map_list(var_map_list, ast.token.text, &isglobal);
-            array_append(*instructions, create_inst(isglobal? I_READ_GLOBAL : I_READ, (Val){.i_val = get_vartype_size(vh->var_type), .type = T_INT}, (Val){.i_val = vh->var_pos, .type = T_INT}));
-            break;
-        case BLOCK:
+            array_append(*instructions, create_inst(isglobal ? I_READ_GLOBAL : I_READ,
+                (Val){.i_val = get_vartype_size(vh->var_type), .type = T_INT},
+                (Val){.i_val = vh->var_pos, .type = T_INT}));
+        )
+        case (BLOCK) then (
             HashMap_free(var_map_list->head->val);
             LL_pop_head(var_map_list);
             gi_stack_pos = temp_stack_ptr;
-            break;
-        case STMT_SEQ:
-            break;
-        default:
+        )
+        case (STMT_SEQ) then (
+            // do nothing
+        )
+        default (
             print_err("Unhandled case!");
             print_token(ast.token, 0);
-            break;
+        )
     }
 }
 
