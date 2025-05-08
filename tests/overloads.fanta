@@ -3,3 +3,5 @@ float foo (int a, float b) return a / b;
 void foo(string a, string b) print a, " ", b;
 
 print foo(5.0, 2.5);
+print foo(5, 6);
+foo("Hi", "Ho");

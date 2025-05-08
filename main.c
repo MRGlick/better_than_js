@@ -2419,8 +2419,10 @@ int get_overload_match_score(VarHeader *func_args, ASTNode *call_args_ast) {
     int score = 0;
 
     for (int i = 0; i < array_length(func_args); i++) {
-        score += get_match_score_for_types(func_args[i].var_type, call_args_ast->children[i].expected_return_type);
+        score += get_match_score_for_types(call_args_ast->children[i].expected_return_type, func_args[i].var_type);
     }
+
+    debug printf("Score: %d \n", score);
 
     return score;
 }
@@ -2428,6 +2430,7 @@ int get_overload_match_score(VarHeader *func_args, ASTNode *call_args_ast) {
 VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
 
     VarHeader *best_match = NULL;
+    bool ambiguous = false;
     int best_score = 0;
 
     for (int i = 0; i < array_length(overloads->funcs); i++) {
@@ -2436,10 +2439,14 @@ VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
         if (array_length(func->func_args) != array_length(call_args_ast->children)) continue;
 
         int current_score = get_overload_match_score(func->func_args, call_args_ast);
-
+        
+        if (current_score == best_score) {
+            ambiguous = true;
+        }
         if (current_score > best_score) {
             best_score = current_score;
             best_match = func;
+            ambiguous = false;
         }
 
     }
@@ -2453,7 +2460,11 @@ VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
         }
     }
 
-
+    if (ambiguous) {
+        print_err("Tried to call function '%s()', but the call is ambiguous (function cannot be inferred by the argument types)!"
+                        , overloads->name.data);
+        exit(1); // unrecoverable
+    }
 
     return best_match;
     
@@ -3173,8 +3184,7 @@ int gi_stack_pos = 0;
 int gi_label_idx = 0;
 
 
-
-VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bool *global) {
+VarHeader *get_varheader_from_map_list_safe(LinkedList *var_map_list, String name, bool *global) {
     if (global) *global = false;
     LLNode *current = var_map_list->head;
     while (current != NULL) {
@@ -3185,9 +3195,17 @@ VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bo
         }
         current = current->next;
     }
-    print_err("Identifier '%s' doesn't exist within the current scope!", name.data);
     return NULL;
 }
+
+VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bool *global) {
+    VarHeader *result = get_varheader_from_map_list_safe(var_map_list, name, global);
+    if (!result) 
+        print_err("Identifier '%s' doesn't exist within the current scope!", name.data);
+    
+    return result;
+}
+
 
 void add_varheader_to_map_list(LinkedList *var_map_list, String key, VarHeader *vh) {
     HashMap *map = var_map_list->head->val;
@@ -3510,6 +3528,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
     String func_name = ast.children[1].token.text;
 
     VarType var_type = ast.children[0].token.var_type;
+
     VarHeader vh = create_func_header(
         func_name, 
         var_type, 
@@ -3518,7 +3537,21 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
         get_args_from_func_decl_ast(&var_args)
     );
 
-    add_varheader_to_map_list(var_map_list, func_name, &vh);
+    VarHeader *overloads = get_varheader_from_map_list_safe(var_map_list, func_name, NULL);
+    if (overloads) {
+        array_append(overloads->funcs, vh);
+    } else {
+        VarHeader new_overloads = create_funcs_header(func_name, array(VarHeader, 2));
+        array_append(new_overloads.funcs, vh);
+        add_varheader_to_map_list(var_map_list, func_name, &new_overloads);
+    }
+
+    debug {
+        VarHeader *overloads = get_varheader_from_map_list(var_map_list, func_name, NULL);
+        for (int i = 0; i < array_length(overloads->funcs); i++) {
+            printf("%s \n", overloads->funcs[i].name.data);
+        }
+    }
 
 
     LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));
@@ -3574,23 +3607,17 @@ void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, Linke
     int len = array_length(func_args.children);
     
 
-    VarHeader *vh = get_varheader_from_map_list(var_map_list, func_name, NULL);
+    VarHeader *overloads_vh = get_varheader_from_map_list(var_map_list, func_name, NULL);
     
-    if (!vh) return_err("Tried to call function '%s' which doesn't exist!", func_name.data);
+    if (!overloads_vh) return_err("Tried to call function '%s' which doesn't exist!", func_name.data);
     
-
-    if (len != array_length(vh->func_args)) return_err(
-        "function '%s' expected %d arguments but got %d!",
-        func_name.data,
-        array_length(vh->func_args),
-        len
-    );
+    VarHeader *func_vh = get_best_overload(overloads_vh, &func_args);
 
 
     for (int i = 0; i < len; i++) {
         ASTNode arg = func_args.children[i];
         generate_instructions_for_node(arg, instructions, var_map_list);
-        VarType goal_type = vh->func_args[i].var_type;
+        VarType goal_type = func_vh->func_args[i].var_type;
         if (arg.expected_return_type != goal_type) {
             bool result = generate_cvt_inst_for_types(arg.expected_return_type, goal_type, instructions);
             if (!result) return_err(
@@ -3602,8 +3629,7 @@ void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, Linke
         }
     }
 
-
-    array_append(*instructions, create_inst(I_CALL, (Val){.type = T_INT, .i_val = vh->func_pos}, null(Val)));
+    array_append(*instructions, create_inst(I_CALL, (Val){.type = T_INT, .i_val = func_vh->func_pos}, null(Val)));
 }
 
 void generate_instructions_for_unary_minus(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
@@ -5327,20 +5353,20 @@ int main() {
             printf("INVALID EXPRESSION \n");
         }
 
-        // Inst *instructions = generate_instructions(res.node);
+        Inst *instructions = generate_instructions(res.node);
 
-        // print_instructions(instructions);
+        print_instructions(instructions);
 
         // // compile_instructions(instructions);
 
         // place for chaos. increment when this made you want to kys: 2
-        // if (benchmark) {
-        //     run_benchmark(instructions);
-        // } else {
-        //     // run_program(instructions);
-        // }
+        if (benchmark) {
+            run_benchmark(instructions);
+        } else {
+            run_program(instructions);
+        }
 
-        // array_free(instructions);
+        array_free(instructions);
 
         free_tokens(tokens);
 
