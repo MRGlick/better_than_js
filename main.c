@@ -2422,8 +2422,6 @@ int get_overload_match_score(VarHeader *func_args, ASTNode *call_args_ast) {
         score += get_match_score_for_types(call_args_ast->children[i].expected_return_type, func_args[i].var_type);
     }
 
-    debug printf("Score: %d \n", score);
-
     return score;
 }
 
@@ -2437,6 +2435,8 @@ VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
         VarHeader *func = &overloads->funcs[i];
 
         if (array_length(func->func_args) != array_length(call_args_ast->children)) continue;
+
+        if (array_length(func->func_args) == 0) return func;
 
         int current_score = get_overload_match_score(func->func_args, call_args_ast);
         
@@ -2496,6 +2496,26 @@ String get_type_str_from_node(ASTNode *node) {
     }
 
     return node->token.var_type == T_STRUCT ? node->token.text : String_null;
+}
+
+bool _func_vh_args_equal(VarHeader *args1, VarHeader *args2) {
+    if (array_length(args1) != array_length(args2)) return false;
+
+    for (int i = 0; i < array_length(args1); i++) {
+        if (args1[i].var_type != args2[i].var_type) return false;
+    }
+
+    return true;
+}
+
+void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
+
+    for (int i = 0; i < array_length(overloads_vh->funcs); i++) {
+        if (_func_vh_args_equal(overloads_vh->funcs[i].func_args, vh.func_args))
+            return_err("Tried to define '%s()' twice with the same signature! ", vh.name.data);
+    }
+
+    array_append(overloads_vh->funcs, vh);
 }
 
 // anything this function doesn't touch is meant to return void
@@ -2571,14 +2591,12 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             VarHeader *overloads_ptr = HashMap_get_safe(var_map, func_name, NULL);
             if (overloads_ptr) {
-                array_append(overloads_ptr->funcs, vh);
+                add_func_vh_to_overloads(overloads_ptr, vh);
             } else {
                 VarHeader overloads = create_funcs_header(func_name, array(VarHeader, 2));
                 array_append(overloads.funcs, vh);
                 
                 HashMap_put(var_map, func_name, &overloads);
-
-                overloads_ptr = HashMap_get(var_map, func_name);
             }
 
             var_map = HashMap_copy(var_map);
@@ -3539,20 +3557,12 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
 
     VarHeader *overloads = get_varheader_from_map_list_safe(var_map_list, func_name, NULL);
     if (overloads) {
-        array_append(overloads->funcs, vh);
+        add_func_vh_to_overloads(overloads, vh);
     } else {
         VarHeader new_overloads = create_funcs_header(func_name, array(VarHeader, 2));
         array_append(new_overloads.funcs, vh);
         add_varheader_to_map_list(var_map_list, func_name, &new_overloads);
     }
-
-    debug {
-        VarHeader *overloads = get_varheader_from_map_list(var_map_list, func_name, NULL);
-        for (int i = 0; i < array_length(overloads->funcs); i++) {
-            printf("%s \n", overloads->funcs[i].name.data);
-        }
-    }
-
 
     LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));
     int prev_gi_stack_pos = gi_stack_pos;
