@@ -34,6 +34,42 @@ char *KEYWORDS[] = {
 // dont ask
 #define MAYBE 2
 
+#define COUNTER_BITMASK 0x00FFFFFF
+#define STRUCT_METADATA_IDX_BITMASK 0xFF000000
+
+typedef struct StructMetadata {
+    u32 size;
+    u32 offset_count;
+    u32 *offsets;
+} StructMetadata;
+
+typedef struct ObjectHeader {
+    u32 data;
+} ObjectHeader;
+
+static inline void *alloc_object(u32 size) {
+    runtime_mallocs++;
+    return calloc(size, 0);
+}
+
+static inline void free_object(void *obj) {
+    runtime_frees++;
+    free(obj);
+}
+
+void object_inc_ref(void *obj) {
+    ObjectHeader *header = obj;
+    header->data = (header->data + 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_IDX_BITMASK;
+}
+
+void object_dec_ref(void *obj) {
+    ObjectHeader *header = obj;
+    header->data = (header->data - 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_IDX_BITMASK;
+    if ((header->data & COUNTER_BITMASK) == 0) {
+        free_object(obj);
+    }
+}
+
 typedef struct Val {
     union {
         void *any_val;
@@ -2647,7 +2683,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
     
             VarHeader *arr = array(VarHeader, 2);
     
-            int offset = 0;
+            int offset = sizeof(ObjectHeader);
     
             for (int i = 0; i < array_length(members.children); i++) {
                 
@@ -3658,13 +3694,12 @@ void generate_instructions_for_unary_minus(ASTNode ast, Inst **instructions, Lin
 }
 
 void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list) {
-    // print_todo("figure out if there's anything to implement (types are a lie) for struct decl statement instruction gen");
     String name = ast.children[0].token.text;
     ASTNode members = ast.children[1];
 
     VarHeader *arr = array(VarHeader, 2);
 
-    int offset = 0;
+    int offset = sizeof(ObjectHeader);
 
     for (int i = 0; i < array_length(members.children); i++) {
         
@@ -3672,7 +3707,7 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
         VarType var_type = members.children[i].children[0].token.var_type;
         
         VarHeader vh = create_var_header(var_name, var_type, offset, get_type_str_from_node(&members.children[i].children[0]));
-
+    
         array_append(arr, vh);
         offset += get_vartype_size(var_type);
     }
@@ -4455,18 +4490,16 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         break; \
     } \
     case I_ALLOC: { \
-        runtime_mallocs++; \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
-        void *addr = calloc(size, 1); \
+        void *addr = alloc_object(size); \
         append(&addr, sizeof(addr)); \
         break; \
     } \
     case I_FREE: { \
-        runtime_frees++; \
         void *addr = pop(void *); \
-        free(addr); \
+        free_object(addr); \
         break; \
     } \
     case I_JUMP: { \
