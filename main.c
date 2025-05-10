@@ -11,6 +11,7 @@
 #include "inttypes.h"
 #include <inttypes.h>
 #include "linked_list.c"
+#include "runtime.c"
 
 const char SYMBOLS[] = {
     ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|', '.'
@@ -34,54 +35,6 @@ char *KEYWORDS[] = {
 // dont ask
 #define MAYBE 2
 
-#define COUNTER_BITMASK 0x00FFFFFF
-#define STRUCT_METADATA_BITMASK 0xFF000000
-#define STRUCT_METADATA_BIT_OFFSET 24
-
-typedef struct StructMetadata {
-    u32 size;
-    u32 offset_count;
-    u32 *offsets;
-} StructMetadata;
-
-typedef struct ObjectHeader {
-    u32 data;
-} ObjectHeader;
-
-static inline void *alloc_object(u32 size) {
-    runtime_mallocs++;
-    return calloc(size, 0);
-}
-
-// #TODO figure out optimizations for this because expensive
-static inline void free_object(void *obj) {
-    
-    ObjectHeader *header = obj;
-
-    int sm_idx = header->data >> STRUCT_METADATA_BIT_OFFSET;
-
-    StructMetadata sm = struct_metadata[sm_idx];
-
-    for (int i = 0; i < sm.offset_count; i++) {
-        object_dec_ref((char *)obj + sm.offsets[i]);
-    }
-
-    runtime_frees++;
-    free(obj);
-}
-
-static inline void object_inc_ref(void *obj) {
-    ObjectHeader *header = obj;
-    header->data = (header->data + 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_BITMASK;
-}
-
-static inline void object_dec_ref(void *obj) {
-    ObjectHeader *header = obj;
-    header->data = (header->data - 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_BITMASK;
-    if ((header->data & COUNTER_BITMASK) == 0) {
-        free_object(obj);
-    }
-}
 
 typedef struct Val {
     union {
@@ -3055,6 +3008,7 @@ X(I_FREE) \
 X(I_DUP) \
 X(I_INC_REFCOUNT) \
 X(I_DEC_REFCOUNT) \
+X(I_INIT_OBJ_HEADER) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3354,8 +3308,6 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
     ASTNode left_side = ast.children[0];
     ASTNode right_side = ast.children[1];
 
-
-
     if (left_side.token.type == NAME) {
         String var_name = left_side.token.text;
 
@@ -3581,25 +3533,6 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedLis
 
 }
 
-// String generate_func_name_from_args(String name, VarHeader *args) {
-//     String res = String_copy(name);
-//     for (int i = 0; i < array_length(args); i++) {
-//         res = String_concatf_first(res, StringRef("-"));
-//         if (args[i].var_type == T_STRUCT) {
-//             res = String_concatf_first(res, StringRef("struct "));
-//             res = String_concatf_first(res, args[i].var_struct_name);
-//         } else {
-//             res = String_concatf_first(res, StringRef(var_type_names[args[i].var_type]));
-//         }
-//     }
-    
-//     print_todo("Free me! generate_func_name_from_args()");
-
-//     return res;
-// }
-
-
-
 void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     
     array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = -1}, null(Val)));
@@ -3731,14 +3664,14 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
 
     int offset = sizeof(ObjectHeader);
 
-    int *ref_offsets = array(int, 2);
+    u32 *ref_offsets = array(int, 2);
 
     for (int i = 0; i < array_length(members.children); i++) {
         
         String var_name = members.children[i].children[1].token.text;
         VarType var_type = members.children[i].children[0].token.var_type;
         
-        if (var_type == T_STRUCT) array_append(ref_offsets, offset);
+        if (var_type == T_STRUCT) array_append(ref_offsets, (u32)offset);
 
         VarHeader vh = create_var_header(var_name, var_type, offset, get_type_str_from_node(&members.children[i].children[0]));
     
@@ -3752,16 +3685,15 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
         .size = offset
     };
 
-    struct_metadata[struct_metdata_ptr++] = meta;
+    struct_metadata[struct_metadata_ptr++] = meta;
 
-    VarHeader vh = create_struct_header(name, arr, offset, struct_metdata_ptr - 1);
+    VarHeader vh = create_struct_header(name, arr, offset, struct_metadata_ptr - 1);
 
     add_varheader_to_map_list(var_map_list, name, &vh);
 
 }   
 
 void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-    // print_todo("implement instruction gen for attr access");
 
     generate_instructions_for_node(ast.children[0], instructions, var_map_list);
 
@@ -3785,7 +3717,6 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
     }
 }
 void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-    // print_todo("implement instruction gen for attr access");
 
     generate_instructions_for_node(ast.children[0], instructions, var_map_list);
 
@@ -3799,13 +3730,13 @@ void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, Linke
 }
 
 void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
-    // print_todo("implement instruction gen for new");
 
     VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].token.text, NULL);
 
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = T_INT, .i_val = struct_vh->struct_size}, null(Val)));
 
-    print_todo("Init object header! \n");
+    array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
+    array_append(*instructions, create_inst(I_INIT_OBJ_HEADER, (Val){.type = T_INT, .i_val = struct_vh->struct_metadata_idx}, null(Val))); // use the allocated address
 
     ASTNode *member_assigns = &ast.children[1];
 
@@ -3832,8 +3763,6 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, null(Val)));
 
     }
-
-    // print_todo("implement member construction for new");
 
 }
 
@@ -4041,7 +3970,6 @@ Inst *generate_instructions(ASTNode ast) {
 
 
 
-#define STACK_SIZE 8192
 
 // THIS IS HAPPENING
 
@@ -4081,13 +4009,6 @@ void print_double(double a) {
 
 
 
-#define print_stack_data(...) printf(__VA_ARGS__"stack ptr: %d, frame ptr: %d, inst: %d \n", stack_ptr, frame_ptr, inst_ptr)
-
-// idk why
-#define INPUT_BUFFER_SIZE 453
-#define LITERALS_MEMORY_SIZE 1024
-#define BENCHMARK_ITERS 100
-#define TEXT_BUF_SIZE 8192
 
 // Use if 'size' is guranteed to be 1, 4, or 8
 static inline void my_memcpy(void *dst, const void *src, u8 size) {
@@ -4465,14 +4386,20 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
-    case(I_INC_REFCOUNT) then ( \
+    case (I_INIT_OBJ_HEADER) then ({; \
+        void *obj = pop(void *); \
+        u8 struct_meta_idx = byte_arr[++inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        object_init_header(obj, struct_meta_idx); \
+    }) \
+    case(I_INC_REFCOUNT) then ({; \
         void *obj = pop(void *); \
         object_inc_ref(obj); \
-    ) \
-    case(I_DEC_REFCOUNT) then ( \
+    }) \
+    case(I_DEC_REFCOUNT) then ({; \
         void *obj = pop(void *); \
         object_dec_ref(obj); \
-    ) \
+    }) \
     case I_PUSH:; \
         int size = *(int *)&byte_arr[++inst_ptr]; \
         append(byte_arr + (inst_ptr += sizeof(int)), size); \
@@ -4911,19 +4838,6 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 }
 
 
-
-StructMetadata struct_metadata[256] = {0};
-int struct_metdata_ptr = 0;
-u64 temp_stack[STACK_SIZE] = {0};
-int temp_stack_ptr = 0;
-char var_stack[STACK_SIZE] = {0};
-char text_buffer[TEXT_BUF_SIZE] = {0};
-int text_buffer_ptr = 0;
-int stack_ptr = 0;
-int frame_ptr = 0;
-int runtime_mallocs = 0;
-int runtime_frees = 0;
-
 void *append_to_text_buffer(const char *text, int len) {
     memcpy(text_buffer + text_buffer_ptr, text, len);
     void *retval = text_buffer + text_buffer_ptr;
@@ -5020,6 +4934,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     frame_ptr = 0;
     runtime_frees = 0;
     runtime_mallocs = 0;
+    clear_struct_metadata();
 
     preprocess_string_literals(instructions);
 
