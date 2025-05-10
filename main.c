@@ -35,7 +35,8 @@ char *KEYWORDS[] = {
 #define MAYBE 2
 
 #define COUNTER_BITMASK 0x00FFFFFF
-#define STRUCT_METADATA_IDX_BITMASK 0xFF000000
+#define STRUCT_METADATA_BITMASK 0xFF000000
+#define STRUCT_METADATA_BIT_OFFSET 24
 
 typedef struct StructMetadata {
     u32 size;
@@ -52,19 +53,31 @@ static inline void *alloc_object(u32 size) {
     return calloc(size, 0);
 }
 
+// #TODO figure out optimizations for this because expensive
 static inline void free_object(void *obj) {
+    
+    ObjectHeader *header = obj;
+
+    int sm_idx = header->data >> STRUCT_METADATA_BIT_OFFSET;
+
+    StructMetadata sm = struct_metadata[sm_idx];
+
+    for (int i = 0; i < sm.offset_count; i++) {
+        object_dec_ref((char *)obj + sm.offsets[i]);
+    }
+
     runtime_frees++;
     free(obj);
 }
 
-void object_inc_ref(void *obj) {
+static inline void object_inc_ref(void *obj) {
     ObjectHeader *header = obj;
-    header->data = (header->data + 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_IDX_BITMASK;
+    header->data = (header->data + 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_BITMASK;
 }
 
-void object_dec_ref(void *obj) {
+static inline void object_dec_ref(void *obj) {
     ObjectHeader *header = obj;
-    header->data = (header->data - 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_IDX_BITMASK;
+    header->data = (header->data - 1) & COUNTER_BITMASK | header->data & STRUCT_METADATA_BITMASK;
     if ((header->data & COUNTER_BITMASK) == 0) {
         free_object(obj);
     }
@@ -115,6 +128,7 @@ typedef struct VarHeader {
         struct { // VH_STRUCT
             struct VarHeader *struct_members;
             i32 struct_size;
+            i32 struct_metadata_idx;
         };
     };
 }VarHeader;
@@ -155,8 +169,9 @@ VarHeader create_funcs_header(String name, VarHeader *funcs) {
     };
 }
 
-VarHeader create_struct_header(String name, VarHeader *struct_members, int size) {
-    return (VarHeader){.name = name, .type = VH_STRUCT, .struct_members = struct_members, .struct_size = size};
+VarHeader create_struct_header(String name, VarHeader *struct_members, int size, int meta_idx) {
+    return (VarHeader){.name = name, .type = VH_STRUCT, .struct_members = struct_members, .struct_size = size,
+                        .struct_metadata_idx = meta_idx};
 }
 
 void print_token(Token token, int level);
@@ -2696,7 +2711,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 offset += get_vartype_size(var_type);
             }
     
-            VarHeader vh = create_struct_header(name, arr, offset);
+            VarHeader vh = create_struct_header(name, arr, offset, -1);
     
             HashMap_put(var_map, name, &vh);    
         })
@@ -3038,6 +3053,8 @@ X(I_GET_ATTR_ADDR) \
 X(I_ALLOC) \
 X(I_FREE) \
 X(I_DUP) \
+X(I_INC_REFCOUNT) \
+X(I_DEC_REFCOUNT) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3296,7 +3313,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
     
     if (ast.token.type == DECL_ASSIGN_STMT) {
         generate_instructions_for_node(ast.children[2], instructions, var_map_list);
-        
+
         VarType child_return_type = ast.children[2].expected_return_type;
         
         if (child_return_type != var_type) {
@@ -3314,8 +3331,19 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
         array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
     }
 
+    if (ast.children[2].expected_return_type == T_STRUCT) {
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+    }
+        
     array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(var_type)}, (Val){.type = T_INT, .i_val = gi_stack_pos}));
     gi_stack_pos += size;
+
+
+    if (ast.children[2].expected_return_type == T_STRUCT) {
+        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+    }
+
+
 }
 
 void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list);
@@ -3325,6 +3353,8 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
     
     ASTNode left_side = ast.children[0];
     ASTNode right_side = ast.children[1];
+
+
 
     if (left_side.token.type == NAME) {
         String var_name = left_side.token.text;
@@ -3701,18 +3731,30 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
 
     int offset = sizeof(ObjectHeader);
 
+    int *ref_offsets = array(int, 2);
+
     for (int i = 0; i < array_length(members.children); i++) {
         
         String var_name = members.children[i].children[1].token.text;
         VarType var_type = members.children[i].children[0].token.var_type;
         
+        if (var_type == T_STRUCT) array_append(ref_offsets, offset);
+
         VarHeader vh = create_var_header(var_name, var_type, offset, get_type_str_from_node(&members.children[i].children[0]));
     
         array_append(arr, vh);
         offset += get_vartype_size(var_type);
     }
 
-    VarHeader vh = create_struct_header(name, arr, offset);
+    StructMetadata meta = {
+        .offset_count = array_length(ref_offsets),
+        .offsets = ref_offsets,
+        .size = offset
+    };
+
+    struct_metadata[struct_metdata_ptr++] = meta;
+
+    VarHeader vh = create_struct_header(name, arr, offset, struct_metdata_ptr - 1);
 
     add_varheader_to_map_list(var_map_list, name, &vh);
 
@@ -3723,6 +3765,14 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
 
     generate_instructions_for_node(ast.children[0], instructions, var_map_list);
 
+    bool temp_inc_refcount = ast.children[0].token.type == OP_NEW || ast.children[0].token.type == FUNC_CALL;
+
+    if (temp_inc_refcount) {
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+    }
+
     // find member offset
     VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].return_type_name, NULL);
 
@@ -3730,6 +3780,9 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
 
     array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
 
+    if (temp_inc_refcount) {
+        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+    }
 }
 void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     // print_todo("implement instruction gen for attr access");
@@ -3751,6 +3804,8 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
     VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].token.text, NULL);
 
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = T_INT, .i_val = struct_vh->struct_size}, null(Val)));
+
+    print_todo("Init object header! \n");
 
     ASTNode *member_assigns = &ast.children[1];
 
@@ -4410,6 +4465,14 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
+    case(I_INC_REFCOUNT) then ( \
+        void *obj = pop(void *); \
+        object_inc_ref(obj); \
+    ) \
+    case(I_DEC_REFCOUNT) then ( \
+        void *obj = pop(void *); \
+        object_dec_ref(obj); \
+    ) \
     case I_PUSH:; \
         int size = *(int *)&byte_arr[++inst_ptr]; \
         append(byte_arr + (inst_ptr += sizeof(int)), size); \
@@ -4849,6 +4912,8 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 
 
 
+StructMetadata struct_metadata[256] = {0};
+int struct_metdata_ptr = 0;
 u64 temp_stack[STACK_SIZE] = {0};
 int temp_stack_ptr = 0;
 char var_stack[STACK_SIZE] = {0};
