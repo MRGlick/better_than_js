@@ -1,9 +1,18 @@
 
 
-struct Thing {
+struct State {
     int x;
+    int y;
+    int z;
 }
 
-int a = (new Thing()).x;
+void print_state(State s) print s.x, ", ", s.y, ", ", s.z;
 
-print a;
+
+State s = new State(x = 124, y = 129, z = 9);
+print_state(s);
+
+s = new State(x = 1, y = 2, z = 3);
+print_state(s);
+
+s = null;

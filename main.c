@@ -3009,6 +3009,8 @@ X(I_DUP) \
 X(I_INC_REFCOUNT) \
 X(I_DEC_REFCOUNT) \
 X(I_INIT_OBJ_HEADER) \
+X(I_TUCK) \
+X(I_POP_BOTTOM) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3309,11 +3311,21 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
     ASTNode right_side = ast.children[1];
 
     if (left_side.token.type == NAME) {
+
+        
         String var_name = left_side.token.text;
-
+        
         bool isglobal;
-
+        
         VarHeader *vh = get_varheader_from_map_list(var_map_list, var_name, &isglobal);
+        
+        // RC
+        if (vh->var_type == T_STRUCT) {
+            generate_instructions_for_node(left_side, instructions, var_map_list);
+
+            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        }
+
 
         generate_instructions_for_node(right_side, instructions, var_map_list);
         
@@ -3332,9 +3344,18 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
 
     } else if (left_side.token.type == ATTR_ACCESS) {
         
+        // RC
+        if (left_side.expected_return_type == T_STRUCT) {
+            generate_instructions_for_node(left_side, instructions, var_map_list);
+            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        }
+        
         VarType goal_type = left_side.expected_return_type;
 
         generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
+
+
+
         generate_instructions_for_node(right_side, instructions, var_map_list);
 
         if (right_side.expected_return_type != goal_type) {
@@ -3703,6 +3724,7 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
         array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val)));
     }
 
     // find member offset
@@ -3713,6 +3735,7 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
     array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
 
     if (temp_inc_refcount) {
+        array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
         array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
     }
 }
@@ -4386,6 +4409,14 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
+    case (I_POP_BOTTOM) then ({ \
+        u64 obj = pop_bottom(u64); \
+        append(&obj, 8); \
+    }) \
+    case (I_TUCK) then ({ \
+        u64 obj = pop(u64); \
+        tuck(&obj, 8); \
+    }) \
     case (I_INIT_OBJ_HEADER) then ({; \
         void *obj = pop(void *); \
         u8 struct_meta_idx = byte_arr[++inst_ptr]; \

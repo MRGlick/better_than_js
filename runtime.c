@@ -67,18 +67,17 @@ static inline int _object_get_refcount(void *obj) {
 
 static inline void object_inc_ref(void *obj) {
     ObjectHeader *header = obj;
-    debug printf("Refcount before: %d \n", _object_get_refcount(obj));
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
-    debug printf("Refcount after: %d \n", _object_get_refcount(obj));
 }
 
 static inline void object_dec_ref(void *obj) {
     ObjectHeader *header = obj;
-    debug printf("Refcount before: %d \n", _object_get_refcount(obj));
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
-    debug printf("Refcount after: %d \n", _object_get_refcount(obj));
     if ((header->data & COUNTER_BITMASK) == 0) {
+        debug printf("Deleted! \n");
         free_object(obj);
+    } else {
+        debug printf("Not deleted, RC = %d \n", _object_get_refcount(obj));
     }
 }
 
