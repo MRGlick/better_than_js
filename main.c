@@ -3633,7 +3633,8 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
     StructMetadata meta = {
         .offset_count = array_length(ref_offsets),
         .offsets = ref_offsets,
-        .size = offset
+        .size = offset,
+        .struct_name = name
     };
 
     struct_metadata[struct_metadata_ptr++] = meta;
@@ -3699,7 +3700,14 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
         array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = member_vh->var_pos}, null(Val)));
 
-        generate_instructions_for_node(member_assigns->children[i].children[1], instructions, var_map_list);
+        ASTNode expr = member_assigns->children[i].children[1];
+
+        generate_instructions_for_node(expr, instructions, var_map_list);
+
+        if (is_reference(expr) && !is_temporary_reference(expr)) {
+            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+        }
 
         VarType goal_type = member_vh->var_type;
         VarType curr_type = member_assigns->children[i].children[1].expected_return_type;
@@ -3888,6 +3896,14 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
                 (Val){.i_val = vh->var_pos, .type = T_INT}));
         )
         case (BLOCK) then (
+
+            // // decrement all references that will be deleted
+            // String *keys = ((HashMap *)var_map_list->head->val)->keys;
+
+            // for (int i = 0; i < array_length(keys); i++) {
+                
+            // }
+
             HashMap_free(var_map_list->head->val);
             LL_pop_head(var_map_list);
             gi_stack_pos = temp_stack_ptr;

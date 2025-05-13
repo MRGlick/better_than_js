@@ -20,6 +20,7 @@ typedef struct StructMetadata {
     u32 size;
     u32 offset_count;
     u32 *offsets;
+    String struct_name;
 } StructMetadata;
 
 StructMetadata struct_metadata[256] = {0};
@@ -43,13 +44,13 @@ static inline void object_dec_ref(void *obj);
 
 static inline void *alloc_object(u32 size) {
     runtime_mallocs++;
-    return calloc(size, 0);
+    return calloc(size, 1);
 }
 
 // #TODO figure out optimizations for this because expensive
 static inline void free_object(void *obj) {
     
-    if (obj == NULL) return;
+    assert(obj != NULL); // a null shouldnt be able to reach this function
 
     ObjectHeader *header = obj;
 
@@ -58,7 +59,7 @@ static inline void free_object(void *obj) {
     StructMetadata sm = struct_metadata[sm_idx];
 
     for (u32 i = 0; i < sm.offset_count; i++) {
-        object_dec_ref((char *)obj + sm.offsets[i]);
+        object_dec_ref(*(void **)((char *)obj + sm.offsets[i]));
     }
 
     runtime_frees++;
@@ -79,20 +80,24 @@ static inline void object_inc_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
-    debug printf("Incremented refcounter to %d \n", _object_get_refcount(obj));
 }
 
 static inline void object_dec_ref(void *obj) {
 
     if (obj == NULL) return; // this is also fine? yeah its fine
 
+    static int counter = 0;
+    counter++;
+
     ObjectHeader *header = obj;
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+
+    printf("decrementing object of type '%s' \n", struct_metadata[header->data >> 24].struct_name.data);
+
     if ((header->data & COUNTER_BITMASK) == 0) {
         free_object(obj);
-        debug printf("Deleted! \n");
     } else {
-        debug printf("Not deleted, RC = %d \n", _object_get_refcount(obj));
+    
     }
 }
 
