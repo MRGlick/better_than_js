@@ -1,5 +1,23 @@
 
 
+
+int rand() {
+    int sum = 0;
+    int power = 1;
+    int i = 0;
+    while (i < 32) {
+        if (maybe) sum += power;
+        power *= 2;
+        i += 1;
+    }
+
+    return sum;
+}
+
+int rand(int upper_bound) return rand() % upper_bound;
+
+int rand(int lower_bound, int upper_bound) return lower_bound + rand(upper_bound - lower_bound);
+
 struct State {
     int x;
     int y;
@@ -12,6 +30,16 @@ void print_state(State s) print s.x, ", ", s.y, ", ", s.z;
 State s = new State(x = 124, y = 129, z = 9);
 print_state(s);
 
-
+State s2 = s;
+State s3 = s;
 
 s = null;
+s2 = null;
+print "s3.y: ", s3.y;
+s3 = null;
+
+int i = 0;
+while (i < 10) {
+    print (new State(x = rand(5, 10))).x;
+    i += 1;
+}

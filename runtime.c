@@ -1,5 +1,7 @@
 
 #include "inttypes.h"
+#include "utils.c"
+#include <stdio.h>
 
 #define COUNTER_BITMASK 0x00FFFFFF
 #define STRUCT_METADATA_BITMASK 0xFF000000
@@ -12,6 +14,7 @@
 #define BENCHMARK_ITERS 100
 #define TEXT_BUF_SIZE 8192
 #define debug if (1)
+#define REFCOUNTER_START_VALUE 1
 
 typedef struct StructMetadata {
     u32 size;
@@ -46,6 +49,8 @@ static inline void *alloc_object(u32 size) {
 // #TODO figure out optimizations for this because expensive
 static inline void free_object(void *obj) {
     
+    if (obj == NULL) return;
+
     ObjectHeader *header = obj;
 
     int sm_idx = header->data >> STRUCT_METADATA_BIT_OFFSET;
@@ -61,30 +66,41 @@ static inline void free_object(void *obj) {
 }
 
 static inline int _object_get_refcount(void *obj) {
+
+    assert(obj != NULL);
+
     ObjectHeader *header = obj;
     return header->data & COUNTER_BITMASK;
 }
 
 static inline void object_inc_ref(void *obj) {
+
+    if (obj == NULL) return; // this is fine
+
     ObjectHeader *header = obj;
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
     debug printf("Incremented refcounter to %d \n", _object_get_refcount(obj));
 }
 
 static inline void object_dec_ref(void *obj) {
+
+    if (obj == NULL) return; // this is also fine? yeah its fine
+
     ObjectHeader *header = obj;
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
     if ((header->data & COUNTER_BITMASK) == 0) {
-        debug printf("Deleted! \n");
         free_object(obj);
+        debug printf("Deleted! \n");
     } else {
         debug printf("Not deleted, RC = %d \n", _object_get_refcount(obj));
     }
 }
 
-#define REFCOUNTER_START_VALUE 1
 
 static inline void object_init_header(void *obj, int meta_idx) {
+
+    assert(obj != NULL); // this is NOT fine
+
     ObjectHeader *header = obj;
     //   VV meta_idx
     // 0x__000000

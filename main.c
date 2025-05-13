@@ -12,93 +12,7 @@
 #include <inttypes.h>
 #include "linked_list.c"
 #include "runtime.c"
-
-const char SYMBOLS[] = {
-    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|', '.'
-};
-
-char *KEYWORDS[] = {
-    "if",
-    "while",
-    "for",
-    "print",
-    "write",
-    "else",
-    "input",
-    "return",
-    "defer",
-    "struct",
-    "new",
-    "delete"
-};
-
-// dont ask
-#define MAYBE 2
-
-
-typedef struct Val {
-    union {
-        void *any_val;
-        char *s_val;
-        double f_val;
-        int i_val;
-        bool b_val;
-    };
-    u8 type;
-} Val;
-
-typedef struct Inst {
-    u8 type;
-    Val arg1;
-    Val arg2; 
-} Inst;
-
-typedef enum VHType {
-    VH_FUNC,
-    VH_FUNCS,
-    VH_VAR,
-    VH_STRUCT
-} VHType;
-
-typedef struct VarHeader {
-    VHType type;
-    String name;
-    union {
-        struct { // VH_VAR
-            String var_struct_name;
-            i32 var_type;
-            i32 var_pos;
-        };
-        struct { // VH_FUNC
-            String func_return_type_struct_name;
-            i32 func_return_type;
-            i32 func_pos;
-            struct VarHeader *func_args;
-        };
-        struct { // VH_FUNCS
-            struct VarHeader *funcs;
-        };
-        struct { // VH_STRUCT
-            struct VarHeader *struct_members;
-            i32 struct_size;
-            i32 struct_metadata_idx;
-        };
-    };
-}VarHeader;
-
-const char *vh_type_names[] = {
-    "variable",
-    "function",
-    "struct"
-};
-
-typedef struct ASTNode {
-    Token token;
-    struct ASTNode *children;
-    VarType expected_return_type;
-    String return_type_name;
-    bool complete;
-} ASTNode;
+#include "globals.h"
 
 VarHeader create_var_header(String name, int var_type, int var_pos, String var_struct_name) {
     return (VarHeader){.type = VH_VAR, .var_type = var_type, .var_pos = var_pos, .var_struct_name = var_struct_name, .name = name};
@@ -2414,10 +2328,7 @@ int get_match_score_for_types(VarType t1, VarType t2) {
 int get_overload_match_score(VarHeader *func_args, ASTNode *call_args_ast) {
     
     assert(
-        array_length(func_args) == array_length(call_args_ast->children), 
-        "Invalid call to get_overload_match_score()! lengths are %d and %d",
-        array_length(func_args),
-        array_length(call_args_ast->children)
+        array_length(func_args) == array_length(call_args_ast->children)
     );
 
     int score = 0;
@@ -3254,6 +3165,15 @@ int calc_stack_space_for_scope(ASTNode ast) {
 
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list);
 
+static inline bool is_reference(ASTNode ast) {
+    return ast.expected_return_type == T_STRUCT;
+}
+
+static inline bool is_temporary_reference(ASTNode ast) {
+    return ast.token.type == OP_NEW
+        || (ast.token.type == FUNC_CALL && ast.expected_return_type == T_STRUCT);
+}
+
 void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     
     String var_name = ast.children[1].token.text;
@@ -3287,7 +3207,9 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
         array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
     }
 
-    if (is_reference(ast.children[2])) {
+    bool inc_refcounter = is_reference(ast.children[2]) && !is_temporary_reference(ast.children[2]);
+
+    if (inc_refcounter) {
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
     }
         
@@ -3295,7 +3217,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
     gi_stack_pos += size;
 
 
-    if (is_reference(ast.children[2])) {
+    if (inc_refcounter) {
         array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
     }
 
@@ -3722,14 +3644,6 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
 
 }   
 
-static inline bool is_reference(ASTNode ast) {
-    return ast.expected_return_type == T_STRUCT;
-}
-
-static inline bool is_temporary_reference(ASTNode ast) {
-    return ast.token.type == OP_NEW
-        || (ast.token.type == FUNC_CALL && ast.expected_return_type == T_STRUCT);
-}
 
 void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
 

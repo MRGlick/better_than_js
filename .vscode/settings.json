@@ -11,7 +11,8 @@
         "sstream": "c",
         "stdlib.h": "c",
         "inttypes.h": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "globals.h": "c"
     },
     "github.copilot.enable": {
         "*": false,
