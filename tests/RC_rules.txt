@@ -1,12 +1,14 @@
 
+Reference: variable or field
+Temporary reference: 'new' keyword or function call which returns an object
 
 RULES:
 -   if the RHS of an assignment/vardecl assignment is a reference, increment its refcounter
 
 -   if the value of a variable before assignment isn't null, decrement its refcounter
 
--   if a node is a 'new' or a function call which returns an object, 
-    increment it's refcounter, and decrement it at the end of its parent expression
+-   if a temporary reference is part of an expression or statement,
+     decrement its refcounter at the end of its parent expression
 
 -   before returning an object from a function, 
     remove all references to it from within the function (decrement its refcounter)

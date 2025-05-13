@@ -3287,7 +3287,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
         array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
     }
 
-    if (ast.children[2].expected_return_type == T_STRUCT) {
+    if (is_reference(ast.children[2])) {
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
     }
         
@@ -3295,7 +3295,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
     gi_stack_pos += size;
 
 
-    if (ast.children[2].expected_return_type == T_STRUCT) {
+    if (is_reference(ast.children[2])) {
         array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
     }
 
@@ -3310,6 +3310,15 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
     ASTNode left_side = ast.children[0];
     ASTNode right_side = ast.children[1];
 
+
+    // RC
+    if (is_reference(left_side)) {
+        generate_instructions_for_node(left_side, instructions, var_map_list);
+        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+    }
+
+    bool inc_refcount_for_right_side = is_reference(right_side) && !is_temporary_reference(right_side);
+
     if (left_side.token.type == NAME) {
 
         
@@ -3318,16 +3327,13 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
         bool isglobal;
         
         VarHeader *vh = get_varheader_from_map_list(var_map_list, var_name, &isglobal);
-        
-        // RC
-        if (vh->var_type == T_STRUCT) {
-            generate_instructions_for_node(left_side, instructions, var_map_list);
-
-            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
-        }
-
 
         generate_instructions_for_node(right_side, instructions, var_map_list);
+
+        if (inc_refcount_for_right_side) {
+            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+        }
         
         VarType goal_type = vh->var_type;
 
@@ -3344,11 +3350,7 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
 
     } else if (left_side.token.type == ATTR_ACCESS) {
         
-        // RC
-        if (left_side.expected_return_type == T_STRUCT) {
-            generate_instructions_for_node(left_side, instructions, var_map_list);
-            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
-        }
+        
         
         VarType goal_type = left_side.expected_return_type;
 
@@ -3357,6 +3359,12 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
 
 
         generate_instructions_for_node(right_side, instructions, var_map_list);
+
+        if (inc_refcount_for_right_side) {
+            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+        }
+
 
         if (right_side.expected_return_type != goal_type) {
             bool result = generate_cvt_inst_for_types(right_side.expected_return_type, goal_type, instructions);
@@ -3714,15 +3722,22 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
 
 }   
 
+static inline bool is_reference(ASTNode ast) {
+    return ast.expected_return_type == T_STRUCT;
+}
+
+static inline bool is_temporary_reference(ASTNode ast) {
+    return ast.token.type == OP_NEW
+        || (ast.token.type == FUNC_CALL && ast.expected_return_type == T_STRUCT);
+}
+
 void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
 
     generate_instructions_for_node(ast.children[0], instructions, var_map_list);
 
-    bool temp_inc_refcount = ast.children[0].token.type == OP_NEW || ast.children[0].token.type == FUNC_CALL;
+    bool temp_refcount = is_temporary_reference(ast.children[0]);
 
-    if (temp_inc_refcount) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+    if (temp_refcount) {
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
         array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val)));
     }
@@ -3734,7 +3749,7 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
 
     array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
 
-    if (temp_inc_refcount) {
+    if (temp_refcount) {
         array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
         array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
     }

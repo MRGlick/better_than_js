@@ -12,7 +12,6 @@ void print_state(State s) print s.x, ", ", s.y, ", ", s.z;
 State s = new State(x = 124, y = 129, z = 9);
 print_state(s);
 
-s = new State(x = 1, y = 2, z = 3);
-print_state(s);
+
 
 s = null;
