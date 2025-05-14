@@ -3622,12 +3622,21 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
         String var_name = members.children[i].children[1].token.text;
         VarType var_type = members.children[i].children[0].token.var_type;
         
-        if (var_type == T_STRUCT) array_append(ref_offsets, (u32)offset);
+        if (var_type == T_STRUCT) {
+            debug printf("appending offset %d \n", offset);
+            array_append(ref_offsets, (u32)offset);
+        }
 
         VarHeader vh = create_var_header(var_name, var_type, offset, get_type_str_from_node(&members.children[i].children[0]));
     
         array_append(arr, vh);
         offset += get_vartype_size(var_type);
+    }
+
+    debug {
+        for (int i = 0; i < array_length(ref_offsets); i++) {
+            printf("%d \n", ref_offsets[i]);
+        }
     }
 
     StructMetadata meta = {
@@ -3920,6 +3929,9 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
 
 
 Inst *generate_instructions(ASTNode ast) {
+
+    clear_struct_metadata();
+
     Inst *res = array(Inst, 20);
     LinkedList *var_map_list = LL_create();
     LL_append(var_map_list, LLNode_create(HashMap(VarHeader)));
@@ -4910,7 +4922,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     frame_ptr = 0;
     runtime_frees = 0;
     runtime_mallocs = 0;
-    clear_struct_metadata();
+    
 
     preprocess_string_literals(instructions);
 

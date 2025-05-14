@@ -5,7 +5,7 @@ int rand() {
     int sum = 0;
     int power = 1;
     int i = 0;
-    while (i < 32) {
+    while (i < 31) {
         if (maybe) sum += power;
         power *= 2;
         i += 1;
@@ -23,6 +23,26 @@ struct Node {
     Node next;
 }
 
-Node n = new Node(val = 2, next = new Node(3));
+Node lst = new Node(val = rand(1, 20));
+Node end = lst;
+int i = 0;
+while (i < 20) {
 
-n = null;
+    end.next = new Node(val = rand(1, 20));
+    end = end.next;
+
+    i += 1;       
+}
+
+
+Node n = lst;
+while (n != null) {
+
+    print n.val;
+    n = n.next;
+}
+
+print "Loop end!";
+
+lst = null;
+end = null;

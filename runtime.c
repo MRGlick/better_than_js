@@ -40,6 +40,24 @@ typedef struct ObjectHeader {
     u32 data;
 } ObjectHeader;
 
+void print_struct_meta(StructMetadata sm) {
+    printf("Struct metadata: \n");
+    printf("    Name: %s \n", sm.struct_name.data);
+    printf("    Offset count: %d \n", sm.offset_count);
+    printf("    offsets: ");
+    for (int i = 0; i < sm.offset_count; i++) printf("%d ", sm.offsets[i]);
+    printf("\n");
+    printf("    Size: %d bytes\n ", sm.size);
+} 
+
+static inline int _object_get_refcount(void *obj) {
+
+    assert(obj != NULL);
+
+    ObjectHeader *header = obj;
+    return header->data & COUNTER_BITMASK;
+}
+
 static inline void object_dec_ref(void *obj);
 
 static inline void *alloc_object(u32 size) {
@@ -59,20 +77,15 @@ static inline void free_object(void *obj) {
     StructMetadata sm = struct_metadata[sm_idx];
 
     for (u32 i = 0; i < sm.offset_count; i++) {
-        object_dec_ref(*(void **)((char *)obj + sm.offsets[i]));
+
+        void *child_obj = *(void **)((char *)obj + sm.offsets[i]);
+        object_dec_ref(child_obj);
     }
 
     runtime_frees++;
     free(obj);
 }
 
-static inline int _object_get_refcount(void *obj) {
-
-    assert(obj != NULL);
-
-    ObjectHeader *header = obj;
-    return header->data & COUNTER_BITMASK;
-}
 
 static inline void object_inc_ref(void *obj) {
 
@@ -80,24 +93,20 @@ static inline void object_inc_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+
 }
 
 static inline void object_dec_ref(void *obj) {
 
     if (obj == NULL) return; // this is also fine? yeah its fine
 
-    static int counter = 0;
-    counter++;
+    assert(_object_get_refcount(obj) != 0); // is it worth the performance? yes
 
     ObjectHeader *header = obj;
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
 
-    printf("decrementing object of type '%s' \n", struct_metadata[header->data >> 24].struct_name.data);
-
     if ((header->data & COUNTER_BITMASK) == 0) {
         free_object(obj);
-    } else {
-    
     }
 }
 
@@ -109,7 +118,7 @@ static inline void object_init_header(void *obj, int meta_idx) {
     ObjectHeader *header = obj;
     //   VV meta_idx
     // 0x__000000
-    header->data = meta_idx << 24 | REFCOUNTER_START_VALUE; 
+    header->data = (meta_idx << STRUCT_METADATA_BIT_OFFSET) | REFCOUNTER_START_VALUE; 
 }
 
 void clear_struct_metadata() {

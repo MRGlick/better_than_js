@@ -29,7 +29,7 @@
 
 #define debug if (1)
 
-#define assert(cond) if (!(cond)) {print_err("assert "#cond" failed!"); exit(1);}
+#define assert(cond) if (!(cond)) {print_err("assert '"#cond"' failed!"); exit(1);}
 
 #define min(a, b) (a < b ? a : b)
 #define max(a, b) (a > b ? a : b)
