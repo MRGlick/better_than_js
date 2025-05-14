@@ -1184,6 +1184,9 @@ ParseResult parse_stmt_seq(int idx) {
     } while(stmt_res.success);
 
 
+
+
+
     return create_parse_result(true, node, idx);
 }
 
@@ -3754,6 +3757,22 @@ void generate_instructions_for_delete(ASTNode ast, Inst **instructions, LinkedLi
     array_append(*instructions, create_inst(I_FREE, null(Val), null(Val)));
 }
 
+void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instructions, bool global) {
+    String *keys = scope_map->keys;
+
+    for (int i = 0; i < array_length(keys); i++) {
+        VarHeader *vh = HashMap_get(scope_map, keys[i]);
+        if (vh->type != VH_VAR) continue;
+        if (vh->var_type != T_STRUCT) continue;
+
+        array_append(*instructions, create_inst(global ? I_READ_GLOBAL : I_READ,
+            (Val){.i_val = get_vartype_size(vh->var_type), .type = T_INT},
+            (Val){.i_val = vh->var_pos, .type = T_INT}));
+        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+
+    }
+}
+
 void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
     
     bool handled = true;
@@ -3906,19 +3925,14 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         )
         case (BLOCK) then (
 
-            // // decrement all references that will be deleted
-            // String *keys = ((HashMap *)var_map_list->head->val)->keys;
-
-            // for (int i = 0; i < array_length(keys); i++) {
-                
-            // }
+            generate_instructions_for_scope_ref_dec(var_map_list, instructions, false);
 
             HashMap_free(var_map_list->head->val);
             LL_pop_head(var_map_list);
             gi_stack_pos = temp_stack_ptr;
         )
         case (STMT_SEQ) then (
-            // do nothing
+            generate_instructions_for_scope_ref_dec(var_map_list, instructions, true);
         )
         default (
             print_err("Unhandled case!");
@@ -4476,8 +4490,7 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         break; \
     } \
     case I_FREE: { \
-        void *addr = pop(void *); \
-        free_object(addr); \
+        print_err("Bro tried to delete manually"); \
         break; \
     } \
     case I_JUMP: { \

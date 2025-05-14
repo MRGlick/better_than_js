@@ -38,11 +38,15 @@ while (i < 20) {
 Node n = lst;
 while (n != null) {
 
+    Node l = n;
+    Node r = new Node(val = rand(1, 100));
+    print "r: ", r.val;
+
     print n.val;
     n = n.next;
 }
 
 print "Loop end!";
 
-lst = null;
-end = null;
+
+
