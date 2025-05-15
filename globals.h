@@ -12,7 +12,7 @@ const char SYMBOLS[] = {
 char *KEYWORDS[] = {
     "if",
     "while",
-    "for",
+    "for", // TODO
     "print",
     "write",
     "else",

@@ -396,8 +396,8 @@ ASTNode create_ast_node(Token tk, bool complete) {
 }
 
 #define free_ast(ast) do { \
-    int result = _free_ast(ast); \
-    if (result == -1) printf("On line %d \n", __LINE__); \
+    if (!(ast).children) print_err("Tried to free AST with null children! "); \
+    _free_ast(ast); \
     ast = (ASTNode){0}; \
 } while (0)
 
@@ -476,6 +476,15 @@ Token *get_token_ref(int idx) {
 // +: [+: [2, 3]]
 // +: [1, +: [2, 3]]
 
+ASTNode wrap_with_block(ASTNode node) {
+    ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
+    array_append(block.children, node);
+
+    return block;
+}
+
+
+
 // #PARSE START
 
 ParseResult parse_expr(int idx);
@@ -521,6 +530,8 @@ ParseResult parse_unary_rule(int idx);
 ParseResult parse_new_rule(int idx);
 
 ParseResult parse_delete_stmt(int idx);
+
+ParseResult parse_for_stmt(int idx);
 
 void print_ast(ASTNode node, int level);
 
@@ -1060,15 +1071,11 @@ ParseResult parse_if_stmt(int idx) {
 
             array_append(node.children, expr_res.node);
             if (stmt_res.node.token.type != BLOCK) {
-                ASTNode stmt1_block = create_ast_node((Token){.type = BLOCK}, true);
-                array_append(stmt1_block.children, stmt_res.node);
-                stmt_res.node = stmt1_block;
+                stmt_res.node = wrap_with_block(stmt_res.node);
             }
             
             if (stmt2_res.node.token.type != BLOCK) {
-                ASTNode stmt2_block = create_ast_node((Token){.type = BLOCK}, true);
-                array_append(stmt2_block.children, stmt2_res.node);
-                stmt2_res.node = stmt2_block;
+                stmt2_res.node = wrap_with_block(stmt_res.node);
             }
             
 
@@ -1087,9 +1094,7 @@ ParseResult parse_if_stmt(int idx) {
         array_append(node.children, expr_res.node);
 
         if (stmt_res.node.token.type != BLOCK) {
-            ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
-            array_append(block.children, stmt_res.node);
-            stmt_res.node = block;
+            stmt_res.node = wrap_with_block(stmt_res.node);
         }
         
         array_append(node.children, stmt_res.node);
@@ -1162,6 +1167,9 @@ ParseResult parse_stmt(int idx) {
 
     ParseResult delete_res = parse_delete_stmt(idx);
     if (delete_res.success) return delete_res;
+
+    ParseResult for_loop_res = parse_for_stmt(idx);
+    if (for_loop_res.success) return for_loop_res;
 
     return PARSE_FAILED;
 }
@@ -1322,9 +1330,7 @@ ParseResult parse_while_stmt(int idx) {
     array_append(node.children, expr_res.node);
 
     if (stmt_res.node.token.type != BLOCK) {
-        ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
-        array_append(block.children, stmt_res.node);
-        stmt_res.node = block;
+        stmt_res.node = wrap_with_block(stmt_res.node);
     }
 
     array_append(node.children, stmt_res.node);
@@ -2073,6 +2079,82 @@ ParseResult parse_delete_stmt(int idx) {
     ASTNode node = create_ast_node((Token){.type = DELETE_STMT}, true);
     array_append(node.children, primary_res.node);
 
+
+    return create_parse_result(true, node, idx);
+}
+
+ParseResult parse_for_stmt(int idx) {
+
+    if (!check_keyword(get_token(idx), "for")) return PARSE_FAILED_PRINT;
+    idx++;
+
+    
+    if (get_token(idx).type != LPAREN) return PARSE_FAILED_PRINT;
+    idx++;
+
+    ParseResult init_stmt = parse_stmt(idx);
+    if (!init_stmt.success) return PARSE_FAILED_PRINT;
+    idx = init_stmt.endpos;
+    
+    ParseResult cond_expr = parse_expr(idx);
+    if (!cond_expr.success) {
+        free_ast(init_stmt.node);
+        return PARSE_FAILED_PRINT;
+    }
+    idx = cond_expr.endpos;
+    
+    
+    if (get_token(idx).type != STMT_END) {
+        free_ast(init_stmt.node);
+        free_ast(cond_expr.node);
+        return PARSE_FAILED_PRINT;
+    }
+    idx++;
+    
+    
+    
+    ParseResult update_stmt = parse_stmt(idx);
+    if (!update_stmt.success) {
+        free_ast(init_stmt.node);
+        free_ast(cond_expr.node);
+        return PARSE_FAILED_PRINT;
+    }
+    idx = update_stmt.endpos;
+    
+    if (get_token(idx).type != RPAREN) {
+        free_ast(update_stmt.node);
+        free_ast(init_stmt.node);
+        free_ast(cond_expr.node);
+        return PARSE_FAILED_PRINT;
+    }
+    idx++;
+    
+    ParseResult code_stmt = parse_stmt(idx);
+    
+    if (!code_stmt.success) {
+        free_ast(update_stmt.node);
+        free_ast(init_stmt.node);
+        free_ast(cond_expr.node);
+        return PARSE_FAILED_PRINT;
+    }
+    idx = code_stmt.endpos;
+    // return PARSE_FAILED_SUCCESSFULLY(idx);
+    
+    ASTNode node = create_ast_node((Token){.type = BLOCK}, true);
+    array_append(node.children, init_stmt.node);
+
+    ASTNode while_node = create_ast_node((Token){.type = WHILE_STMT}, true);
+    array_append(while_node.children, cond_expr.node);
+
+    if (code_stmt.node.token.type != BLOCK) {
+        code_stmt.node = wrap_with_block(code_stmt.node);
+    }
+
+    array_append(code_stmt.node.children, update_stmt.node);
+
+    array_append(while_node.children, code_stmt.node);
+
+    array_append(node.children, while_node);
 
     return create_parse_result(true, node, idx);
 }
@@ -3626,7 +3708,6 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
         VarType var_type = members.children[i].children[0].token.var_type;
         
         if (var_type == T_STRUCT) {
-            debug printf("appending offset %d \n", offset);
             array_append(ref_offsets, (u32)offset);
         }
 
@@ -3636,11 +3717,11 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
         offset += get_vartype_size(var_type);
     }
 
-    debug {
-        for (int i = 0; i < array_length(ref_offsets); i++) {
-            printf("%d \n", ref_offsets[i]);
-        }
-    }
+    // debug {
+    //     for (int i = 0; i < array_length(ref_offsets); i++) {
+    //         printf("%d \n", ref_offsets[i]);
+    //     }
+    // }
 
     StructMetadata meta = {
         .offset_count = array_length(ref_offsets),
@@ -3925,14 +4006,14 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         )
         case (BLOCK) then (
 
-            generate_instructions_for_scope_ref_dec(var_map_list, instructions, false);
+            generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, false);
 
             HashMap_free(var_map_list->head->val);
             LL_pop_head(var_map_list);
             gi_stack_pos = temp_stack_ptr;
         )
         case (STMT_SEQ) then (
-            generate_instructions_for_scope_ref_dec(var_map_list, instructions, true);
+            generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, true);
         )
         default (
             print_err("Unhandled case!");
@@ -5359,7 +5440,7 @@ int main() {
 
         //print_str_parts(parts);
 
-        //print_tokens(tokens);
+        print_tokens(tokens);
 
         set_parse_tokens(tokens);
 
@@ -5367,11 +5448,11 @@ int main() {
         
         preprocess_ast(&res.node);
 
-        if (res.endpos < array_length(tokens))res.success = false;
-        else {
+        // if (res.endpos < array_length(tokens))res.success = false;
+        // else {
             printf(">>> RESULT AST <<<\n");
             print_ast(res.node, 0);
-        }
+        // }
         // hi
         if (!res.success) {
             printf("INVALID EXPRESSION \n");
@@ -5385,12 +5466,12 @@ int main() {
 
         // place for chaos. increment when this made you want to kys: 2
         if (benchmark) {
-            run_benchmark(instructions);
+            // run_benchmark(instructions);
         } else {
             run_program(instructions);
         }
 
-        array_free(instructions);
+        // array_free(instructions);
 
         free_tokens(tokens);
 

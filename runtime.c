@@ -45,7 +45,7 @@ void print_struct_meta(StructMetadata sm) {
     printf("    Name: %s \n", sm.struct_name.data);
     printf("    Offset count: %d \n", sm.offset_count);
     printf("    offsets: ");
-    for (int i = 0; i < sm.offset_count; i++) printf("%d ", sm.offsets[i]);
+    for (size_t i = 0; i < sm.offset_count; i++) printf("%d ", sm.offsets[i]);
     printf("\n");
     printf("    Size: %d bytes\n ", sm.size);
 } 
