@@ -93,7 +93,7 @@ static inline void object_inc_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
-
+    debug printf("Incremented refcount to %d \n", _object_get_refcount(obj));
 }
 
 static inline void object_dec_ref(void *obj) {
@@ -104,6 +104,7 @@ static inline void object_dec_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+    debug printf("Decremented refcount to %d \n", _object_get_refcount(obj));
 
     if ((header->data & COUNTER_BITMASK) == 0) {
         free_object(obj);

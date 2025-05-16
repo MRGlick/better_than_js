@@ -3573,6 +3573,63 @@ void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedLi
 
 }
 
+
+bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHeader **arr, LinkedList *var_map_list) {
+    
+    if (node == return_node) return true;
+
+    bool found = return_node == NULL; // if it is null, just act like it's at the very end of the function
+
+
+    for (int i = array_length(node->children) - 1; i >= 0; i--) {
+
+        ASTNode *child = &node->children[i];
+
+        if (!found) {
+            bool result = _get_all_vardecls_before_return(child, return_node, arr, var_map_list);
+            if (result) {
+                found = true;
+                continue;
+            }
+        } else {
+            match (child->token.type) {
+                case (DECL_ASSIGN_STMT, DECL_STMT) then ( ;
+                    String name = child->children[1].token.text;
+                    array_append(arr, get_varheader_from_map_list(var_map_list, name, NULL));
+                )
+                default (
+
+                )
+            }
+        }
+    }
+
+    return found;
+
+}
+
+VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_node, LinkedList *var_map_list) {
+    VarHeader **arr = array(VarHeader *, 2);
+
+    ASTNode *func_args_node = &func_node->children[2];
+
+    for (int i = 0; i < array_length(func_args_node->children); i++) {
+        ASTNode *arg = &func_args_node->children[i];
+        String arg_name = arg->children[1].token.text;
+
+        array_append(arr, get_varheader_from_map_list(var_map_list, arg_name, NULL));
+    }
+
+
+    bool res = _get_all_vardecls_before_return(func_node, return_node, arr, var_map_list);
+    if (!res && return_node != NULL) {
+        print_err("Didn't find the return in the function provided! \n");
+        return NULL;
+    }
+
+    return arr;
+}
+
 void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = -1}, null(Val)));
@@ -3637,6 +3694,31 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     for (int i = 0; i < len; i++) {
         generate_instructions_for_node(&scope.children[i], instructions, var_map_list);
     }
+
+    // RC
+    {
+        VarHeader **vardecls = get_all_vardecls_before_return(ast, NULL, var_map_list);
+
+        for (int i = 0; i < array_length(vardecls); i++) {
+            if (vardecls[i]->var_type != T_STRUCT) continue;
+
+            array_append(
+                *instructions, 
+                create_inst(I_READ, 
+                    (Val){.type = T_INT, .i_val = get_vartype_size(vardecls[i]->var_type)}, 
+                    (Val){.type = T_INT, .i_val = vardecls[i]->var_pos}
+                )
+            );
+
+            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        }
+
+        array_free(vardecls);
+    }
+
+
+
+
     gi_current_function = gi_prev_function;
     gi_stack_pos = prev_gi_stack_pos;
     HashMap_free(var_map_list->head->val);
@@ -3669,6 +3751,14 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
     for (int i = 0; i < len; i++) {
         ASTNode *arg = &func_args.children[i];
         generate_instructions_for_node(arg, instructions, var_map_list);
+
+        // RC
+        if (is_nontemporary_reference(arg)) {
+            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));            
+        }
+
+
         VarType goal_type = func_vh->func_args[i].var_type;
         if (arg->expected_return_type != goal_type) {
             bool result = generate_cvt_inst_for_types(arg->expected_return_type, goal_type, instructions);
@@ -3862,62 +3952,26 @@ void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instruct
     }
 }
 
-bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHeader **arr, LinkedList *var_map_list) {
-    
-    if (node == return_node) return true;
-
-    bool found = false;
-
-
-    for (int i = array_length(node->children) - 1; i >= 0; i--) {
-
-        ASTNode *child = &node->children[i];
-
-        if (!found) {
-            bool result = _get_all_vardecls_before_return(child, return_node, arr, var_map_list);
-            if (result) {
-                found = true;
-                continue;
-            }
-        } else {
-            match (child->token.type) {
-                case (DECL_ASSIGN_STMT, DECL_STMT) then ( ;
-                    String name = child->children[1].token.text;
-                    array_append(arr, get_varheader_from_map_list(var_map_list, name, NULL));
-                )
-                default (
-
-                )
-            }
-        }
-    }
-
-    return found;
-
-}
-
-VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_node, LinkedList *var_map_list) {
-    VarHeader **arr = array(VarHeader *, 2);
-    
-    bool res = _get_all_vardecls_before_return(func_node, return_node, arr, var_map_list);
-    if (!res) {
-        print_err("Didn't find the return in the function provided! \n");
-        return NULL;
-    }
-
-    return arr;
-}
 
 
 void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
     if (!gi_current_function) return_err("Tried to return outside of a function!");
 
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+
+    if (is_nontemporary_reference(&ast->children[0])) {
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+    }
+
     { 
         VarHeader **vardecls = get_all_vardecls_before_return(gi_current_function, ast, var_map_list);
 
         for (int i = 0; i < array_length(vardecls); i++) {
             VarHeader *decl = vardecls[i];
+
+            printf("Name: %s, Type: %s \n", decl->name.data, get_type_str_from_varheader(decl).data);
 
             if (decl->var_type != T_STRUCT) continue;
 
@@ -3936,14 +3990,6 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
 
         array_free(vardecls);
     }
-
-    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
-
-    if (is_nontemporary_reference(&ast->children[0])) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
-    }
-
 
     array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
 }
