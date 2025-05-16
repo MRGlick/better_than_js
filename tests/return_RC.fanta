@@ -1,0 +1,23 @@
+
+int foo(int a) {
+    int b = 2;
+    int c = a * 2;
+
+    if (b > c) {
+        int dummy = 15;
+        return b + c;
+    }
+
+    if (b < c) {
+        int hey = b * c;
+        return hey;
+    }
+
+    int blud = a + b - c;
+    return blud;
+
+}
+
+
+int res = foo(1);
+print res;
