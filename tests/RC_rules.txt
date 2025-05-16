@@ -12,3 +12,12 @@ RULES:
 
 -   before returning an object from a function, 
     remove all references to it from within the function (decrement its refcounter)
+
+
+FUNCTION BEHAVIOUR:
+-    When a function is called, all the function argument refcounts must be handled, incrementing the refcount of all references passed increment
+-    When a function early returns, find (at compile time) all variables which have been declared up to that point and decrement if they are references
+-    When a function returns implicitely, handle the references like a normal block would
+-    When a function returns either prematurely or implicitely, decrement the function argument references
+-    When a function explicitely returns a reference, increment that reference (as would happen with a regular temporary reference)
+ 

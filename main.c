@@ -3205,6 +3205,7 @@ InstType get_inst_type_for_op(TokenType op, VarType var_type) {
 
 int gi_stack_pos = 0;
 int gi_label_idx = 0;
+ASTNode *gi_current_function = NULL;
 
 
 VarHeader *get_varheader_from_map_list_safe(LinkedList *var_map_list, String name, bool *global) {
@@ -3235,47 +3236,50 @@ void add_varheader_to_map_list(LinkedList *var_map_list, String key, VarHeader *
     HashMap_put(map, key, vh);
 }
 
-int calc_stack_space_for_scope(ASTNode ast) {
-    if (ast.token.type == DECL_ASSIGN_STMT || ast.token.type == DECL_STMT) return get_vartype_size(ast.children[0].token.var_type);
-    if (ast.token.type == FUNC_DECL_STMT) return 0; // because thats a seperate scope
+
+//#INST GEN START
+
+int calc_stack_space_for_scope(ASTNode *ast) {
+    if (ast->token.type == DECL_ASSIGN_STMT || ast->token.type == DECL_STMT) return get_vartype_size(ast->children[0].token.var_type);
+    if (ast->token.type == FUNC_DECL_STMT) return 0; // because thats a seperate scope
 
     int sum = 0;
-    int len = array_length(ast.children);
+    int len = array_length(ast->children);
     for (int i = 0; i < len; i++) {
-        sum += calc_stack_space_for_scope(ast.children[i]);
+        sum += calc_stack_space_for_scope(&ast->children[i]);
     }
 
     return sum;
 }
 
-void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list);
+void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedList *var_map_list);
 
-static inline bool is_reference(ASTNode ast) {
-    return ast.expected_return_type == T_STRUCT;
+static inline bool is_reference(ASTNode *ast) {
+    return ast->expected_return_type == T_STRUCT;
 }
 
-static inline bool is_temporary_reference(ASTNode ast) {
-    return ast.token.type == OP_NEW
-        || (ast.token.type == FUNC_CALL && ast.expected_return_type == T_STRUCT);
+static inline bool is_temporary_reference(ASTNode *ast) {
+    return ast->token.type == OP_NEW
+        || (ast->token.type == FUNC_CALL && ast->expected_return_type == T_STRUCT);
 }
 
-void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_vardecl(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    String var_name = ast.children[1].token.text;
+    String var_name = ast->children[1].token.text;
 
-    VarType var_type = ast.children[0].token.var_type;
+    VarType var_type = ast->children[0].token.var_type;
     
-    VarHeader vh = create_var_header(var_name, var_type, gi_stack_pos, get_type_str_from_node(&ast.children[0]));
+    VarHeader vh = create_var_header(var_name, var_type, gi_stack_pos, get_type_str_from_node(&ast->children[0]));
 
     add_varheader_to_map_list(var_map_list, var_name, &vh);
     
     int size = get_vartype_size(var_type);
 
     
-    if (ast.token.type == DECL_ASSIGN_STMT) {
-        generate_instructions_for_node(ast.children[2], instructions, var_map_list);
+    if (ast->token.type == DECL_ASSIGN_STMT) {
+        generate_instructions_for_node(&ast->children[2], instructions, var_map_list);
 
-        VarType child_return_type = ast.children[2].expected_return_type;
+        VarType child_return_type = ast->children[2].expected_return_type;
         
         if (child_return_type != var_type) {
             bool result = generate_cvt_inst_for_types(child_return_type, var_type, instructions);
@@ -3292,7 +3296,7 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
         array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
     }
 
-    bool inc_refcounter = is_reference(ast.children[2]) && !is_temporary_reference(ast.children[2]);
+    bool inc_refcounter = is_reference(&ast->children[2]) && !is_temporary_reference(&ast->children[2]);
 
     if (inc_refcounter) {
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
@@ -3309,13 +3313,13 @@ void generate_instructions_for_vardecl(ASTNode ast, Inst **instructions, LinkedL
 
 }
 
-void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list);
+void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list);
 
 // #UPDATE FOR STRUCTS
-void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    ASTNode left_side = ast.children[0];
-    ASTNode right_side = ast.children[1];
+    ASTNode *left_side = &ast->children[0];
+    ASTNode *right_side = &ast->children[1];
 
 
     // RC
@@ -3326,10 +3330,10 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
 
     bool inc_refcount_for_right_side = is_reference(right_side) && !is_temporary_reference(right_side);
 
-    if (left_side.token.type == NAME) {
+    if (left_side->token.type == NAME) {
 
         
-        String var_name = left_side.token.text;
+        String var_name = left_side->token.text;
         
         bool isglobal;
         
@@ -3344,22 +3348,22 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
         
         VarType goal_type = vh->var_type;
 
-        if (goal_type != right_side.expected_return_type) {
-            bool result = generate_cvt_inst_for_types(right_side.expected_return_type, goal_type, instructions);
+        if (goal_type != right_side->expected_return_type) {
+            bool result = generate_cvt_inst_for_types(right_side->expected_return_type, goal_type, instructions);
             if (!result) return_err(
                 "Invalid conversion on assignment! Tried to convert from type '%s' to '%s'", 
-                var_type_names[right_side.expected_return_type], 
+                var_type_names[right_side->expected_return_type], 
                 var_type_names[goal_type]
             );
         }
 
         array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = T_INT, .i_val = get_vartype_size(vh->var_type)}, (Val){.type = T_INT, .i_val = vh->var_pos}));
 
-    } else if (left_side.token.type == ATTR_ACCESS) {
+    } else if (left_side->token.type == ATTR_ACCESS) {
         
         
         
-        VarType goal_type = left_side.expected_return_type;
+        VarType goal_type = left_side->expected_return_type;
 
         generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
 
@@ -3373,59 +3377,59 @@ void generate_instructions_for_assign(ASTNode ast, Inst **instructions, LinkedLi
         }
 
 
-        if (right_side.expected_return_type != goal_type) {
-            bool result = generate_cvt_inst_for_types(right_side.expected_return_type, goal_type, instructions);
+        if (right_side->expected_return_type != goal_type) {
+            bool result = generate_cvt_inst_for_types(right_side->expected_return_type, goal_type, instructions);
             if (!result) return_err(
                 "Invalid conversion on assignment! Tried to convert from type '%s' to '%s'", 
-                var_type_names[right_side.expected_return_type], 
+                var_type_names[right_side->expected_return_type], 
                 var_type_names[goal_type]
             );
         }
 
-        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(left_side.expected_return_type)}, null(Val)));
+        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = T_INT, .i_val = get_vartype_size(left_side->expected_return_type)}, null(Val)));
     }
     
     
 }
 
 
-void generate_instructions_for_binop(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    int len = array_length(ast.children);
+    int len = array_length(ast->children);
 
-    bool is_bool_op = in_range(ast.token.type, BOOLOPS_START, BOOLOPS_END);
-    bool is_pure_bool_op = ast.token.type == OP_AND || ast.token.type == OP_OR;
+    bool is_bool_op = in_range(ast->token.type, BOOLOPS_START, BOOLOPS_END);
+    bool is_pure_bool_op = ast->token.type == OP_AND || ast->token.type == OP_OR;
 
     VarType highest_prec_type = T_VOID;
 
     if (is_bool_op) {
         for (int i = 0; i < len; i++) {
-            if (get_type_precedence(ast.children[i].expected_return_type) > get_type_precedence(highest_prec_type)) {
-                highest_prec_type = ast.children[i].expected_return_type;
+            if (get_type_precedence(ast->children[i].expected_return_type) > get_type_precedence(highest_prec_type)) {
+                highest_prec_type = ast->children[i].expected_return_type;
             }
         }
     }
 
-    VarType goal_type = is_pure_bool_op ? T_BOOL : (is_bool_op ? highest_prec_type : ast.expected_return_type);
+    VarType goal_type = is_pure_bool_op ? T_BOOL : (is_bool_op ? highest_prec_type : ast->expected_return_type);
 
     for (int i = 0; i < len; i++) {
 
-        generate_instructions_for_node(ast.children[i], instructions, var_map_list);
+        generate_instructions_for_node(&ast->children[i], instructions, var_map_list);
 
-        if (goal_type != ast.children[i].expected_return_type) {
-            bool result = generate_cvt_inst_for_types(ast.children[i].expected_return_type, goal_type, instructions);
+        if (goal_type != ast->children[i].expected_return_type) {
+            bool result = generate_cvt_inst_for_types(ast->children[i].expected_return_type, goal_type, instructions);
             if (!result) return_err(
                 "Invalid conversion in binary operation! Tried to convert between '%s' and '%s'!",
-                var_type_names[ast.children[i].expected_return_type],
+                var_type_names[ast->children[i].expected_return_type],
                 var_type_names[goal_type]
             );
         }
     }
 
-    InstType inst_type = get_inst_type_for_op(ast.token.type, goal_type);
+    InstType inst_type = get_inst_type_for_op(ast->token.type, goal_type);
     if (inst_type == I_INVALID) {
         print_err("Invalid operator!");
-        printf("Tried to get operator '%s' between '%s' type operands! \n", token_type_names[ast.token.type], var_type_names[goal_type]);
+        printf("Tried to get operator '%s' between '%s' type operands! \n", token_type_names[ast->token.type], var_type_names[goal_type]);
     } else {
         array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
     }
@@ -3441,42 +3445,42 @@ InstType get_print_inst_for_type(VarType type) {
     return I_INVALID;
 }
 
-void generate_instructions_for_print(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    int len = array_length(ast.children);
+    int len = array_length(ast->children);
     for (int i = 0; i < len; i++) {
 
-        generate_instructions_for_node(ast.children[i], instructions, var_map_list);
+        generate_instructions_for_node(&ast->children[i], instructions, var_map_list);
 
-        InstType inst_type = get_print_inst_for_type(ast.children[i].expected_return_type);
+        InstType inst_type = get_print_inst_for_type(ast->children[i].expected_return_type);
         if (inst_type == I_INVALID) {
             print_err("Invalid argument for print! (seriously how could you mess this up)");
-            printf("argument type: %s \n", var_type_names[ast.children[i].expected_return_type]);
+            printf("argument type: %s \n", var_type_names[ast->children[i].expected_return_type]);
         } else {
             array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
         }
     }
 
-    if (ast.token.type == PRINT_STMT) array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val), null(Val)));
+    if (ast->token.type == PRINT_STMT) array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val), null(Val)));
 }
 
-void generate_instructions_for_if(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     int end_label_idx = gi_label_idx++;
 
     int end_label_true_idx;
     int else_label_true_idx;
-    // if (ast.token.type == IF_ELSE_STMT) else_label_idx = gi_label_idx++;
+    // if (ast->token.type == IF_ELSE_STMT) else_label_idx = gi_label_idx++;
 
     // condition
-    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
-    if (ast.children[0].expected_return_type != T_BOOL) {
-        bool result = generate_cvt_inst_for_types(ast.children[0].expected_return_type, T_BOOL, instructions);
+    if (ast->children[0].expected_return_type != T_BOOL) {
+        bool result = generate_cvt_inst_for_types(ast->children[0].expected_return_type, T_BOOL, instructions);
         if (!result) {
             return_err(
                 "Type '%s' is ambigous! Cannot be used as an if condition. (you did badly.)",
-                var_type_names[ast.children[0].expected_return_type]
+                var_type_names[ast->children[0].expected_return_type]
             );
         }
     }
@@ -3485,11 +3489,11 @@ void generate_instructions_for_if(ASTNode ast, Inst **instructions, LinkedList *
     array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}, null(Val)));
 
     // if-body
-    generate_instructions_for_node(ast.children[1], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
     
     int if_body_jump_idx = -1;
 
-    if (ast.token.type == IF_ELSE_STMT) {
+    if (ast->token.type == IF_ELSE_STMT) {
 
         if_body_jump_idx = array_length(*instructions);
         array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = end_label_idx}, null(Val)));
@@ -3498,13 +3502,13 @@ void generate_instructions_for_if(ASTNode ast, Inst **instructions, LinkedList *
         array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
         // else-body
-        generate_instructions_for_node(ast.children[2], instructions, var_map_list);
+        generate_instructions_for_node(&ast->children[2], instructions, var_map_list);
     }
 
     end_label_true_idx = array_length(*instructions);
     array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
-    if (ast.token.type == IF_STMT) {
+    if (ast->token.type == IF_STMT) {
         (*instructions)[first_jump_idx].arg1.i_val = end_label_true_idx;
     } else {
         (*instructions)[first_jump_idx].arg1.i_val = else_label_true_idx;
@@ -3513,20 +3517,20 @@ void generate_instructions_for_if(ASTNode ast, Inst **instructions, LinkedList *
 
 }
 
-void generate_instructions_for_while(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
     int start_label_idx = array_length(*instructions);
 
     array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
-    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
-    if (ast.children[0].expected_return_type != T_BOOL) {
-        bool result = generate_cvt_inst_for_types(ast.children[0].expected_return_type, T_BOOL, instructions);
+    if (ast->children[0].expected_return_type != T_BOOL) {
+        bool result = generate_cvt_inst_for_types(ast->children[0].expected_return_type, T_BOOL, instructions);
 
         if (!result) return_err(
             "Type '%s' is ambigous! Cannot be used as a while condition. (you did badly.)",
-            var_type_names[ast.children[0].expected_return_type]
+            var_type_names[ast->children[0].expected_return_type]
         );
     }
 
@@ -3534,7 +3538,7 @@ void generate_instructions_for_while(ASTNode ast, Inst **instructions, LinkedLis
     array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = T_INT, .i_val = -1}, null(Val)));
 
     // while body
-    generate_instructions_for_node(ast.children[1], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
     array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = start_label_idx}, null(Val)));
 
@@ -3546,7 +3550,7 @@ void generate_instructions_for_while(ASTNode ast, Inst **instructions, LinkedLis
 
 }
 
-void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     // {
     //     "hi" : 2,
     //     "ghf", 6
@@ -3554,7 +3558,7 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedLis
     
     array_append(*instructions, create_inst(I_INPUT, null(Val), null(Val)));
 
-    VarType goal_type = ast.children[0].expected_return_type;
+    VarType goal_type = ast->children[0].expected_return_type;
 
     if (goal_type != T_STRING) {
         bool result = generate_cvt_inst_for_types(T_STRING, goal_type, instructions);
@@ -3563,30 +3567,30 @@ void generate_instructions_for_input(ASTNode ast, Inst **instructions, LinkedLis
 
     bool isglobal;
 
-    VarHeader *vh = get_varheader_from_map_list(var_map_list, ast.children[0].token.text, &isglobal);
+    VarHeader *vh = get_varheader_from_map_list(var_map_list, ast->children[0].token.text, &isglobal);
 
     array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = T_INT, .i_val = get_vartype_size(goal_type)}, (Val){.type = T_INT, .i_val = vh->var_pos}));
 
 }
 
-void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     array_append(*instructions, create_inst(I_JUMP, (Val){.type = T_INT, .i_val = -1}, null(Val)));
     int jump_inst_idx = array_length(*instructions) - 1;
 
     array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
 
-    ASTNode var_args = ast.children[2];
+    ASTNode var_args = ast->children[2];
 
-    String func_name = ast.children[1].token.text;
+    String func_name = ast->children[1].token.text;
 
-    VarType var_type = ast.children[0].token.var_type;
+    VarType var_type = ast->children[0].token.var_type;
 
     VarHeader vh = create_func_header(
         func_name, 
         var_type, 
         array_length(*instructions) - 1, 
-        get_type_str_from_node(&ast.children[0]),
+        get_type_str_from_node(&ast->children[0]),
         get_args_from_func_decl_ast(&var_args)
     );
 
@@ -3604,13 +3608,13 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
     gi_stack_pos = 0;
 
     int size = 0;
-    ASTNode scope = ast.children[3];
+    ASTNode scope = ast->children[3];
     
     for (int i = array_length(var_args.children) - 1; i >= 0; i--) {
         VarType var_type = var_args.children[i].children[0].token.var_type;
         size += get_vartype_size(var_type);
     }
-    size += calc_stack_space_for_scope(scope);
+    size += calc_stack_space_for_scope(&scope);
     array_append(*instructions, create_inst(I_STACK_PTR_ADD, (Val){.type = T_INT, .i_val = size}, null(Val)));
 
     for (int i = array_length(var_args.children) - 1; i >= 0; i--) {
@@ -3629,7 +3633,7 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
     int len = array_length(scope.children);
 
     for (int i = 0; i < len; i++) {
-        generate_instructions_for_node(scope.children[i], instructions, var_map_list);
+        generate_instructions_for_node(&scope.children[i], instructions, var_map_list);
     }
     gi_stack_pos = prev_gi_stack_pos;
     HashMap_free(var_map_list->head->val);
@@ -3643,11 +3647,11 @@ void generate_instructions_for_func_decl(ASTNode ast, Inst **instructions, Linke
 }
 
 // #UPDATE FOR STRUCTS
-void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    ASTNode func_args = ast.children[1];
+    ASTNode func_args = ast->children[1];
 
-    String func_name = ast.children[0].token.text;
+    String func_name = ast->children[0].token.text;
     
     int len = array_length(func_args.children);
     
@@ -3660,16 +3664,16 @@ void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, Linke
 
 
     for (int i = 0; i < len; i++) {
-        ASTNode arg = func_args.children[i];
+        ASTNode *arg = &func_args.children[i];
         generate_instructions_for_node(arg, instructions, var_map_list);
         VarType goal_type = func_vh->func_args[i].var_type;
-        if (arg.expected_return_type != goal_type) {
-            bool result = generate_cvt_inst_for_types(arg.expected_return_type, goal_type, instructions);
+        if (arg->expected_return_type != goal_type) {
+            bool result = generate_cvt_inst_for_types(arg->expected_return_type, goal_type, instructions);
             if (!result) return_err(
                 "Function argument #%d expected type '%s' but got '%s'!",
                 i,
                 var_type_names[goal_type],
-                var_type_names[arg.expected_return_type]
+                var_type_names[arg->expected_return_type]
             );
         }
     }
@@ -3677,24 +3681,24 @@ void generate_instructions_for_func_call(ASTNode ast, Inst **instructions, Linke
     array_append(*instructions, create_inst(I_CALL, (Val){.type = T_INT, .i_val = func_vh->func_pos}, null(Val)));
 }
 
-void generate_instructions_for_unary_minus(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_unary_minus(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
-    if (ast.expected_return_type == T_INT) {
+    if (ast->expected_return_type == T_INT) {
         array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 4}, (Val){.type = T_INT, .i_val = -1}));
         array_append(*instructions, create_inst(I_MUL, null(Val), null(Val)));
-    } else if (ast.expected_return_type == T_FLOAT) {
+    } else if (ast->expected_return_type == T_FLOAT) {
         array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, (Val){.type = T_FLOAT, .f_val = -1}));
         array_append(*instructions, create_inst(I_MUL_FLOAT, null(Val), null(Val)));
     } else {
-        print_err("Cannot apply unary minus to value of type '%s'!", var_type_names[ast.expected_return_type]);
+        print_err("Cannot apply unary minus to value of type '%s'!", var_type_names[ast->expected_return_type]);
     }
 }
 
-void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list) {
-    String name = ast.children[0].token.text;
-    ASTNode members = ast.children[1];
+void generate_instructions_for_struct_decl(ASTNode *ast, LinkedList *var_map_list) {
+    String name = ast->children[0].token.text;
+    ASTNode members = ast->children[1];
 
     VarHeader *arr = array(VarHeader, 2);
 
@@ -3739,11 +3743,11 @@ void generate_instructions_for_struct_decl(ASTNode ast, LinkedList *var_map_list
 }   
 
 
-void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
-    bool temp_refcount = is_temporary_reference(ast.children[0]);
+    bool temp_refcount = is_temporary_reference(&ast->children[0]);
 
     if (temp_refcount) {
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
@@ -3751,9 +3755,9 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
     }
 
     // find member offset
-    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].return_type_name, NULL);
+    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast->children[0].return_type_name, NULL);
 
-    VarHeader *member_vh = find_attr_in_struct(struct_vh, ast.children[1].token.text);
+    VarHeader *member_vh = find_attr_in_struct(struct_vh, ast->children[1].token.text);
 
     array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = T_INT, .i_val = get_vartype_size(member_vh->var_type)}, (Val){.type = T_INT, .i_val = member_vh->var_pos}));
 
@@ -3762,29 +3766,29 @@ void generate_instructions_for_attr_access(ASTNode ast, Inst **instructions, Lin
         array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
     }
 }
-void generate_instructions_for_attr_addr(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    generate_instructions_for_node(ast.children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
     // find member offset
-    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].return_type_name, NULL);
+    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast->children[0].return_type_name, NULL);
 
-    VarHeader *member_vh = find_attr_in_struct(struct_vh, ast.children[1].token.text);
+    VarHeader *member_vh = find_attr_in_struct(struct_vh, ast->children[1].token.text);
 
     array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = member_vh->var_pos}, null(Val)));
 
 }
 
-void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast.children[0].token.text, NULL);
+    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast->children[0].token.text, NULL);
 
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = T_INT, .i_val = struct_vh->struct_size}, null(Val)));
 
     array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
     array_append(*instructions, create_inst(I_INIT_OBJ_HEADER, (Val){.type = T_INT, .i_val = struct_vh->struct_metadata_idx}, null(Val))); // use the allocated address
 
-    ASTNode *member_assigns = &ast.children[1];
+    ASTNode *member_assigns = &ast->children[1];
 
     for (int i = 0; i < array_length(member_assigns->children); i++) {
         String member_name = member_assigns->children[i].children[0].token.text;
@@ -3793,7 +3797,7 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
         array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = T_INT, .i_val = member_vh->var_pos}, null(Val)));
 
-        ASTNode expr = member_assigns->children[i].children[1];
+        ASTNode *expr = &member_assigns->children[i].children[1];
 
         generate_instructions_for_node(expr, instructions, var_map_list);
 
@@ -3819,16 +3823,17 @@ void generate_instructions_for_new(ASTNode ast, Inst **instructions, LinkedList 
 
 }
 
-void generate_instructions_for_delete(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+// #DEPRECATED
+void generate_instructions_for_delete(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    ASTNode thing = ast.children[0];
+    ASTNode *thing = &ast->children[0];
 
-    if (thing.expected_return_type != T_STRUCT) {
+    if (thing->expected_return_type != T_STRUCT) {
         print_err("Tried to delete a non-struct! Are you trying to ruin my program on purpose?");
         return;
     }
 
-    if (thing.token.type == ATTR_ACCESS) {
+    if (thing->token.type == ATTR_ACCESS) {
         generate_instructions_for_attr_addr(thing, instructions, var_map_list);
     } else {
         generate_instructions_for_node(thing, instructions, var_map_list);
@@ -3854,11 +3859,20 @@ void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instruct
     }
 }
 
-void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList *var_map_list) {
+void generate_instructions_for_return(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    // somehow find the function?
+
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+
+    array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
+}
+
+void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     bool handled = true;
 
-    match (ast.token.type) {
+    match (ast->token.type) {
         case (DECL_ASSIGN_STMT, DECL_STMT) then (
             generate_instructions_for_vardecl(ast, instructions, var_map_list);
         )
@@ -3898,8 +3912,11 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         case (DELETE_STMT) then (
             generate_instructions_for_delete(ast, instructions, var_map_list);
         )
+        case (RETURN_STMT) then (
+            generate_instructions_for_return(ast, instructions, var_map_list);
+        )
         default (
-            if (in_range(ast.token.type, BINOPS_START, BINOPS_END)) {
+            if (in_range(ast->token.type, BINOPS_START, BINOPS_END)) {
                 generate_instructions_for_binop(ast, instructions, var_map_list);
             } else {
                 handled = false;
@@ -3912,7 +3929,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
     int temp_stack_ptr;
 
     // pre children operators
-    match (ast.token.type) {
+    match (ast->token.type) {
         case (STMT_SEQ) then ( ;
             int size = calc_stack_space_for_scope(ast);
             array_append(*instructions, create_inst(I_STACK_PTR_ADD, (Val){.type = T_INT, .i_val = size}, null(Val)));
@@ -3927,30 +3944,27 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         )
     }
         
-    for (int i = 0; i < array_length(ast.children); i++) {
-        generate_instructions_for_node(ast.children[i], instructions, var_map_list);
+    for (int i = 0; i < array_length(ast->children); i++) {
+        generate_instructions_for_node(&ast->children[i], instructions, var_map_list);
     }
 
 
     // post children operators
-    match (ast.token.type) {
-        case (RETURN_STMT) then (
-            array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
-        )
+    match (ast->token.type) {
         case (INTEGER) then (
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 4}, 
-                                                    (Val){.type = T_INT, .i_val = ast.token.int_val}));
+                                                    (Val){.type = T_INT, .i_val = ast->token.int_val}));
         )
         case (FLOAT) then (
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, 
-                                                    (Val){.type = T_FLOAT, .f_val = ast.token.double_val}));
+                                                    (Val){.type = T_FLOAT, .f_val = ast->token.double_val}));
         )
         case (BOOL) then (
-            if (ast.token.int_val == MAYBE) {
+            if (ast->token.int_val == MAYBE) {
                 array_append(*instructions, create_inst(I_PUSH_MAYBE, null(Val), null(Val)));
             } else {
                 array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 1}, 
-                                                        (Val){.type = T_BOOL, .b_val = ast.token.int_val}));
+                                                        (Val){.type = T_BOOL, .b_val = ast->token.int_val}));
             }
         )
         case (NULL_REF) then (
@@ -3959,7 +3973,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         )
         case (STRING_LITERAL) then (
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = T_INT, .i_val = 8}, 
-                                                    (Val){.type = T_STRING, .s_val = ast.token.text.data}));
+                                                    (Val){.type = T_STRING, .s_val = ast->token.text.data}));
         )
         case (OP_ADD) then (
             array_append(*instructions, create_inst(I_ADD, null(Val), null(Val)));
@@ -3999,7 +4013,7 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         )
         case (NAME) then ( ;
             bool isglobal;
-            VarHeader *vh = get_varheader_from_map_list(var_map_list, ast.token.text, &isglobal);
+            VarHeader *vh = get_varheader_from_map_list(var_map_list, ast->token.text, &isglobal);
             array_append(*instructions, create_inst(isglobal ? I_READ_GLOBAL : I_READ,
                 (Val){.i_val = get_vartype_size(vh->var_type), .type = T_INT},
                 (Val){.i_val = vh->var_pos, .type = T_INT}));
@@ -4017,13 +4031,13 @@ void generate_instructions_for_node(ASTNode ast, Inst **instructions, LinkedList
         )
         default (
             print_err("Unhandled case!");
-            print_token(ast.token, 0);
+            print_token(ast->token, 0);
         )
     }
 }
 
 
-Inst *generate_instructions(ASTNode ast) {
+Inst *generate_instructions(ASTNode *ast) {
 
     clear_struct_metadata();
 
@@ -4042,6 +4056,7 @@ Inst *generate_instructions(ASTNode ast) {
     return res;
 }
 
+// #INST GEN END
 
 
 
@@ -5458,7 +5473,7 @@ int main() {
             printf("INVALID EXPRESSION \n");
         }
 
-        Inst *instructions = generate_instructions(res.node);
+        Inst *instructions = generate_instructions(&res.node);
 
         print_instructions(instructions);
 
