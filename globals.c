@@ -4,6 +4,7 @@
 #include "inttypes.h"
 #include <stdio.h>
 #include "mystring.c"
+#include "types.c"
 
 const char SYMBOLS[] = {
     ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|', '.'
@@ -103,34 +104,6 @@ char *KEYWORDS[] = {
 
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)
-#define VAR_TYPES \
-    X(T_NULL) \
-    X(T_VOID) \
-    X(T_BOOL) \
-    X(T_INT) \
-    X(T_FLOAT) \
-    X(T_STRING) \
-    X(T_STRUCT) \
-    X(T_NULL_REF) 
-
-typedef enum VarType {
-    #define X(a) a, 
-    VAR_TYPES
-    #undef X
-} VarType;
-
-char *var_type_names[] = {
-    "null(bad)",
-    "void",
-    "bool",
-    "int",
-    "float",
-    "string",
-    "struct",
-    "null"
-};
-
-
 typedef struct Val {
     union {
         void *any_val;
@@ -160,13 +133,11 @@ typedef struct VarHeader {
     String name;
     union {
         struct { // VH_VAR
-            String var_struct_name;
-            i32 var_type;
+            Type *var_type;
             i32 var_pos;
         };
         struct { // VH_FUNC
-            String func_return_type_struct_name;
-            i32 func_return_type;
+            Type *func_return_type;
             i32 func_pos;
             struct VarHeader *func_args;
         };
@@ -198,10 +169,9 @@ struct TokenNode;
 
 typedef struct Token {
     TokenType type;
-    VarType var_type; 
+    Type *var_type; 
     union {
         String text;
-        struct TokenNode *unresolved_tokens;
         double double_val;
         int int_val;
         char symbol;
@@ -222,7 +192,6 @@ const char *vh_type_names[] = {
 typedef struct ASTNode {
     Token token;
     struct ASTNode *children;
-    VarType expected_return_type;
-    String return_type_name;
+    Type *expected_return_type;
     bool complete;
 } ASTNode;

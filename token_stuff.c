@@ -2,28 +2,29 @@
 #include "mystring.c"
 #include <stdlib.h>
 #include "utils.c"
-#include "globals.h"
+#include "globals.c"
+#include "match.h"
 
-
-static inline int get_vartype_size(VarType t) {
-    switch (t) {
-        case T_INT:
+static inline int get_typekind_size(u8 t) {
+    match (t) {
+        case (TYPE_int) then (
             return 4;
-            break;
-        case T_STRING:
-        case T_FLOAT:
-        case T_STRUCT:
-        case T_NULL_REF:
+        )
+        case (TYPE_float, TYPE_string, TYPE_struct, TYPE_array) then (
             return 8;
-            break;
-        case T_BOOL:
+        )
+        case (TYPE_bool) then (
             return 1;
-            break;
-        default:
-            print_err("Can't get vartype size of type [%d]!", (int)t);
+        )
+        default (
+            print_err("Tried to get size of unknown type! Type: %s \n", type_kind_names[t]);
             return -1;
-            break;
+        )
     }
+}
+
+static inline int get_vartype_size(Type *t) {
+    return get_typekind_size(t->kind);
 }
 
 

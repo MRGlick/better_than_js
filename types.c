@@ -1,0 +1,109 @@
+
+#include "inttypes.h"
+#include <stdlib.h>
+#include "mystring.c"
+#include "match.h"
+
+#define TYPE_KINDS \
+    X(void) \
+    X(bool) \
+    X(int) \
+    X(float) \
+    X(string) \
+    X(struct) \
+    X(array) \
+    X(null_ref)
+
+typedef enum TypeKind {
+    #define X(a) TYPE_##a, 
+    TYPE_KINDS
+    #undef X
+} TypeKind;
+
+char *type_kind_names[] = {
+    #define X(a) #a, 
+    TYPE_KINDS
+    #undef X
+};
+
+
+typedef struct Type {
+    TypeKind kind;
+    union {
+        struct {struct Type *type; } array_data;
+        struct {StringRef name; } struct_data;
+    };
+} Type;
+
+// CONSTANTS FOR ALL PRIMITIVES
+#define X(a) Type _const_type_##a = (Type){.kind = TYPE_##a};
+TYPE_KINDS
+#undef X
+
+Type *make_type(TypeKind kind) {
+    Type *thing = malloc(sizeof(Type));
+    *thing = (Type){.kind = kind}; // which zeros out the other fields BY THE WAY?
+    return thing;
+}
+
+Type *copy_type(Type *type) {
+    Type *cop = make_type(type->kind);
+    if (cop->kind == TYPE_struct) cop->struct_data.name = type->struct_data.name;
+    if (cop->kind == TYPE_array) cop->array_data.type = copy_type(cop->array_data.type);
+
+
+    return cop;
+}
+
+bool types_are_equal(Type *t1, Type *t2) {
+    if (t1->kind != t2->kind) return false;
+    TypeKind kind = t1->kind;
+
+    match (kind) {
+        case (TYPE_array) then (
+            return types_are_equal(t1->array_data.type, t2->array_data.type);
+        )
+        case (TYPE_struct) then (
+            return String_equal(t1->struct_data.name, t2->struct_data.name);
+        )
+        default (
+            return true;
+        )
+    }
+}
+
+StringRef type_get_name(Type *type) {
+    match (type->kind) {
+        case (TYPE_array) then (
+            print_err("Not implemented yet!");
+            return String_null;
+        )
+        case (TYPE_struct) then (
+            return type->struct_data.name;
+        )
+        default (
+            return StringRef(type_kind_names[type->kind]);
+        )
+    }
+}
+
+void print_type(Type *type) {
+    match (type->kind) {
+        case (TYPE_array) then (
+            print_type(type->array_data.type);
+            printf("[]");
+        )
+        case (TYPE_struct) then (
+            printf("%s", type->struct_data.name.data);
+        )
+        default (
+            printf("%s", type_kind_names[type->kind]);
+        )
+    }
+}
+
+void free_type(Type *type) {
+    if (type == NULL) return;
+    if (type->kind == TYPE_array) free_type(type->array_data.type);
+    free(type);
+}
