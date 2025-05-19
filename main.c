@@ -1,4 +1,26 @@
 
+// #FLAGS
+#define DEBUG
+
+#define STAGE_LEXER 0
+#define STAGE_TOKENIZER 1
+#define STAGE_PARSER 2
+#define STAGE_IR_GEN 3
+#define STAGE_RUN_CODE 4
+
+#define COMPILATION_STAGE STAGE_PARSER
+
+#define PREPROCESS_AST 0
+
+#define LEXER_PRINT 1
+#define TOKENIZER_PRINT 1
+#define PARSER_PRINT 1
+#define IR_PRINT 0
+
+#define RUNTIME_ACTIVE 1
+// #FLAGS END
+
+
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 
 #include <stdio.h>
@@ -55,7 +77,7 @@ Type *type_from_str(String str) {
 
     for (int i = 0; i < len; i++) {
         if (String_equal(str, StringRef(type_kind_names[i]))) {
-            return make_type(i);
+            return &_const_types[i];
         }
     }
 
@@ -3351,7 +3373,7 @@ void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedLi
         }
     }
 
-    Type *goal_type = is_pure_bool_op ? &_const_type_bool : (is_bool_op ? highest_prec_type : ast->expected_return_type);
+    Type *goal_type = is_pure_bool_op ? &_const_types[TYPE_bool] : (is_bool_op ? highest_prec_type : ast->expected_return_type);
 
     for (int i = 0; i < len; i++) {
 
@@ -3479,7 +3501,7 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
     if (ast->children[0].expected_return_type->kind != TYPE_bool) {
-        bool result = generate_cvt_inst_for_types(ast->children[0].expected_return_type, &_const_type_bool, instructions);
+        bool result = generate_cvt_inst_for_types(ast->children[0].expected_return_type, &_const_types[TYPE_bool], instructions);
 
         if (!result) return_err(
             "Type '%s' is ambigous! Cannot be used as a while condition. (you did badly.)",
@@ -3510,7 +3532,7 @@ void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedLi
     Type *goal_type = ast->children[0].expected_return_type;
 
     if (goal_type->kind != TYPE_string) {
-        bool result = generate_cvt_inst_for_types(&_const_type_string, goal_type, instructions);
+        bool result = generate_cvt_inst_for_types(&_const_types[TYPE_string], goal_type, instructions);
         if (!result) return_err("Can't convert string to '%s'!", type_get_name(goal_type).data);
     }
 
@@ -5464,106 +5486,155 @@ void _free_parts(String *parts) {
     array_free(parts);
 }
 
+#define RESULT_OK 0
+#define RESULT_INVALID_COMMAND 1
+#define RESULT_COULDNT_OPEN_FILE 2
+
+// this code is not meant to be pretty..
+int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
+
+    printf("File or raw code? ('file' for file, 'code' for code)\n");
+
+    char answer[20] = {0};
+    fgets(answer, sizeof(answer), stdin);
+
+    if (!strncmp(answer, "file", 4)) {
+
+        *benchmark = !strncmp(answer + 5, "bench", 5);
+
+        printf("Enter relative path: ");
+
+        char filepath[100] = {0};
+
+        filepath[0] = '.'; filepath[1] = '.'; filepath[2] = '/';
+
+        fgets((char *)filepath + 3, sizeof(filepath) - 3, stdin);
+
+        filepath[strlen(filepath) - 1] = 0;
+
+        printf("Reading from file: '%s' \n", filepath);
+
+        FILE *file = fopen(filepath, "r");
+
+        if (!file) {
+            print_err("Couldn't open file! errno: %d ", errno);                
+            return RESULT_COULDNT_OPEN_FILE;
+        }
+
+        char *buf_ptr = buf;
+
+        while (fgets(buf_ptr, bufsize - (buf_ptr - buf), file)) {
+            int len = strlen(buf_ptr);
+            if (len > 0 && buf_ptr[len - 1] == '\n') {
+                buf_ptr[len - 1] = ' '; // get rid of \n
+                buf_ptr += len;
+            }
+        }
+
+        buf[strlen(buf)] = 10; // dont ask, it works
+
+
+        fclose(file);
+
+        return RESULT_OK;
+
+    } else if (!strncmp(answer, "code", 4)) {
+        printf("Write the program here:\n>");
+
+        fgets(buf, bufsize, stdin);
+        return RESULT_OK;
+    }
+
+    return RESULT_INVALID_COMMAND;
+
+}
+
+#define KB 1024
+#define MB 1024 * KB
+#define GB 1024 * MB
+
+#define CODE_MAX_LEN 4 * KB
+
+// #MAIN
 
 int main() {
 
     while (true) {
 
-        bool benchmark = false;
 
-        start_label: printf("File or raw code? ('file' for file, 'code' for code)\n");
-        char buf[4096] = {0};
-        char answer[20] = {0};
-        fgets(answer, sizeof(answer), stdin);
+        char buf[CODE_MAX_LEN] = {0};
+        bool benchmark;
 
-        if (!strncmp(answer, "file", 4)) {
+        int result = handle_text_interface(buf, CODE_MAX_LEN, &benchmark);
 
-            benchmark = !strncmp(answer + 5, "bench", 5);
-
-            printf("Enter relative path: ");
-
-            char filepath[100] = {0};
-
-            filepath[0] = '.'; filepath[1] = '.'; filepath[2] = '/';
-
-            fgets((char *)filepath + 3, sizeof(filepath) - 3, stdin);
-
-            filepath[strlen(filepath) - 1] = 0;
-
-            printf("Reading from file: '%s' \n", filepath);
-
-            FILE *file = fopen(filepath, "r");
-
-            if (!file) {
-                print_err("Couldn't open file! errno: %d ", errno);                
-                continue;
-            }
-
-            char *buf_ptr = buf;
-
-            while (fgets(buf_ptr, sizeof(buf) - (buf_ptr - buf), file)) {
-                int len = strlen(buf_ptr);
-                if (len > 0 && buf_ptr[len - 1] == '\n') {
-                    buf_ptr[len - 1] = ' '; // get rid of \n
-                    buf_ptr += len;
-                }
-            }
-
-            buf[strlen(buf)] = 10; // dont ask, it works
-
-
-            fclose(file);
-
-        } else if (!strncmp(answer, "code", 4)) {
-            printf("Write the program here:\n>");
-
-            fgets(buf, sizeof(buf), stdin);
-
-        } else {
-            goto start_label;
+        if (result != RESULT_OK) {
+            continue;
         }
-
-
-        // #MAIN
 
         String *parts = lex(StringRef(buf));
 
+        if (LEXER_PRINT) print_str_parts(parts);
+
+        if (COMPILATION_STAGE < STAGE_TOKENIZER) {
+            free_parts(parts);
+            continue;
+        }
+
         Token *tokens = tokenize_parts(parts);
 
-        //print_str_parts(parts);
-
-        print_tokens(tokens);
+        if (TOKENIZER_PRINT) print_tokens(tokens);
 
         set_parse_tokens(tokens);
 
+        if (COMPILATION_STAGE < STAGE_PARSER) {
+            free_tokens(tokens);
+            free_parts(parts);
+            continue;
+        }
+
         ParseResult res = parse_stmt_seq(0);
         
-        preprocess_ast(&res.node);
+        if (PREPROCESS_AST) preprocess_ast(&res.node);
 
-        // if (res.endpos < array_length(tokens))res.success = false;
-        // else {
+        if (PARSER_PRINT) {
             printf(">>> RESULT AST <<<\n");
             print_ast(res.node, 0);
-        // }
-        // hi
+        }
+
         if (!res.success) {
-            printf("INVALID EXPRESSION \n");
+            print_err("Failed to parse AST! Invalid expression!");
+            free_tokens(tokens);
+            free_parts(parts);
+            continue;
+        }
+
+        if (COMPILATION_STAGE < STAGE_IR_GEN) {
+            free_ast(res.node);
+            free_tokens(tokens);
+            free_parts(parts);
+            continue;
         }
 
         Inst *instructions = generate_instructions(&res.node);
 
-        print_instructions(instructions);
+        if (IR_PRINT) print_instructions(instructions);
 
-        // // compile_instructions(instructions);
+        if (COMPILATION_STAGE < STAGE_RUN_CODE) {
+            array_free(instructions);
+            free_ast(res.node);
+            free_tokens(tokens);
+            free_parts(parts);
+            continue;
+        }
 
         // place for chaos. increment when this made you want to kys: 2
         if (benchmark) {
-            // run_benchmark(instructions);
+            run_benchmark(instructions);
         } else {
             run_program(instructions);
         }
 
-        // array_free(instructions);
+        array_free(instructions);
 
         free_tokens(tokens);
 

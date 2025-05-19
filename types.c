@@ -36,9 +36,11 @@ typedef struct Type {
 } Type;
 
 // CONSTANTS FOR ALL PRIMITIVES
-#define X(a) Type _const_type_##a = (Type){.kind = TYPE_##a};
-TYPE_KINDS
-#undef X
+Type _const_types[] = {
+    #define X(a) (Type){.kind = TYPE_##a},
+    TYPE_KINDS
+    #undef X
+};
 
 Type *make_type(TypeKind kind) {
     Type *thing = malloc(sizeof(Type));
