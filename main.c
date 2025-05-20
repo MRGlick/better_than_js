@@ -502,7 +502,7 @@ Token *get_token_ref(int idx) {
 #define START_PARSE ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = false;
 #define START_PARSE_DEBUG ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = true;
 
-#define FINISH_PARSE(ast) array_free(__ast_free_list); return create_parse_result(true, ast, idx)
+#define FINISH_PARSE(ast) do {array_free(__ast_free_list); return create_parse_result(true, ast, idx);} while (0)
 
 #define CAN_FAIL 1
 
@@ -705,7 +705,7 @@ ParseResult parse_mul_rule_h(int idx) {
             get_token(idx).type == OP_MUL 
             || get_token(idx).type == OP_DIV
             || get_token(idx).type == OP_MOD
-        );
+        , CAN_FAIL);
 
         MATCH_PARSE(unary_res, parse_unary_rule(idx));
         MATCH_PARSE(mul_rule_h_res, parse_mul_rule_h(idx));
@@ -714,7 +714,7 @@ ParseResult parse_mul_rule_h(int idx) {
         
         array_append(node.children, unary_res.node);
 
-        if (is_null_ast(mul_rule_h_res.node)) FINISH_PARSE(unary_res.node);
+        if (is_null_ast(mul_rule_h_res.node)) FINISH_PARSE(node);
 
         ASTNode leaf = mul_rule_h_res.node;
         while (!leaf.children[0].complete) {
@@ -722,326 +722,231 @@ ParseResult parse_mul_rule_h(int idx) {
         }
         array_insert(leaf.children, node, 0);
         node.complete = true;
-        FINISH_PARSE(node);
-    }   
+        FINISH_PARSE(mul_rule_h_res.node);
+    }
 }
 
 ParseResult parse_mul_rule(int idx) {
-    ParseResult factor_res = parse_unary_rule(idx);
-    if (factor_res.success) {
-        idx = factor_res.endpos;
-        ParseResult term_h_res = parse_mul_rule_h(idx);
-        if (term_h_res.success) {
 
-            idx = term_h_res.endpos;
-            if (is_null_ast(term_h_res.node)) {
-                return create_parse_result(true, factor_res.node, idx);
-            } else {
-                ASTNode leaf = term_h_res.node;
-                while (!leaf.children[0].complete) {
-                    leaf = leaf.children[0];
-                }
-                array_insert(leaf.children, factor_res.node, 0);
+    START_PARSE {
+        MATCH_PARSE(unary_res, parse_unary_rule(idx));
 
-                term_h_res.node.complete = true;
-                return create_parse_result(true, term_h_res.node, idx);
-            }
+        MATCH_PARSE(mul_rule_h_res, parse_mul_rule_h(idx));
+
+        if (is_null_ast(mul_rule_h_res.node)) FINISH_PARSE(unary_res.node);
+
+        ASTNode leaf = mul_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
+        array_insert(leaf.children, unary_res.node, 0);
 
-        free_ast(factor_res.node);
-        return PARSE_FAILED;
+        mul_rule_h_res.node.complete = true;
+        FINISH_PARSE(mul_rule_h_res.node);
     }
-
-    return PARSE_FAILED;
 }
 
 ParseResult parse_add_rule_h(int idx) {
     
-    if (get_token(idx).type == OP_ADD || get_token(idx).type == OP_SUB) {
+    START_PARSE {
         int op_idx = idx;
-        idx += 1;
-        ParseResult term_res = parse_mul_rule(idx);
-        if (term_res.success) {
-            idx = term_res.endpos;
-            ParseResult expr_h_result = parse_add_rule_h(idx);
-            
-            if (expr_h_result.success) {
-                idx = expr_h_result.endpos;
-                ASTNode node = create_ast_node(get_token(op_idx), false);
-                
-                array_append(node.children, term_res.node);
+        MATCH_TOKEN(
+            get_token(idx).type == OP_ADD
+            || get_token(idx).type == OP_SUB
+            , CAN_FAIL
+        );
 
-                
+        MATCH_PARSE(mul_rule_res, parse_mul_rule(idx));
+        MATCH_PARSE(add_rule_h_res, parse_add_rule_h(idx));
 
-                if (!is_null_ast(expr_h_result.node)) {
-                    ASTNode leaf = expr_h_result.node;
-                    while (!leaf.children[0].complete) {
-                        leaf = leaf.children[0];
-                    }
-                    array_insert(leaf.children, node, 0);
-                    
-                    expr_h_result.node.complete = true;
+        ASTNode node = create_ast_node(get_token(op_idx), false);
+        
+        array_append(node.children, mul_rule_res.node);
 
-                    return create_parse_result(true, expr_h_result.node, idx);
-                }
+        if (is_null_ast(add_rule_h_res.node)) FINISH_PARSE(node);
 
-                return create_parse_result(true, node, idx);
-            }
-
-            free_ast(term_res.node);
-            return PARSE_FAILED;
-
+        ASTNode leaf = add_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-        return PARSE_FAILED;
-    }
+        array_insert(leaf.children, node, 0);
+        
+        add_rule_h_res.node.complete = true;
 
-    return create_parse_result(true, null(ASTNode), idx);
+        FINISH_PARSE(add_rule_h_res.node);
+    }
 }
 
 // 1 + (1 + 1)
 
 ParseResult parse_add_rule(int idx) {
-    ParseResult term_res = parse_mul_rule(idx);
-    
-    if (term_res.success) {
-        idx = term_res.endpos;
-        ParseResult expr_h_res = parse_add_rule_h(idx);
-        if (expr_h_res.success) {
-            idx = expr_h_res.endpos;
-            if (is_null_ast(expr_h_res.node)) {
-                return create_parse_result(true, term_res.node, idx);
-            } else {
-                ASTNode leaf = expr_h_res.node;
-                while (!leaf.children[0].complete) {
-                    leaf = leaf.children[0];
-                }
-                array_insert(leaf.children, term_res.node, 0);
-                expr_h_res.node.complete = true;
-                return create_parse_result(true, expr_h_res.node, idx);
-            }
+
+    START_PARSE {
+        MATCH_PARSE(mul_rule_res, parse_mul_rule(idx));
+
+        MATCH_PARSE(add_rule_h_res, parse_add_rule_h(idx));
+
+        if (is_null_ast(add_rule_h_res.node)) FINISH_PARSE(mul_rule_res.node);
+
+        ASTNode leaf = add_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-
-        free_ast(term_res.node);
-        return PARSE_FAILED;
+        array_insert(leaf.children, mul_rule_res.node, 0);
+        add_rule_h_res.node.complete = true;
+        FINISH_PARSE(add_rule_h_res.node);
     }
-
-    return PARSE_FAILED;
 }
 
 ParseResult parse_rel_rule_h(int idx) {
-    if (get_token(idx).type == OP_EQ 
-        || get_token(idx).type == OP_NOTEQ 
-        || get_token(idx).type == OP_GREATER 
-        || get_token(idx).type == OP_GREATEREQ
-        || get_token(idx).type == OP_LESS
-        || get_token(idx).type == OP_LESSEQ
-        ) {
+
+    START_PARSE {
         int op_idx = idx;
-        idx += 1;
-        ParseResult add_rule_res = parse_add_rule(idx);
-        if (add_rule_res.success) {
-            idx = add_rule_res.endpos;
-            ParseResult rel_rule_h_result = parse_rel_rule_h(idx);
-            
-            if (rel_rule_h_result.success) {
-                idx = rel_rule_h_result.endpos;
-                ASTNode node = create_ast_node(get_token(op_idx), false);
-                
-                array_append(node.children, add_rule_res.node);
+        MATCH_TOKEN (
+            get_token(idx).type == OP_EQ 
+            || get_token(idx).type == OP_NOTEQ 
+            || get_token(idx).type == OP_GREATER 
+            || get_token(idx).type == OP_GREATEREQ
+            || get_token(idx).type == OP_LESS
+            || get_token(idx).type == OP_LESSEQ
+            , CAN_FAIL
+        );
 
-                
+        MATCH_PARSE(add_rule_res, parse_add_rule(idx));
 
-                if (!is_null_ast(rel_rule_h_result.node)) {
-                    ASTNode leaf = rel_rule_h_result.node;
-                    while (!leaf.children[0].complete) {
-                        leaf = leaf.children[0];
-                    }
-                    array_insert(leaf.children, node, 0);
-                    
-                    rel_rule_h_result.node.complete = true;
+        MATCH_PARSE(rel_rule_h_res, parse_rel_rule_h(idx));
 
-                    return create_parse_result(true, rel_rule_h_result.node, idx);
-                }
+        ASTNode node = create_ast_node(get_token(op_idx), false);
+        
+        array_append(node.children, add_rule_res.node);        
 
-                return create_parse_result(true, node, idx);
-            }
+        if (is_null_ast(rel_rule_h_res.node)) FINISH_PARSE(node);
 
-            free_ast(add_rule_res.node);
-            return PARSE_FAILED;
-
+        ASTNode leaf = rel_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-        return PARSE_FAILED;
-    }
+        array_insert(leaf.children, node, 0);
+        
+        rel_rule_h_res.node.complete = true;
 
-    return create_parse_result(true, null(ASTNode), idx);
+        FINISH_PARSE(rel_rule_h_res.node);
+    
+    }
 }
 
 ParseResult parse_rel_rule(int idx) {
-    ParseResult add_rule_res = parse_add_rule(idx);
-    
-    if (add_rule_res.success) {
-        idx = add_rule_res.endpos;
-        ParseResult rel_rule_h_res = parse_rel_rule_h(idx);
-        if (rel_rule_h_res.success) {
-            idx = rel_rule_h_res.endpos;
-            if (is_null_ast(rel_rule_h_res.node)) {
-                return create_parse_result(true, add_rule_res.node, idx);
-            } else {
-                ASTNode leaf = rel_rule_h_res.node;
-                while (!leaf.children[0].complete) {
-                    leaf = leaf.children[0];
-                }
-                array_insert(leaf.children, add_rule_res.node, 0);
-                rel_rule_h_res.node.complete = true;
-                return create_parse_result(true, rel_rule_h_res.node, idx);
-            }
+
+    START_PARSE {
+        MATCH_PARSE(add_rule_res, parse_add_rule(idx));
+
+        MATCH_PARSE(rel_rule_h_res, parse_rel_rule_h(idx));
+
+        if (is_null_ast(rel_rule_h_res.node)) FINISH_PARSE(add_rule_res.node);
+
+        ASTNode leaf = rel_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-
-        free_ast(add_rule_res.node);
-        return PARSE_FAILED;
+        array_insert(leaf.children, add_rule_res.node, 0);
+        rel_rule_h_res.node.complete = true;
+        FINISH_PARSE(rel_rule_h_res.node);
     }
-
-    return PARSE_FAILED;
 }
 
 ParseResult parse_and_rule_h(int idx) {
-    if (get_token(idx).type == OP_AND) {
+
+    START_PARSE {
         int op_idx = idx;
-        idx += 1;
-        ParseResult rel_rule_res = parse_rel_rule(idx);
-        if (rel_rule_res.success) {
-            idx = rel_rule_res.endpos;
-            ParseResult and_rule_h_res = parse_and_rule_h(idx);
-            
-            if (and_rule_h_res.success) {
-                idx = and_rule_h_res.endpos;
-                ASTNode node = create_ast_node(get_token(op_idx), false);
-                
-                array_append(node.children, rel_rule_res.node);
+        MATCH_TOKEN_WITH_TYPE(OP_AND, CAN_FAIL);
 
-                
+        MATCH_PARSE(rel_rule_res, parse_rel_rule(idx));
 
-                if (!is_null_ast(and_rule_h_res.node)) {
-                    ASTNode leaf = and_rule_h_res.node;
-                    while (!leaf.children[0].complete) {
-                        leaf = leaf.children[0];
-                    }
-                    array_insert(leaf.children, node, 0);
-                    
+        MATCH_PARSE(and_rule_h_res, parse_and_rule_h(idx));
 
-                    and_rule_h_res.node.complete = true;
+        ASTNode node = create_ast_node(get_token(op_idx), false);
+        
+        array_append(node.children, rel_rule_res.node);
 
-                    return create_parse_result(true, and_rule_h_res.node, idx);
-                }
+        
 
-
-                return create_parse_result(true, node, idx);
-            }
-
-            free_ast(rel_rule_res.node);
-            return PARSE_FAILED;
-
+        if (is_null_ast(and_rule_h_res.node)) FINISH_PARSE(node);
+        ASTNode leaf = and_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-        return PARSE_FAILED;
-    }
+        array_insert(leaf.children, node, 0);
+        
 
-    return create_parse_result(true, null(ASTNode), idx);
+        and_rule_h_res.node.complete = true;
+
+        FINISH_PARSE(and_rule_h_res.node);
+    }
 }
 
 ParseResult parse_and_rule(int idx) {
-    ParseResult rel_rule_res = parse_rel_rule(idx);
-    
-    if (rel_rule_res.success) {
-        idx = rel_rule_res.endpos;
-        ParseResult and_rule_h_res = parse_and_rule_h(idx);
-        if (and_rule_h_res.success) {
-            idx = and_rule_h_res.endpos;
-            if (is_null_ast(and_rule_h_res.node)) {
-                return create_parse_result(true, rel_rule_res.node, idx);
-            } else {
-                ASTNode leaf = and_rule_h_res.node;
-                while (!leaf.children[0].complete) {
-                    leaf = leaf.children[0];
-                }
-                array_insert(leaf.children, rel_rule_res.node, 0);
-                and_rule_h_res.node.complete = true;
-                return create_parse_result(true, and_rule_h_res.node, idx);
-            }
+
+    START_PARSE {
+        MATCH_PARSE(rel_rule_res, parse_rel_rule(idx));
+
+        MATCH_PARSE(and_rule_h_res, parse_and_rule_h(idx));
+
+        if (is_null_ast(and_rule_h_res.node)) FINISH_PARSE(rel_rule_res.node);
+
+        ASTNode leaf = and_rule_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-
-        free_ast(rel_rule_res.node);
-        return PARSE_FAILED;
+        array_insert(leaf.children, rel_rule_res.node, 0);
+        and_rule_h_res.node.complete = true;
+        FINISH_PARSE(and_rule_h_res.node);
     }
-
-    return PARSE_FAILED;
 }
 
 ParseResult parse_expr_h(int idx) {
-    if (get_token(idx).type == OP_OR) {
+
+    START_PARSE {
         int op_idx = idx;
-        idx += 1;
-        ParseResult and_rule_res = parse_and_rule(idx);
-        if (and_rule_res.success) {
-            idx = and_rule_res.endpos;
-            ParseResult expr_h_res = parse_expr_h(idx);
-            
-            if (expr_h_res.success) {
-                idx = expr_h_res.endpos;
-                ASTNode node = create_ast_node(get_token(op_idx), false);
-                
-                array_append(node.children, and_rule_res.node);
+        MATCH_TOKEN_WITH_TYPE(OP_OR, CAN_FAIL);
 
-                if (!is_null_ast(expr_h_res.node)) {
-                    ASTNode leaf = expr_h_res.node;
-                    while (!leaf.children[0].complete) {
-                        leaf = leaf.children[0];
-                    }
-                    array_insert(leaf.children, node, 0);
-                    
-                    expr_h_res.node.complete = true;
+        MATCH_PARSE(and_rule_res, parse_and_rule(idx));
 
-                    return create_parse_result(true, expr_h_res.node, idx);
-                }
+        MATCH_PARSE(expr_h_res, parse_expr_h(idx));
 
-                return create_parse_result(true, node, idx);
-            }
+        ASTNode node = create_ast_node(get_token(op_idx), false);
+        
+        array_append(node.children, and_rule_res.node);
 
-            free_ast(and_rule_res.node);
-            return PARSE_FAILED;
-
+        if (is_null_ast(expr_h_res.node)) FINISH_PARSE(node);
+        ASTNode leaf = expr_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-        return PARSE_FAILED;
-    }
+        array_insert(leaf.children, node, 0);
+        
+        expr_h_res.node.complete = true;
 
-    return create_parse_result(true, null(ASTNode), idx);
+        FINISH_PARSE(expr_h_res.node);
+    }
 }
 
 ParseResult parse_expr(int idx) {
-    ParseResult and_rule_res = parse_and_rule(idx);
-    
-    if (and_rule_res.success) {
-        idx = and_rule_res.endpos;
-        ParseResult expr_h_res = parse_expr_h(idx);
-        if (expr_h_res.success) {
-            idx = expr_h_res.endpos;
-            if (is_null_ast(expr_h_res.node)) {
-                return create_parse_result(true, and_rule_res.node, idx);
-            } else {
-                ASTNode leaf = expr_h_res.node;
-                while (!leaf.children[0].complete) {
-                    leaf = leaf.children[0];
-                }
-                array_insert(leaf.children, and_rule_res.node, 0);
-                expr_h_res.node.complete = true;
-                return create_parse_result(true, expr_h_res.node, idx);
-            }
+
+    START_PARSE {
+        MATCH_PARSE(and_rule_res, parse_and_rule(idx));
+
+        MATCH_PARSE(expr_h_res, parse_expr_h(idx));
+
+        if (is_null_ast(expr_h_res.node)) FINISH_PARSE(and_rule_res.node);
+
+        ASTNode leaf = expr_h_res.node;
+        while (!leaf.children[0].complete) {
+            leaf = leaf.children[0];
         }
-
-        free_ast(and_rule_res.node);
-        return PARSE_FAILED;
+        array_insert(leaf.children, and_rule_res.node, 0);
+        expr_h_res.node.complete = true;
+        FINISH_PARSE(expr_h_res.node);
     }
-
-    return PARSE_FAILED;
 }
 
 #define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
@@ -5599,7 +5504,7 @@ int main() {
             continue;
         }
 
-        ParseResult res = parse_stmt_seq(0);
+        ParseResult res = parse_expr(0);
         
         if (PREPROCESS_AST) preprocess_ast(&res.node);
 
