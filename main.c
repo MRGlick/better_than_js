@@ -496,9 +496,30 @@ Token *get_token_ref(int idx) {
 // +: [+: [2, 3]]
 // +: [1, +: [2, 3]]
 
+#define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
 
-#define START_PARSE ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = false;
-#define START_PARSE_DEBUG ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = true;
+bool is_valid_stmt_boundary(Token tok) {
+    match (tok.type) {
+        case (RCURLY, STMT_END) then (
+            return true
+        );
+        case (KEYWORD) then (
+            return check_keyword(tok, "if")
+                || check_keyword(tok, "for")
+                || check_keyword(tok, "while")
+                || check_keyword(tok, "print")
+                || check_keyword(tok, "input")
+                || check_keyword(tok, "delete")
+                || check_keyword(tok, "struct");
+        )
+        default (
+            return false;
+        )
+    }
+}
+
+#define START_PARSE ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = false; bool is_first_match = true; 
+#define START_PARSE_DEBUG ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = true; bool is_first_match = true;
 
 #define FINISH_PARSE(ast) \
     do { \
@@ -507,6 +528,10 @@ Token *get_token_ref(int idx) {
     } while (0)
 
 #define CAN_FAIL 1
+
+#define SKIP_TO_STMT_BOUNDARY() { \
+    while (!is_valid_stmt_boundary(get_token(idx))) idx++; \
+}
 
 #define FIRST(a, ...) a
 #define REST(a, ...) __VA_ARGS__
@@ -517,6 +542,11 @@ Token *get_token_ref(int idx) {
         for (int i = 0; i < array_length(__ast_free_list); i++) \
             free_ast(__ast_free_list[i]); \
         array_free(__ast_free_list); \
+        if (is_first_match) { \
+            is_first_match = false; \
+        } else if (!(__VA_ARGS__ + 0)) { \
+            print_err_nopause("Parse failed! Expected "#expr"!"); \
+        } \
         return (__VA_ARGS__ + 0) \
             ? PARSE_FAILED_SUCCESSFULLY(idx) \
             : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
@@ -525,34 +555,59 @@ Token *get_token_ref(int idx) {
         array_append(__ast_free_list, varname.node); \
     idx = varname.endpos;
 
-// #TODO append expr to free list
 #define TRY_MATCH_PARSE(varname, expr) \
     ParseResult varname = expr; \
     if (varname.success) { \
         array_append(__ast_free_list, varname.node); \
         idx = varname.endpos; \
+    } else { \
+        if (print_fails) printf("Parse failed safely on line %d \n", __LINE__); \
     }
 
 #define MATCH_TOKEN_WITH_TYPE(t, ...) \
-    if (get_token(idx).type != t) { \
-        for (int i = 0; i < array_length(__ast_free_list); i++) \
-            free_ast(__ast_free_list[i]); \
-        array_free(__ast_free_list); \
-        return (__VA_ARGS__ + 0) \
-            ? PARSE_FAILED_SUCCESSFULLY(idx) \
-            : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
-    } \
-    idx++;
+    { \
+        TokenType t__ = t; \
+        if (get_token(idx).type != t__) { \
+            for (int i = 0; i < array_length(__ast_free_list); i++) \
+                free_ast(__ast_free_list[i]); \
+            array_free(__ast_free_list); \
+            if (is_first_match) { \
+                is_first_match = false; \
+            } else if (!(__VA_ARGS__ + 0)) { \
+                debug printf("AAAA %d \n", idx); \
+                print_err_nopause( \
+                    "Parse failed! Expected '%s' after '%s', got '%s' instead!", \
+                    token_type_to_pretty_str(t__), \
+                    token_type_to_pretty_str(get_token(idx - 1).type), \
+                    token_type_to_pretty_str(get_token(idx).type) \
+                ); \
+            } \
+            return (__VA_ARGS__ + 0) \
+                ? PARSE_FAILED_SUCCESSFULLY(idx) \
+                : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
+        } \
+        if (is_first_match) \
+            is_first_match = false; \
+        idx++; \
+    }
 
 #define MATCH_TOKEN_WITH_KEYWORD(kw, ...) \
     if (!check_keyword(get_token(idx), kw)) { \
         for (int i = 0; i < array_length(__ast_free_list); i++) \
             free_ast(__ast_free_list[i]); \
         array_free(__ast_free_list); \
+        if (is_first_match) { \
+            is_first_match = false; \
+        } else if (!(__VA_ARGS__ + 0)) { \
+            debug printf("AAAA %d \n", idx); \
+            print_err_nopause("Parse failed! Expected '%s', got '%s'!", kw, token_type_to_pretty_str(get_token(idx).type)); \
+        } \
         return (__VA_ARGS__ + 0) \
             ? PARSE_FAILED_SUCCESSFULLY(idx) \
             : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
     } \
+    if (is_first_match) \
+        is_first_match = false; \
     idx++;
 
 #define MATCH_TOKEN(truthy_cond, ...) \
@@ -560,10 +615,17 @@ Token *get_token_ref(int idx) {
         for (int i = 0; i < array_length(__ast_free_list); i++) \
             free_ast(__ast_free_list[i]); \
         array_free(__ast_free_list); \
+        if (is_first_match) { \
+            is_first_match = false; \
+        } else if (!(__VA_ARGS__ + 0)) { \
+            print_err_nopause("Parse failed! Expected condition '"#truthy_cond"', got '%s'!", token_type_to_pretty_str(get_token(idx).type)); \
+        } \
         return (__VA_ARGS__ + 0) \
             ? PARSE_FAILED_SUCCESSFULLY(idx) \
             : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
     } \
+    if (is_first_match) \
+        is_first_match = false; \
     idx++;
 
 #define MATCH_RETURN_IF_PARSED(expr) \
@@ -579,6 +641,7 @@ ASTNode wrap_with_block(ASTNode node) {
 
     return block;
 }
+
 
 
 // #PARSE START
@@ -962,7 +1025,6 @@ ParseResult parse_expr(int idx) {
     }
 }
 
-#define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
 
 
 ParseResult parse_stmt(int idx);
@@ -1033,15 +1095,15 @@ ParseResult parse_expr_stmt(int idx) {
 ParseResult parse_stmt(int idx) {
 
     START_PARSE {
-        MATCH_RETURN_IF_PARSED(parse_if_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_block(idx));
-        MATCH_RETURN_IF_PARSED(parse_print_stmt(idx));
+        MATCH_RETURN_IF_PARSED(parse_if_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_while_stmt(idx));
-        MATCH_RETURN_IF_PARSED(parse_vardecl_stmt(idx));
+        MATCH_RETURN_IF_PARSED(parse_print_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_modify_stmt(idx));
-        MATCH_RETURN_IF_PARSED(parse_vardecl_assign_stmt(idx));
-        MATCH_RETURN_IF_PARSED(parse_input_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_func_decl_stmt(idx));
+        MATCH_RETURN_IF_PARSED(parse_vardecl_assign_stmt(idx));
+        MATCH_RETURN_IF_PARSED(parse_vardecl_stmt(idx));
+        MATCH_RETURN_IF_PARSED(parse_input_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_return_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_defer_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_struct_decl(idx));
@@ -1155,21 +1217,27 @@ ParseResult parse_while_stmt(int idx) {
     }
 }
 
-ParseResult parse_type(int idx) {
+ParseResult parse_type(int idx, bool *is_struct_out) {
     
     START_PARSE {
         bool is_struct = false;
+        int type_idx = idx;
         MATCH_TOKEN(
             get_token(idx).type == TYPE
             || (is_struct = get_token(idx).type == NAME)
         );
+
+        Type *t = is_struct ? make_struct_type(get_token(type_idx).text) : make_type(get_token(type_idx).var_type->kind);
+
         ASTNode node = create_ast_node(
             (Token) {
                 .type = TYPE,
-                .var_type = is_struct ? &_const_types[TYPE_struct] : get_token(idx - 1).var_type
+                .var_type = t
             },
             true
         );
+
+        if (is_struct_out != NULL) *is_struct_out = is_struct;
 
         FINISH_PARSE(node);
     }
@@ -1177,7 +1245,7 @@ ParseResult parse_type(int idx) {
 
 ParseResult parse_vardecl_stmt(int idx) {
     START_PARSE {
-        MATCH_PARSE(type_res, parse_type(idx));
+        MATCH_PARSE(type_res, parse_type(idx, NULL));
 
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
@@ -1218,7 +1286,7 @@ ParseResult parse_assign_stmt(int idx) {
 ParseResult parse_vardecl_assign_stmt(int idx) {
 
     START_PARSE {
-        MATCH_PARSE(type_res, parse_type(idx));
+        MATCH_PARSE(type_res, parse_type(idx, NULL));
 
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
@@ -1259,7 +1327,7 @@ ParseResult parse_input_stmt(int idx) {
 
 ParseResult parse_func_arg(int idx) {
     START_PARSE {
-        MATCH_PARSE(type_res, parse_type(idx));
+        MATCH_PARSE(type_res, parse_type(idx, NULL));
 
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
@@ -1274,7 +1342,7 @@ ParseResult parse_func_arg(int idx) {
 
 ParseResult parse_func_args_seq(int idx) {
     START_PARSE {
-        MATCH_PARSE(func_arg_res, parse_func_arg(idx));
+        MATCH_PARSE(func_arg_res, parse_func_arg(idx), CAN_FAIL);
 
         ASTNode node = create_ast_node((Token){.type = FUNC_ARGS_SEQ}, true);
 
@@ -1301,7 +1369,7 @@ ParseResult parse_func_args_seq(int idx) {
 
 ParseResult parse_func_decl_stmt(int idx) {
     START_PARSE {
-        MATCH_PARSE(type_res, parse_type(idx));
+        MATCH_PARSE(type_res, parse_type(idx, NULL));
 
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
@@ -1314,7 +1382,7 @@ ParseResult parse_func_decl_stmt(int idx) {
 
         MATCH_PARSE(stmt_res, parse_stmt(idx));
 
-            // turn one liners into blocks so i can gurantee every function has a block (to make dealing with argument lifetimes easier)
+        // turn one liners into blocks so i can gurantee every function has a block (to make dealing with argument lifetimes easier)
         if (stmt_res.node.token.type != BLOCK) {
             stmt_res.node = wrap_with_block(stmt_res.node);
         }
@@ -1656,8 +1724,16 @@ ParseResult parse_new_rule(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_KEYWORD("new");
 
+        bool is_struct;
+
         int name_idx = idx;
-        MATCH_TOKEN_WITH_TYPE(NAME);
+        MATCH_PARSE(type_res, parse_type(idx, &is_struct));
+
+        if (!is_struct) {
+            print_err("Can't use 'new' keyword on a primitive type! if you want it on the heap, wrap it in a struct");
+            MATCH_TOKEN(false);
+        }
+
         MATCH_TOKEN_WITH_TYPE(LPAREN);
 
         TRY_MATCH_PARSE(assign_seq_res, parse_assign_seq(idx));
@@ -1671,6 +1747,8 @@ ParseResult parse_new_rule(int idx) {
 
             FINISH_PARSE(node);
         }
+
+        MATCH_TOKEN_WITH_TYPE(RPAREN);
 
         ASTNode node = create_ast_node((Token){.type = OP_NEW}, true);
         array_append(node.children, create_ast_node(get_token(name_idx), true));
@@ -1932,7 +2010,7 @@ int _validate_return_paths(ASTNode *ast, Type *return_type) {
             }
         }
         if (child->token.type == BLOCK) {
-            int r = _validate_return_paths(&child->children[0], return_type);
+            int r = _validate_return_paths(child, return_type);
             if (r > MISSING_RETURN_PATHS) return r;
         }
     }
@@ -2072,7 +2150,8 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 
 // anything this function doesn't touch is meant to return void
 void typeify_tree(ASTNode *node, HashMap *var_map) {
-        
+
+
     match (node->token.type) {
         case(BLOCK) then({
             HashMap *copy = HashMap_copy(var_map);
@@ -2235,7 +2314,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 return_err("can't create new '%s', as that struct is not defined!", struct_name.data);
             }
 
-            node->expected_return_type = make_type(TYPE_struct);
+            node->expected_return_type = make_struct_type(struct_name);
 
 
             ASTNode *assign_seq = &node->children[1];
@@ -5040,6 +5119,7 @@ void print_token(Token token, int level) {
 
 void print_tokens(Token *tokens) {
     for (int i = 0; i < array_length(tokens); i++) {
+        printf("#%d: ", i);
         print_token(tokens[i], 0);
     }
 }

@@ -18,6 +18,7 @@
 #endif
 
 #define print_err(...) ({printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n"); getchar();})
+#define print_err_nopause(...) ({printf("ERROR on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n");})
 
 #define print_warning(...) ({printf("WARNING on line #%d:\n\t", __LINE__); printf(__VA_ARGS__); printf("\n");})
 

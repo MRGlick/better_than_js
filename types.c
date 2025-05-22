@@ -48,6 +48,13 @@ Type *make_type(TypeKind kind) {
     return thing;
 }
 
+Type *make_struct_type(String name) {
+    Type *thing = malloc(sizeof(Type));
+    *thing = (Type){.kind = TYPE_struct, .struct_data.name = name};
+
+    return thing;
+}
+
 Type *copy_type(Type *type) {
     Type *cop = make_type(type->kind);
     if (cop->kind == TYPE_struct) cop->struct_data.name = type->struct_data.name;

@@ -4,48 +4,36 @@
 int rand() {
     int sum = 0;
     int power = 1;
-    int i = 0;
-    while (i < 31) {
-        if (maybe) sum += power;
+    for (int i = 1; i < 32; i += 1; ) {
+        sum += maybe * power;
         power *= 2;
-        i += 1;
     }
 
     return sum;
+
+   print 1;
 }
 
-int rand(int upper_bound) return rand() % upper_bound;
+int rand(int bound) {
+    return rand() % bound;
+}
 
-int rand(int lower_bound, int upper_bound) return lower_bound + rand(upper_bound - lower_bound);
 
 struct Node {
     int val;
     Node next;
 }
 
-Node lst = new Node(val = rand(1, 20));
+Node lst = new Node(val = 1);
 Node end = lst;
 int i = 0;
 while (i < 20) {
 
-    end.next = new Node(val = rand(1, 20));
+    end.next = new Node(val = 1);
     end = end.next;
 
     i += 1;       
 }
-
-
-Node n = lst;
-while (n != null) {
-
-    Node l = n;
-    Node r = new Node(val = rand(1, 100));
-    print "r: ", r.val;
-
-    print n.val;
-    n = n.next;
-}
-
 print "Loop end!";
 
 

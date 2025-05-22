@@ -1,10 +1,6 @@
 struct Foo {
     int a; 
     int b; 
-} 
+}
 
-Foo b = new Foo(a = 1); 
-
-for (int i = 0; i < 10; i += 1; ) b.a *= 2;
-
-print b.a;
+print (new Foo(a = 1)).a;

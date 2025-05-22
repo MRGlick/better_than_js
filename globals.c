@@ -102,6 +102,7 @@ char *KEYWORDS[] = {
     X(DELETE_STMT) \
     X(TOKEN_TYPE_COUNT)
 
+
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)
 typedef struct Val {
@@ -165,6 +166,88 @@ const char* token_type_names[] = {
     TOKEN_TYPES
     #undef X
 };
+
+const char *token_type_to_pretty_str(TokenType type) {
+    switch (type) {
+        case NULL_TOKEN:          return "null";
+        case KEYWORD:             return "<keyword>";
+        case NAME:                return "<name>";
+        case VARIABLE:            return "<var>";
+        case STRING_LITERAL:      return "\"...\"";
+        case INTEGER:             return "123";
+        case FLOAT:               return "3.14";
+        case NULL_REF:            return "null";
+        case OP_UNARY_MINUS:      return "-";
+        case BOOLOPS_START:       return "";
+        case OP_NOT:              return "!";
+        case BINOPS_START:        return "";
+        case OP_EQ:               return "==";
+        case OP_NOTEQ:            return "!=";
+        case OP_GREATER:          return ">";
+        case OP_GREATEREQ:        return ">=";
+        case OP_LESS:             return "<";
+        case OP_LESSEQ:           return "<=";
+        case OP_AND:              return "&&";
+        case OP_OR:               return "||";
+        case BOOLOPS_END:         return "";
+        case ARITHOPS_START:      return "";
+        case OP_ADD:              return "+";
+        case OP_SUB:              return "-";
+        case OP_MUL:              return "*";
+        case OP_DIV:              return "/";
+        case OP_MOD:              return "%";
+        case ARITHOPS_END:        return "";
+        case BINOPS_END:          return "";
+        case OP_ASSIGN:           return "=";
+        case ASSIGN_SEQ:          return "=";
+        case OP_NEW:              return "new";
+        case MODIFY_TOKENS_START: return "";
+        case OP_ASSIGN_ADD:       return "+=";
+        case OP_ASSIGN_SUB:       return "-=";
+        case OP_ASSIGN_MUL:       return "*=";
+        case OP_ASSIGN_DIV:       return "/=";
+        case OP_ASSIGN_MOD:       return "%=";
+        case MODIFY_TOKENS_END:   return "";
+        case LPAREN:              return "(";
+        case RPAREN:              return ")";
+        case LCURLY:              return "{";
+        case RCURLY:              return "}";
+        case TYPE:                return "<type>";
+        case STMT_END:            return ";";
+        case COMMA:               return ",";
+        case ATTR_ACCESS:         return ".";
+        case UNRESOLVED:          return "<unresolved>";
+        case INVALID:             return "<invalid>";
+        case BLOCK:               return "<block>";
+        case BOOL:                return "true/false";
+        case IF_STMT:             return "if";
+        case IF_ELSE_STMT:        return "if-else";
+        case WHILE_STMT:          return "while";
+        case DECL_STMT:           return "<decl>";
+        case ASSIGN_STMT:         return "<assign>";
+        case DECL_ASSIGN_STMT:    return "<decl-assign>";
+        case PRINT_STMT:          return "print";
+        case WRITE_STMT:          return "write";
+        case INPUT_STMT:          return "input";
+        case FUNC_DECL_STMT:      return "<func-decl>";
+        case FUNC_ARGS_SEQ:       return "<args>";
+        case FUNC_ARG:            return "<arg>";
+        case FUNC_CALL:           return "<call>";
+        case RETURN_STMT:         return "return";
+        case STMT_SEQ:            return "<stmts>";
+        case VAL_SEQ:             return "<vals>";
+        case DECL_SEQ:            return "<decls>";
+        case DEFER_STMT:          return "defer";
+        case STRUCT_DECL_STMT:    return "struct";
+        case DELETE_STMT:         return "delete";
+        case TOKEN_TYPE_COUNT:    return "<count>";
+    }
+
+    return "<unknown>";
+}
+
+
+
 struct TokenNode;
 
 typedef struct Token {
