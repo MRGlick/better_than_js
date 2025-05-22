@@ -169,13 +169,13 @@ const char* token_type_names[] = {
 
 const char *token_type_to_pretty_str(TokenType type) {
     switch (type) {
-        case NULL_TOKEN:          return "null";
-        case KEYWORD:             return "<keyword>";
-        case NAME:                return "<name>";
-        case VARIABLE:            return "<var>";
-        case STRING_LITERAL:      return "\"...\"";
-        case INTEGER:             return "123";
-        case FLOAT:               return "3.14";
+        case NULL_TOKEN:          return "end of file";
+        case KEYWORD:             return "keyword";
+        case NAME:                return "name";
+        case VARIABLE:            return "var";
+        case STRING_LITERAL:      return "string literal";
+        case INTEGER:             return "integer";
+        case FLOAT:               return "float";
         case NULL_REF:            return "null";
         case OP_UNARY_MINUS:      return "-";
         case BOOLOPS_START:       return "";
@@ -212,35 +212,35 @@ const char *token_type_to_pretty_str(TokenType type) {
         case RPAREN:              return ")";
         case LCURLY:              return "{";
         case RCURLY:              return "}";
-        case TYPE:                return "<type>";
+        case TYPE:                return "type";
         case STMT_END:            return ";";
         case COMMA:               return ",";
         case ATTR_ACCESS:         return ".";
-        case UNRESOLVED:          return "<unresolved>";
-        case INVALID:             return "<invalid>";
-        case BLOCK:               return "<block>";
+        case UNRESOLVED:          return "unresolved";
+        case INVALID:             return "invalid>";
+        case BLOCK:               return "block";
         case BOOL:                return "true/false";
         case IF_STMT:             return "if";
         case IF_ELSE_STMT:        return "if-else";
         case WHILE_STMT:          return "while";
-        case DECL_STMT:           return "<decl>";
-        case ASSIGN_STMT:         return "<assign>";
-        case DECL_ASSIGN_STMT:    return "<decl-assign>";
+        case DECL_STMT:           return "decl";
+        case ASSIGN_STMT:         return "assign";
+        case DECL_ASSIGN_STMT:    return "decl-assign";
         case PRINT_STMT:          return "print";
         case WRITE_STMT:          return "write";
         case INPUT_STMT:          return "input";
-        case FUNC_DECL_STMT:      return "<func-decl>";
-        case FUNC_ARGS_SEQ:       return "<args>";
-        case FUNC_ARG:            return "<arg>";
-        case FUNC_CALL:           return "<call>";
+        case FUNC_DECL_STMT:      return "func-decl";
+        case FUNC_ARGS_SEQ:       return "args>";
+        case FUNC_ARG:            return "arg>";
+        case FUNC_CALL:           return "call";
         case RETURN_STMT:         return "return";
-        case STMT_SEQ:            return "<stmts>";
-        case VAL_SEQ:             return "<vals>";
-        case DECL_SEQ:            return "<decls>";
+        case STMT_SEQ:            return "stmts>";
+        case VAL_SEQ:             return "vals>";
+        case DECL_SEQ:            return "decls";
         case DEFER_STMT:          return "defer";
         case STRUCT_DECL_STMT:    return "struct";
         case DELETE_STMT:         return "delete";
-        case TOKEN_TYPE_COUNT:    return "<count>";
+        case TOKEN_TYPE_COUNT:    return "count";
     }
 
     return "<unknown>";

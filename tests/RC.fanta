@@ -10,8 +10,6 @@ int rand() {
     }
 
     return sum;
-
-   print 1;
 }
 
 int rand(int bound) {

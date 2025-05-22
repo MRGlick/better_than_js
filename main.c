@@ -10,7 +10,7 @@
 
 #define COMPILATION_STAGE STAGE_PARSER
 
-#define PREPROCESS_AST 1
+#define PREPROCESS_AST 0
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 1
@@ -33,6 +33,7 @@
 #include "linked_list.c"
 #include "runtime.c"
 #include "globals.c"
+#include "errors.c"
 
 VarHeader create_var_header(String name, Type *var_type, int var_pos) {
     return (VarHeader){.type = VH_VAR, .var_type = var_type, .var_pos = var_pos, .name = name};
@@ -518,8 +519,13 @@ bool is_valid_stmt_boundary(Token tok) {
     }
 }
 
-#define START_PARSE ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = false; bool is_first_match = true; 
-#define START_PARSE_DEBUG ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = true; bool is_first_match = true;
+#define PARSE_ERR_SIZE 1024
+
+char parse_err[PARSE_ERR_SIZE] = {0};
+int parse_err_most_tokens = 0;
+
+#define START_PARSE ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = false; int _start_idx = idx;
+#define START_PARSE_DEBUG ASTNode *__ast_free_list = array(ASTNode, 2); bool print_fails = true; int _start_idx = idx;
 
 #define FINISH_PARSE(ast) \
     do { \
@@ -527,29 +533,32 @@ bool is_valid_stmt_boundary(Token tok) {
         return create_parse_result(true, ast, idx); \
     } while (0)
 
+#define set_parse_error_if_deepest(...) \
+    if (idx >= parse_err_most_tokens) { \
+        parse_err_most_tokens = idx; \
+        memset(parse_err, 0, PARSE_ERR_SIZE); \
+        sprintf(parse_err, __VA_ARGS__); \
+    }
+
 #define CAN_FAIL 1
 
-#define SKIP_TO_STMT_BOUNDARY() { \
-    while (!is_valid_stmt_boundary(get_token(idx))) idx++; \
-}
+#define _destroy_free_list() \
+    { \
+        for (int i = 0; i < array_length(__ast_free_list); i++) \
+            free_ast(__ast_free_list[i]); \
+        array_free(__ast_free_list); \
+    }
 
-#define FIRST(a, ...) a
-#define REST(a, ...) __VA_ARGS__
+#define return_correct_parse_res(...) return (__VA_ARGS__ + 0) \
+            ? PARSE_FAILED_SUCCESSFULLY(idx) \
+            : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED) \ 
 
 #define MATCH_PARSE(varname, expr, ...) \
     ParseResult varname = expr; \
     if (!varname.success) { \
-        for (int i = 0; i < array_length(__ast_free_list); i++) \
-            free_ast(__ast_free_list[i]); \
-        array_free(__ast_free_list); \
-        if (is_first_match) { \
-            is_first_match = false; \
-        } else if (!(__VA_ARGS__ + 0)) { \
-            print_err_nopause("Parse failed! Expected "#expr"!"); \
-        } \
-        return (__VA_ARGS__ + 0) \
-            ? PARSE_FAILED_SUCCESSFULLY(idx) \
-            : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
+        _destroy_free_list(); \
+        set_parse_error_if_deepest("Parse failed! Expected "#expr"!"); \
+        return_correct_parse_res(__VA_ARGS__); \
     } \
     if (!is_null_ast(varname.node)) \
         array_append(__ast_free_list, varname.node); \
@@ -568,64 +577,32 @@ bool is_valid_stmt_boundary(Token tok) {
     { \
         TokenType t__ = t; \
         if (get_token(idx).type != t__) { \
-            for (int i = 0; i < array_length(__ast_free_list); i++) \
-                free_ast(__ast_free_list[i]); \
-            array_free(__ast_free_list); \
-            if (is_first_match) { \
-                is_first_match = false; \
-            } else if (!(__VA_ARGS__ + 0)) { \
-                debug printf("AAAA %d \n", idx); \
-                print_err_nopause( \
-                    "Parse failed! Expected '%s' after '%s', got '%s' instead!", \
-                    token_type_to_pretty_str(t__), \
-                    token_type_to_pretty_str(get_token(idx - 1).type), \
-                    token_type_to_pretty_str(get_token(idx).type) \
-                ); \
-            } \
-            return (__VA_ARGS__ + 0) \
-                ? PARSE_FAILED_SUCCESSFULLY(idx) \
-                : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
+            _destroy_free_list(); \
+            set_parse_error_if_deepest( \
+                "Parse failed! Expected '%s' after '%s', got '%s' instead!", \
+                token_type_to_pretty_str(t__), \
+                token_type_to_pretty_str(get_token(idx - 1).type), \
+                token_type_to_pretty_str(get_token(idx).type) \
+            ); \
+            return_correct_parse_res(__VA_ARGS__); \
         } \
-        if (is_first_match) \
-            is_first_match = false; \
         idx++; \
     }
 
 #define MATCH_TOKEN_WITH_KEYWORD(kw, ...) \
     if (!check_keyword(get_token(idx), kw)) { \
-        for (int i = 0; i < array_length(__ast_free_list); i++) \
-            free_ast(__ast_free_list[i]); \
-        array_free(__ast_free_list); \
-        if (is_first_match) { \
-            is_first_match = false; \
-        } else if (!(__VA_ARGS__ + 0)) { \
-            debug printf("AAAA %d \n", idx); \
-            print_err_nopause("Parse failed! Expected '%s', got '%s'!", kw, token_type_to_pretty_str(get_token(idx).type)); \
-        } \
-        return (__VA_ARGS__ + 0) \
-            ? PARSE_FAILED_SUCCESSFULLY(idx) \
-            : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
+        _destroy_free_list(); \
+        set_parse_error_if_deepest("Parse failed! Expected '%s', got '%s'!", kw, token_type_to_pretty_str(get_token(idx).type)); \
+        return_correct_parse_res(__VA_ARGS__); \
     } \
-    if (is_first_match) \
-        is_first_match = false; \
     idx++;
 
 #define MATCH_TOKEN(truthy_cond, ...) \
     if (!(truthy_cond)) { \
-        for (int i = 0; i < array_length(__ast_free_list); i++) \
-            free_ast(__ast_free_list[i]); \
-        array_free(__ast_free_list); \
-        if (is_first_match) { \
-            is_first_match = false; \
-        } else if (!(__VA_ARGS__ + 0)) { \
-            print_err_nopause("Parse failed! Expected condition '"#truthy_cond"', got '%s'!", token_type_to_pretty_str(get_token(idx).type)); \
-        } \
-        return (__VA_ARGS__ + 0) \
-            ? PARSE_FAILED_SUCCESSFULLY(idx) \
-            : (print_fails ? PARSE_FAILED_DEBUG : PARSE_FAILED); \
+        _destroy_free_list(); \
+        set_parse_error_if_deepest("Parse failed! Expected condition '"#truthy_cond"', got '%s'!", token_type_to_pretty_str(get_token(idx).type)); \
+        return_correct_parse_res(__VA_ARGS__); \
     } \
-    if (is_first_match) \
-        is_first_match = false; \
     idx++;
 
 #define MATCH_RETURN_IF_PARSED(expr) \
@@ -1100,9 +1077,9 @@ ParseResult parse_stmt(int idx) {
         MATCH_RETURN_IF_PARSED(parse_while_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_print_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_modify_stmt(idx));
-        MATCH_RETURN_IF_PARSED(parse_func_decl_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_vardecl_assign_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_vardecl_stmt(idx));
+        MATCH_RETURN_IF_PARSED(parse_func_decl_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_input_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_return_stmt(idx));
         MATCH_RETURN_IF_PARSED(parse_defer_stmt(idx));
@@ -1116,37 +1093,47 @@ ParseResult parse_stmt(int idx) {
     }
 }
 
-ParseResult parse_stmt_seq(int idx) {
 
+ParseResult parse_stmt_seq(int idx);
+
+ParseResult parse_program() {
+    memset(parse_err, 0, PARSE_ERR_SIZE);
+    parse_err_most_tokens = 0;
+    return parse_stmt_seq(0);
+}
+
+ParseResult parse_stmt_seq(int idx) {
+    
     START_PARSE {
         MATCH_PARSE(stmt_res, parse_stmt(idx));
-
+        
         ASTNode node = create_ast_node((Token){.type = STMT_SEQ}, true);
-
+        
         array_append(node.children, stmt_res.node);
-
+        
         while (true) {
             TRY_MATCH_PARSE(res, parse_stmt(idx));
-
+            
             if (!res.success) break;
 
             array_append(node.children, res.node);
         }
-
+        
         FINISH_PARSE(node);
-
+        
     }
 }
 
+
 ParseResult parse_block(int idx) {
     START_PARSE {
-
+        
         MATCH_TOKEN_WITH_TYPE(LCURLY);
         
         MATCH_PARSE(stmt_seq_res, parse_stmt_seq(idx));
-
+        
         MATCH_TOKEN_WITH_TYPE(RCURLY);
-
+        
         stmt_seq_res.node.token.type = BLOCK;
 
         FINISH_PARSE(stmt_seq_res.node);
@@ -2149,6 +2136,7 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 }
 
 // anything this function doesn't touch is meant to return void
+
 void typeify_tree(ASTNode *node, HashMap *var_map) {
 
 
@@ -4957,7 +4945,7 @@ void print_ast(ASTNode node, int level) {
         return;
     }
     for (int i = 0; i < level; i++) {
-        printf("|---");
+        printf("|   ");
     }
     if (!node.complete) printf("!!");
     printf("<");
@@ -5249,8 +5237,14 @@ int main() {
             continue;
         }
 
-        ParseResult res = parse_stmt_seq(0);
+        ParseResult res = parse_program();
         
+        if (!res.success) {
+            printf("%s \n", parse_err);
+            debug printf("%d tokens deep \n", parse_err_most_tokens);
+            print_err("Invalid program!");
+        }
+
         if (PREPROCESS_AST) preprocess_ast(&res.node);
 
         if (PARSER_PRINT) {
