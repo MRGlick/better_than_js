@@ -16,21 +16,22 @@ int rand(int bound) {
     return rand() % bound;
 }
 
+int rand(int lower, int upper) return lower + rand(upper - lower);
 
 struct Node {
     int val;
     Node next;
 }
 
-Node lst = new Node(val = 1);
+Node lst = new Node(val = rand(50));
 Node end = lst;
 int i = 0;
 while (i < 20) {
 
-    end.next = new Node(val = 1);
+    end.next = new Node(val = rand(1, 100));
     end = end.next;
 
-    i += 1;       
+    i += 1;
 }
 print "Loop end!";
 

@@ -1,10 +1,6 @@
-
-void foo(int a) {
-    if (a > 0) {
-        print a;
-        foo(a - 1);
-    }
+void foo(int a, float b, bool c) {
+    if (c) print a, b;
+    else print b, a;
 }
 
-foo(2);
-
+foo(1, 1.0, false);

@@ -12,12 +12,7 @@ Vec2 add(Vec2 a, Vec2 b) return v2(a.x + b.x, a.y + b.y);
 void print_vec(Vec2 a) print "(", a.x, ", ", a.y, ")";
 
 Vec2 a = v2();
-defer delete a;
 Vec2 b = v2(5, 6);
-defer delete b;
 Vec2 c = v2(1);
-defer delete c;
 Vec2 d = add(b, c);
-defer delete d;
 Vec2 e = add(b, d);
-defer delete e;
