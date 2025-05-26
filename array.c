@@ -41,6 +41,7 @@ int array_length(const void *array) {
     ArrayHeader *header = array_header(array);
     if (header->padding != 1) {
         printf("Tried calling array_length() on a non-array! \n");
+        *(char *)0 = 0;
         return -1;
     }
 
@@ -79,9 +80,15 @@ void array_remove(void *array, int i) {
 
 }
 
-void array_free(void *array) {
+void _array_free(void *array) {
     free(array_header(array));
 }
+
+#define array_free(arr) \
+    do { \
+        _array_free(arr); \
+        arr = NULL; \
+    } while (0)
 
 void _expand_array(void **array) {
     ArrayHeader *header = array_header(*array);

@@ -55,10 +55,20 @@ Type *make_struct_type(String name) {
     return thing;
 }
 
+Type *make_array_type(Type *child_type) {
+    Type *thing = malloc(sizeof(Type));
+    *thing = (Type){.kind = TYPE_array, .array_data.type = child_type};
+
+    return thing;
+}
+
 Type *copy_type(Type *type) {
+
+    assert(type != NULL);
+
     Type *cop = make_type(type->kind);
-    if (cop->kind == TYPE_struct) cop->struct_data.name = type->struct_data.name;
-    if (cop->kind == TYPE_array) cop->array_data.type = copy_type(cop->array_data.type);
+    if (type->kind == TYPE_struct) cop->struct_data.name = type->struct_data.name;
+    if (type->kind == TYPE_array) cop->array_data.type = copy_type(type->array_data.type);
 
 
     return cop;
@@ -97,6 +107,12 @@ StringRef type_get_name(Type *type) {
 }
 
 void print_type(Type *type) {
+
+    if (type == NULL) {
+        printf("(null_type)");
+        return;
+    }
+
     match (type->kind) {
         case (TYPE_array) then (
             print_type(type->array_data.type);
@@ -111,8 +127,13 @@ void print_type(Type *type) {
     }
 }
 
-void free_type(Type *type) {
+void _free_type(Type *type) {
     if (type == NULL) return;
-    if (type->kind == TYPE_array) free_type(type->array_data.type);
+    if (type->kind == TYPE_array) _free_type(type->array_data.type);
     free(type);
 }
+
+#define free_type(type) do { \
+    _free_type(type); \
+    type = NULL; \
+} while (0)

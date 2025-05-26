@@ -7,7 +7,7 @@
 #include "types.c"
 
 const char SYMBOLS[] = {
-    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|', '.'
+    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '=', '>', '<', '!', '&', '|', '.', '[', ']'
 };
 
 char *KEYWORDS[] = {
@@ -100,8 +100,10 @@ char *KEYWORDS[] = {
     X(DEFER_STMT) \
     X(STRUCT_DECL_STMT) \
     X(DELETE_STMT) \
-    X(TOKEN_TYPE_COUNT)
-
+    X(ARRAY) \
+    X(LBRACKET) \
+    X(RBRACKET) \
+    X(TOKEN_TYPE_COUNT) 
 
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)
@@ -212,12 +214,14 @@ const char *token_type_to_pretty_str(TokenType type) {
         case RPAREN:              return ")";
         case LCURLY:              return "{";
         case RCURLY:              return "}";
+        case LBRACKET:            return "[";
+        case RBRACKET:            return "]";
         case TYPE:                return "type";
         case STMT_END:            return ";";
         case COMMA:               return ",";
         case ATTR_ACCESS:         return ".";
         case UNRESOLVED:          return "unresolved";
-        case INVALID:             return "invalid>";
+        case INVALID:             return "invalid";
         case BLOCK:               return "block";
         case BOOL:                return "true/false";
         case IF_STMT:             return "if";
@@ -230,17 +234,18 @@ const char *token_type_to_pretty_str(TokenType type) {
         case WRITE_STMT:          return "write";
         case INPUT_STMT:          return "input";
         case FUNC_DECL_STMT:      return "func-decl";
-        case FUNC_ARGS_SEQ:       return "args>";
-        case FUNC_ARG:            return "arg>";
+        case FUNC_ARGS_SEQ:       return "args";
+        case FUNC_ARG:            return "arg";
         case FUNC_CALL:           return "call";
         case RETURN_STMT:         return "return";
-        case STMT_SEQ:            return "stmts>";
-        case VAL_SEQ:             return "vals>";
+        case STMT_SEQ:            return "stmts";
+        case VAL_SEQ:             return "vals";
         case DECL_SEQ:            return "decls";
         case DEFER_STMT:          return "defer";
         case STRUCT_DECL_STMT:    return "struct";
         case DELETE_STMT:         return "delete";
         case TOKEN_TYPE_COUNT:    return "count";
+        case ARRAY:               return "array";
     }
 
     return "<unknown>";

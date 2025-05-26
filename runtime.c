@@ -2,6 +2,7 @@
 #include "inttypes.h"
 #include "utils.c"
 #include <stdio.h>
+#include "debug.h"
 
 #define COUNTER_BITMASK 0x00FFFFFF
 #define STRUCT_METADATA_BITMASK 0xFF000000
@@ -13,7 +14,6 @@
 #define LITERALS_MEMORY_SIZE 1024
 #define BENCHMARK_ITERS 100
 #define TEXT_BUF_SIZE 8192
-#define debug if (1)
 #define REFCOUNTER_START_VALUE 1
 
 typedef struct StructMetadata {
@@ -93,7 +93,6 @@ static inline void object_inc_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
-    debug printf("Incremented refcount to %d \n", _object_get_refcount(obj));
 }
 
 static inline void object_dec_ref(void *obj) {
@@ -104,7 +103,6 @@ static inline void object_dec_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
-    debug printf("Decremented refcount to %d \n", _object_get_refcount(obj));
 
     if ((header->data & COUNTER_BITMASK) == 0) {
         free_object(obj);

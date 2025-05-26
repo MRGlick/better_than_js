@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <time.h>
 #include "match.h"
+#include "debug.h"
 //#define PRINT_NULLS
 
 #ifdef PRINT_NULLS
@@ -28,9 +29,7 @@
 
 #define in_range(a, b, c) ((a >= b) && (a <= c))
 
-#define debug if (1)
-
-#define assert(cond) if (!(cond)) {print_err("assert '"#cond"' failed!"); exit(1);}
+#define assert(cond) if (!(cond)) {print_err("assert '"#cond"' failed!"); *(char *)0 = 0; }
 
 #define min(a, b) (a < b ? a : b)
 #define max(a, b) (a > b ? a : b)

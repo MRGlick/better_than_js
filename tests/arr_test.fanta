@@ -1,0 +1,14 @@
+
+print 1;
+int[][] x;
+print x;
+float[] b;
+
+struct Foo {
+    int x;
+    int y;
+}
+
+Foo[] foos;
+
+foos;

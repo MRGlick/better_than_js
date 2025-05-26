@@ -1,6 +1,6 @@
 
 // #FLAGS
-#define DEBUG
+#define DEBUG_PRINTS_ACTIVE
 
 #define STAGE_LEXER 0
 #define STAGE_TOKENIZER 1
@@ -8,7 +8,7 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_PARSER
+#define COMPILATION_STAGE STAGE_RUN_CODE
 
 #define PREPROCESS_AST 1
 
@@ -34,6 +34,8 @@
 #include "runtime.c"
 #include "globals.c"
 #include "errors.c"
+#include "move.c"
+#include "debug.h"
 
 VarHeader create_var_header(String name, Type *var_type, int var_pos) {
     return (VarHeader){.type = VH_VAR, .var_type = var_type, .var_pos = var_pos, .name = name};
@@ -368,6 +370,16 @@ Token *tokenize_parts(String *parts) {
             array_append(tokens, tk);
             continue;
         }
+        if (String_equal(parts[i], StringRef("["))) {
+            Token tk = {.type = LBRACKET};
+            array_append(tokens, tk);
+            continue;
+        }
+        if (String_equal(parts[i], StringRef("]"))) {
+            Token tk = {.type = RBRACKET};
+            array_append(tokens, tk);
+            continue;
+        }
         if (String_equal(parts[i], StringRef(","))) {
             Token tk = {.type = COMMA};
             array_append(tokens, tk);
@@ -416,6 +428,21 @@ ASTNode create_ast_node(Token tk, bool complete) {
     return node;
 }
 
+ASTNode copy_ast(ASTNode *ast) {
+    ASTNode copy = *ast;
+    copy.children = array(ASTNode, 2);
+    for (int i = 0; i < array_length(ast->children); i++) {
+        array_append(copy.children, copy_ast(&ast->children[i]));
+    }
+
+    return copy;
+}
+
+void ast_replace_expected_return_type(ASTNode *ast, Type *new_type) {
+    free_type(ast->expected_return_type);
+    ast->expected_return_type = new_type;
+}
+
 #define free_ast(ast) do { \
     if (!(ast).children) print_err("Tried to free AST with null children! "); \
     _free_ast(ast); \
@@ -429,11 +456,17 @@ int _free_ast(ASTNode ast) {
         return -1;
     }
 
+    print_token(ast.token, 0);
+
     for (int i = 0; i < array_length(ast.children); i++) {
         free_ast(ast.children[i]);
     }
 
     array_free(ast.children);
+
+    if (ast.token.type == TYPE) {
+        free_type(ast.token.var_type);
+    }
 
     return 0;
 }
@@ -542,6 +575,7 @@ int parse_err_most_tokens = 0;
         sprintf(parse_err, __VA_ARGS__); \
     }
 
+#define CANT_FAIL 0
 #define CAN_FAIL 1
 
 #define _destroy_free_list() \
@@ -1206,6 +1240,63 @@ ParseResult parse_while_stmt(int idx) {
     }
 }
 
+ParseResult parse_array_type_postfix(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LBRACKET);
+        MATCH_TOKEN_WITH_TYPE(RBRACKET);
+
+        FINISH_PARSE(create_ast_node((Token){.type = TYPE, .var_type = make_array_type(NULL)}, true));
+    }
+}
+
+ParseResult parse_type_postfix(int idx) {
+    START_PARSE {
+        // .. different types go here
+        MATCH_RETURN_IF_PARSED(parse_array_type_postfix(idx));
+
+        MATCH_TOKEN(false);
+    }
+}
+
+ParseResult parse_type_postfix_seq(int idx) {
+    START_PARSE {
+        MATCH_PARSE(postfix_res, parse_type_postfix(idx), "postfix");
+
+        ASTNode node = postfix_res.node;
+
+        while (true) {
+            TRY_MATCH_PARSE(res, parse_type_postfix(idx));
+            if (!res.success) break;
+
+            array_append(res.node.children, node);
+            node = res.node;
+        }
+
+
+        FINISH_PARSE(node);
+    }
+}
+
+Type *make_type_from_tree(ASTNode *ast) {
+
+    assert(ast->token.type == TYPE || ast->token.type == NAME);
+    
+    if (ast->token.type == NAME) {
+        return make_struct_type(ast->token.text);
+    }
+
+    match (ast->token.var_type->kind) {
+        case (TYPE_array) then (
+            return make_array_type(make_type_from_tree(&ast->children[0]));
+        )
+        // more cases later i promise
+
+        default (
+            return copy_type(ast->token.var_type);
+        )
+    }
+}
+
 ParseResult parse_type(int idx, bool *is_struct_out) {
     
     START_PARSE {
@@ -1216,7 +1307,30 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
             || (is_struct = get_token(idx).type == NAME)
         );
 
-        Type *t = is_struct ? make_struct_type(get_token(type_idx).text) : make_type(get_token(type_idx).var_type->kind);
+        TRY_MATCH_PARSE(postfix_seq_res, parse_type_postfix_seq(idx));
+
+        Type *base_type = is_struct 
+                        ? make_struct_type(get_token(type_idx).text) 
+                        : copy_type(get_token(type_idx).var_type);
+
+        Type *t = NULL;
+
+        if (postfix_seq_res.success) {
+        
+            ASTNode leaf = postfix_seq_res.node;
+            while (array_length(leaf.children) != 0) leaf = leaf.children[0];
+
+            array_append(leaf.children, create_ast_node((Token){.type = TYPE, .var_type = move(base_type)}, true));
+
+            print_ast(postfix_seq_res.node, 0);
+
+            t = make_type_from_tree(&postfix_seq_res.node);
+
+            free_ast(postfix_seq_res.node);
+
+        } else {
+            t = move(base_type);
+        }
 
         ASTNode node = create_ast_node(
             (Token) {
@@ -1225,6 +1339,7 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
             },
             true
         );
+
 
         if (is_struct_out != NULL) *is_struct_out = is_struct;
 
@@ -1420,21 +1535,22 @@ ParseResult parse_return_stmt(int idx) {
 ParseResult parse_modify_stmt(int idx) {
     START_PARSE {
         MATCH_PARSE(primary_res, parse_primary(idx), "variable");
-
+        
         int op_idx = idx;
         MATCH_TOKEN(in_range(get_token(idx).type, MODIFY_TOKENS_START, MODIFY_TOKENS_END));
-
+        
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
-
+        
         MATCH_TOKEN_WITH_TYPE(STMT_END);
-
-
-
+        
+        
+        
         ASTNode node = create_ast_node((Token){.type = ASSIGN_STMT}, true);
-
+        
+        
         array_append(node.children, primary_res.node);
         TokenType op_type;
-
+        
         match (get_token(op_idx).type) {
             case (OP_ASSIGN_ADD) then (
                 op_type = OP_ADD;
@@ -1455,9 +1571,11 @@ ParseResult parse_modify_stmt(int idx) {
                 print_err("LITERALLY CAN'T HAPPEN. KYS.");
             )
         }
-
+        
         ASTNode op_node = create_ast_node((Token){.type = op_type}, true);
-        array_append(op_node.children, primary_res.node);
+        
+        ASTNode primary_res_node_copy = copy_ast(&primary_res.node);
+        array_append(op_node.children, primary_res_node_copy); // because we already added that node to the tree
         array_append(op_node.children, expr_res.node);
         array_append(node.children, op_node);
 
@@ -2137,7 +2255,6 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 
 void typeify_tree(ASTNode *node, HashMap *var_map) {
 
-
     match (node->token.type) {
         case(BLOCK) then({
             HashMap *copy = HashMap_copy(var_map);
@@ -2173,7 +2290,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             node->expected_return_type = make_type(TYPE_string);
         })
         case(NULL_REF) then({
-            node->expected_return_type = make_type(TYPE_struct);
+            node->expected_return_type = make_type(TYPE_null_ref);
         })
         case(NAME) then ({
             VarHeader *vh = HashMap_get_safe(var_map, node->token.text, NULL);
@@ -2628,6 +2745,7 @@ X(I_DEC_REFCOUNT) \
 X(I_INIT_OBJ_HEADER) \
 X(I_TUCK) \
 X(I_POP_BOTTOM) \
+X(I_NOP) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -2750,6 +2868,9 @@ InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
         if (to->kind == TYPE_bool) return I_CONVERT_STR_BOOL;
         if (to->kind == TYPE_int) return I_CONVERT_STR_INT;
         if (to->kind == TYPE_float) return I_CONVERT_STR_FLOAT;
+    }
+    if (from->kind == TYPE_null_ref) {
+        if (to->kind == TYPE_struct) return I_NOP;
     }
 
     return I_INVALID;
@@ -3040,15 +3161,18 @@ void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedLi
 
     for (int i = 0; i < len; i++) {
 
-        generate_instructions_for_node(&ast->children[i], instructions, var_map_list);
+        ASTNode *child = &ast->children[i];
 
-        if (goal_type != ast->children[i].expected_return_type) {
-            bool result = generate_cvt_inst_for_types(ast->children[i].expected_return_type, goal_type, instructions);
+        generate_instructions_for_node(child, instructions, var_map_list);
+
+        if (!types_are_equal(goal_type, child->expected_return_type)) {
+            bool result = generate_cvt_inst_for_types(child->expected_return_type, goal_type, instructions);
             if (!result) return_err(
-                "Invalid conversion in binary operation! Tried to convert between '%s' and '%s'!",
-                type_get_name(ast->children[i].expected_return_type).data,
-                type_get_name(goal_type).data
-            );
+                    "Invalid conversion in binary operation! Tried to convert between '%s' and '%s'!",
+                    type_get_name(child->expected_return_type).data,
+                    type_get_name(goal_type).data
+                );
+            
         }
     }
 
@@ -3393,7 +3517,7 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
 
 
         Type *goal_type = func_vh->func_args[i].var_type;
-        if (arg->expected_return_type != goal_type) {
+        if (!types_are_equal(arg->expected_return_type, goal_type)) {
             bool result = generate_cvt_inst_for_types(arg->expected_return_type, goal_type, instructions);
             if (!result) return_err(
                 "Function argument #%d expected type '%s' but got '%s'!",
@@ -3535,7 +3659,7 @@ void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList
         Type *goal_type = member_vh->var_type;
         Type *curr_type = member_assigns->children[i].children[1].expected_return_type;
 
-        if (curr_type != goal_type) {
+        if (!types_are_equal(curr_type, goal_type)) {
             bool result = generate_cvt_inst_for_types(curr_type, goal_type, instructions);
             if (!result) return_err("Couldn't convert type '%s' to type '%s' in attribute assignment!", 
                     type_get_name(curr_type).data,
@@ -4257,6 +4381,9 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         void *obj = pop(void *); \
         object_dec_ref(obj); \
     }) \
+    case (I_NOP) then ( \
+         \
+    ) \
     case I_PUSH:; \
         int size = *(int *)&byte_arr[++inst_ptr]; \
         append(byte_arr + (inst_ptr += sizeof(int)), size); \
@@ -5116,7 +5243,6 @@ void print_token(Token token, int level) {
             printf(", ");
             print_type(token.var_type);
             break;
-
         default:
             break;
     }
@@ -5170,9 +5296,8 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 
         char filepath[100] = {0};
 
-        filepath[0] = '.'; filepath[1] = '.'; filepath[2] = '/';
 
-        fgets((char *)filepath + 3, sizeof(filepath) - 3, stdin);
+        fgets((char *)filepath, sizeof(filepath), stdin);
 
         filepath[strlen(filepath) - 1] = 0;
 
@@ -5180,10 +5305,9 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 
         FILE *file = fopen(filepath, "r");
 
-        if (!file) {
-            print_err("Couldn't open file! errno: %d ", errno);                
+        if (!file) 
             return RESULT_COULDNT_OPEN_FILE;
-        }
+        
 
         char *buf_ptr = buf;
 
@@ -5231,9 +5355,15 @@ int main() {
 
         int result = handle_text_interface(buf, CODE_MAX_LEN, &benchmark);
 
-        if (result != RESULT_OK) {
-            continue;
+        match (result) {
+            case (RESULT_COULDNT_OPEN_FILE) then (
+                print_err("Couldn't open file! errno: %d", errno);
+            )
+            case (RESULT_INVALID_COMMAND) then (
+                print_err("Invalid command! use 'file' to open a file and 'code' to enter raw code.");
+            )
         }
+        if (result != RESULT_OK) continue;
 
         String *parts = lex(StringRef(buf));
 

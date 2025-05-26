@@ -1,10 +1,7 @@
-
-
-
 int rand() {
     int sum = 0;
     int power = 1;
-    for (int i = 1; i < 32; i += 1; ) {
+    for (int i = 0; i < 31; i += 1; ) {
         sum += maybe * power;
         power *= 2;
     }
@@ -12,9 +9,7 @@ int rand() {
     return sum;
 }
 
-int rand(int bound) {
-    return rand() % bound;
-}
+int rand(int upper) return rand() % upper;
 
 int rand(int lower, int upper) return lower + rand(upper - lower);
 
@@ -23,17 +18,14 @@ struct Node {
     Node next;
 }
 
-Node lst = new Node(val = rand(50));
-Node end = lst;
-int i = 0;
-while (i < 20) {
+Node lst = new Node(val = rand(1, 100));
 
-    end.next = new Node(val = rand(1, 100));
-    end = end.next;
-
-    i += 1;
+for (int i = 0; i < 100; i += 1; ) {
+    Node n = new Node(val = rand(1, 100), next = lst);
+    lst = n;
 }
-print "Loop end!";
 
-
+for (Node tmp = lst; tmp != null; tmp = tmp.next; ) {
+    print tmp.val, " ";
+}
 
