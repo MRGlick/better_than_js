@@ -3005,12 +3005,15 @@ int calc_stack_space_for_scope(ASTNode *ast) {
 void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedList *var_map_list);
 
 static inline bool is_reference(ASTNode *ast) {
-    return ast->expected_return_type->kind == TYPE_struct;
+    return ast->expected_return_type->kind == TYPE_struct || ast->expected_return_type->kind == TYPE_array;
 }
 
 static inline bool is_temporary_reference(ASTNode *ast) {
     return ast->token.type == OP_NEW
-        || (ast->token.type == FUNC_CALL && ast->expected_return_type->kind == TYPE_struct);
+        || (ast->token.type == FUNC_CALL 
+            && (ast->expected_return_type->kind == TYPE_struct 
+                || ast->expected_return_type->kind == TYPE_array)
+            );
 }
 
 static inline bool is_nontemporary_reference(ASTNode *ast) {
@@ -3597,8 +3600,19 @@ void generate_instructions_for_struct_decl(ASTNode *ast, LinkedList *var_map_lis
 
 }   
 
+void generate_instructions_for_array_attr_access(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    
+
+}
 
 void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    if (ast->children[0].expected_return_type->kind == TYPE_array) {
+        generate_instructions_for_array_attr_access(ast, instructions, var_map_list);
+        return;
+    }
+
 
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
