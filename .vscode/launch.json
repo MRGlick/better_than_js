@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/Cyber_AI/Desktop/undefended/better_than_js",
-      "program": "c:/Users/Cyber_AI/Desktop/undefended/better_than_js/build/Debug/outDebug",
+      "cwd": "c:/Users/rahel/Desktop/VSCode/C/better_than_js",
+      "program": "c:/Users/rahel/Desktop/VSCode/C/better_than_js/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

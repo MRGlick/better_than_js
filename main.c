@@ -418,7 +418,7 @@ void free_tokens(Token *tokens) {
     array_free(tokens);
 }
 
-ASTNode create_ast_node(Token tk, bool complete) {
+ASTNode ASTNode_create(Token tk, bool complete) {
     ASTNode node = {0};
     node.children = array(ASTNode, 2);
     node.token = tk;
@@ -428,11 +428,15 @@ ASTNode create_ast_node(Token tk, bool complete) {
     return node;
 }
 
-ASTNode copy_ast(ASTNode *ast) {
+void ASTNode_add_child(ASTNode parent, ASTNode child) {
+    array_append(parent.children, child);
+}
+
+ASTNode ASTNode_copy(ASTNode *ast) {
     ASTNode copy = *ast;
     copy.children = array(ASTNode, 2);
     for (int i = 0; i < array_length(ast->children); i++) {
-        array_append(copy.children, copy_ast(&ast->children[i]));
+        ASTNode_add_child(copy, ASTNode_copy(&ast->children[i]));
     }
 
     return copy;
@@ -649,8 +653,8 @@ int parse_err_most_tokens = 0;
 
 
 ASTNode wrap_with_block(ASTNode node) {
-    ASTNode block = create_ast_node((Token){.type = BLOCK}, true);
-    array_append(block.children, node);
+    ASTNode block = ASTNode_create((Token){.type = BLOCK}, true);
+    ASTNode_add_child(block, node);
 
     return block;
 }
@@ -721,7 +725,7 @@ ParseResult parse_value(int idx) {
             || get_token(idx).type == NAME
             || get_token(idx).type == NULL_REF
         );
-        FINISH_PARSE(create_ast_node(get_token(token_idx), true));
+        FINISH_PARSE(ASTNode_create(get_token(token_idx), true));
     }
 }
 
@@ -748,9 +752,9 @@ ParseResult parse_attr_rule_h(int idx) {
         MATCH_TOKEN_WITH_TYPE(NAME);
         MATCH_PARSE(attr_h_res, parse_attr_rule_h(idx), "NEVER");
 
-        ASTNode node = create_ast_node(get_token(op_idx), false);
+        ASTNode node = ASTNode_create(get_token(op_idx), false);
     
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
 
         if (is_null_ast(attr_h_res.node)) FINISH_PARSE(node);
     
@@ -799,9 +803,9 @@ ParseResult parse_mul_rule_h(int idx) {
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "operand");
         MATCH_PARSE(mul_rule_h_res, parse_mul_rule_h(idx), "NEVER");
 
-        ASTNode node = create_ast_node(get_token(op_idx), false);
+        ASTNode node = ASTNode_create(get_token(op_idx), false);
         
-        array_append(node.children, unary_res.node);
+        ASTNode_add_child(node, unary_res.node);
 
         if (is_null_ast(mul_rule_h_res.node)) FINISH_PARSE(node);
 
@@ -848,9 +852,9 @@ ParseResult parse_add_rule_h(int idx) {
         MATCH_PARSE(mul_rule_res, parse_mul_rule(idx), "operand");
         MATCH_PARSE(add_rule_h_res, parse_add_rule_h(idx), "NEVER");
 
-        ASTNode node = create_ast_node(get_token(op_idx), false);
+        ASTNode node = ASTNode_create(get_token(op_idx), false);
         
-        array_append(node.children, mul_rule_res.node);
+        ASTNode_add_child(node, mul_rule_res.node);
 
         if (is_null_ast(add_rule_h_res.node)) FINISH_PARSE(node);
 
@@ -905,9 +909,9 @@ ParseResult parse_rel_rule_h(int idx) {
 
         MATCH_PARSE(rel_rule_h_res, parse_rel_rule_h(idx), "NEVER");
 
-        ASTNode node = create_ast_node(get_token(op_idx), false);
+        ASTNode node = ASTNode_create(get_token(op_idx), false);
         
-        array_append(node.children, add_rule_res.node);        
+        ASTNode_add_child(node, add_rule_res.node);        
 
         if (is_null_ast(rel_rule_h_res.node)) FINISH_PARSE(node);
 
@@ -953,9 +957,9 @@ ParseResult parse_and_rule_h(int idx) {
 
         MATCH_PARSE(and_rule_h_res, parse_and_rule_h(idx), "NEVER");
 
-        ASTNode node = create_ast_node(get_token(op_idx), false);
+        ASTNode node = ASTNode_create(get_token(op_idx), false);
         
-        array_append(node.children, rel_rule_res.node);
+        ASTNode_add_child(node, rel_rule_res.node);
 
         
 
@@ -1002,9 +1006,9 @@ ParseResult parse_expr_h(int idx) {
 
         MATCH_PARSE(expr_h_res, parse_expr_h(idx), "NEVER");
 
-        ASTNode node = create_ast_node(get_token(op_idx), false);
+        ASTNode node = ASTNode_create(get_token(op_idx), false);
         
-        array_append(node.children, and_rule_res.node);
+        ASTNode_add_child(node, and_rule_res.node);
 
         if (is_null_ast(expr_h_res.node)) FINISH_PARSE(node);
         ASTNode leaf = expr_h_res.node;
@@ -1062,9 +1066,9 @@ ParseResult parse_if_stmt(int idx) {
 
             MATCH_PARSE(stmt2_res, parse_stmt(idx), "statement after else");
 
-            ASTNode node = create_ast_node((Token){.type = IF_ELSE_STMT}, true);
+            ASTNode node = ASTNode_create((Token){.type = IF_ELSE_STMT}, true);
 
-            array_append(node.children, expr_res.node);
+            ASTNode_add_child(node, expr_res.node);
             if (stmt_res.node.token.type != BLOCK) {
                 stmt_res.node = wrap_with_block(stmt_res.node);
             }
@@ -1074,20 +1078,20 @@ ParseResult parse_if_stmt(int idx) {
             }
             
 
-            array_append(node.children, stmt_res.node);
-            array_append(node.children, stmt2_res.node);
+            ASTNode_add_child(node, stmt_res.node);
+            ASTNode_add_child(node, stmt2_res.node);
 
             FINISH_PARSE(node);
 
         } else {
-            ASTNode node = create_ast_node((Token){.type = IF_STMT}, true);
-            array_append(node.children, expr_res.node);
+            ASTNode node = ASTNode_create((Token){.type = IF_STMT}, true);
+            ASTNode_add_child(node, expr_res.node);
 
             if (stmt_res.node.token.type != BLOCK) {
                 stmt_res.node = wrap_with_block(stmt_res.node);
             }
             
-            array_append(node.children, stmt_res.node);
+            ASTNode_add_child(node, stmt_res.node);
 
             FINISH_PARSE(node);
         }
@@ -1143,16 +1147,16 @@ ParseResult parse_stmt_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(stmt_res, parse_stmt(idx), "statement");
         
-        ASTNode node = create_ast_node((Token){.type = STMT_SEQ}, true);
+        ASTNode node = ASTNode_create((Token){.type = STMT_SEQ}, true);
         
-        array_append(node.children, stmt_res.node);
+        ASTNode_add_child(node, stmt_res.node);
         
         while (true) {
             TRY_MATCH_PARSE(res, parse_stmt(idx));
             
             if (!res.success) break;
 
-            array_append(node.children, res.node);
+            ASTNode_add_child(node, res.node);
         }
         
         FINISH_PARSE(node);
@@ -1181,9 +1185,9 @@ ParseResult parse_val_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
 
-        ASTNode node = create_ast_node((Token){.type = VAL_SEQ}, true);
+        ASTNode node = ASTNode_create((Token){.type = VAL_SEQ}, true);
 
-        array_append(node.children, expr_res.node);
+        ASTNode_add_child(node, expr_res.node);
 
         while (true) {
             if (get_token(idx).type != COMMA) break;
@@ -1192,7 +1196,7 @@ ParseResult parse_val_seq(int idx) {
             TRY_MATCH_PARSE(res, parse_expr(idx));
             if (!res.success) break;
 
-            array_append(node.children, res.node);
+            ASTNode_add_child(node, res.node);
         }
 
         FINISH_PARSE(node);
@@ -1226,15 +1230,15 @@ ParseResult parse_while_stmt(int idx) {
         MATCH_TOKEN_WITH_TYPE(RPAREN);
         MATCH_PARSE(stmt_res, parse_stmt(idx), "statement after while");
 
-        ASTNode node = create_ast_node((Token){.type =  WHILE_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type =  WHILE_STMT}, true);
 
-        array_append(node.children, expr_res.node);
+        ASTNode_add_child(node, expr_res.node);
 
         if (stmt_res.node.token.type != BLOCK) {
             stmt_res.node = wrap_with_block(stmt_res.node);
         }
 
-        array_append(node.children, stmt_res.node);
+        ASTNode_add_child(node, stmt_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1245,7 +1249,7 @@ ParseResult parse_array_type_postfix(int idx) {
         MATCH_TOKEN_WITH_TYPE(LBRACKET);
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
 
-        FINISH_PARSE(create_ast_node((Token){.type = TYPE, .var_type = make_array_type(NULL)}, true));
+        FINISH_PARSE(ASTNode_create((Token){.type = TYPE, .var_type = make_array_type(NULL)}, true));
     }
 }
 
@@ -1268,7 +1272,7 @@ ParseResult parse_type_postfix_seq(int idx) {
             TRY_MATCH_PARSE(res, parse_type_postfix(idx));
             if (!res.success) break;
 
-            array_append(res.node.children, node);
+            ASTNode_add_child(res.node, node);
             node = res.node;
         }
 
@@ -1320,7 +1324,7 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
             ASTNode leaf = postfix_seq_res.node;
             while (array_length(leaf.children) != 0) leaf = leaf.children[0];
 
-            array_append(leaf.children, create_ast_node((Token){.type = TYPE, .var_type = move(base_type)}, true));
+            ASTNode_add_child(leaf, ASTNode_create((Token){.type = TYPE, .var_type = move(base_type)}, true));
 
             print_ast(postfix_seq_res.node, 0);
 
@@ -1332,7 +1336,7 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
             t = move(base_type);
         }
 
-        ASTNode node = create_ast_node(
+        ASTNode node = ASTNode_create(
             (Token) {
                 .type = TYPE,
                 .var_type = t
@@ -1356,11 +1360,11 @@ ParseResult parse_vardecl_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = create_ast_node((Token){.type = DECL_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = DECL_STMT}, true);
 
-        array_append(node.children, type_res.node);
+        ASTNode_add_child(node, type_res.node);
 
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
 
         FINISH_PARSE(node);
     }
@@ -1377,11 +1381,11 @@ ParseResult parse_assign_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = create_ast_node((Token){.type = ASSIGN_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = ASSIGN_STMT}, true);
     
-        array_append(node.children, primary_res.node);
+        ASTNode_add_child(node, primary_res.node);
         
-        array_append(node.children, expr_res.node);
+        ASTNode_add_child(node, expr_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1401,13 +1405,13 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = create_ast_node((Token){.type = DECL_ASSIGN_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = DECL_ASSIGN_STMT}, true);
     
-        array_append(node.children, type_res.node);
+        ASTNode_add_child(node, type_res.node);
         
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
         
-        array_append(node.children, expr_res.node);
+        ASTNode_add_child(node, expr_res.node);
         
         FINISH_PARSE(node);
     }
@@ -1421,9 +1425,9 @@ ParseResult parse_input_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = create_ast_node((Token){.type = INPUT_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = INPUT_STMT}, true);
 
-        array_append(node.children, primary_res.node);
+        ASTNode_add_child(node, primary_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1436,9 +1440,9 @@ ParseResult parse_func_arg(int idx) {
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
 
-        ASTNode node = create_ast_node((Token){.type = FUNC_ARG}, true);
-        array_append(node.children, type_res.node);
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        ASTNode node = ASTNode_create((Token){.type = FUNC_ARG}, true);
+        ASTNode_add_child(node, type_res.node);
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
 
         FINISH_PARSE(node);
     }
@@ -1448,9 +1452,9 @@ ParseResult parse_func_args_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(func_arg_res, parse_func_arg(idx), "function argument", CAN_FAIL);
 
-        ASTNode node = create_ast_node((Token){.type = FUNC_ARGS_SEQ}, true);
+        ASTNode node = ASTNode_create((Token){.type = FUNC_ARGS_SEQ}, true);
 
-        array_append(node.children, func_arg_res.node);
+        ASTNode_add_child(node, func_arg_res.node);
 
         while (true) {
 
@@ -1463,7 +1467,7 @@ ParseResult parse_func_args_seq(int idx) {
 
             if (!res.success) break;
 
-            array_append(node.children, res.node);
+            ASTNode_add_child(node, res.node);
         }
 
         FINISH_PARSE(node);
@@ -1491,20 +1495,20 @@ ParseResult parse_func_decl_stmt(int idx) {
             stmt_res.node = wrap_with_block(stmt_res.node);
         }
 
-        ASTNode node = create_ast_node((Token){.type = FUNC_DECL_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = FUNC_DECL_STMT}, true);
 
-        array_append(node.children, type_res.node);
+        ASTNode_add_child(node, type_res.node);
 
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
 
         if (!is_null_ast(func_args_res.node)) {
-            array_append(node.children, func_args_res.node);
+            ASTNode_add_child(node, func_args_res.node);
         } else {
             // empty placeholder node
-            array_append(node.children, create_ast_node((Token){.type = FUNC_ARGS_SEQ}, true));
+            ASTNode_add_child(node, ASTNode_create((Token){.type = FUNC_ARGS_SEQ}, true));
         }
 
-        array_append(node.children, stmt_res.node);
+        ASTNode_add_child(node, stmt_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1519,16 +1523,16 @@ ParseResult parse_return_stmt(int idx) {
         if (expr_res.success) {
             MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-            ASTNode node = create_ast_node((Token){.type = RETURN_STMT}, true);
+            ASTNode node = ASTNode_create((Token){.type = RETURN_STMT}, true);
 
-            array_append(node.children, expr_res.node);
+            ASTNode_add_child(node, expr_res.node);
 
             FINISH_PARSE(node);
         }
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        FINISH_PARSE(create_ast_node((Token){.type = RETURN_STMT}, true));
+        FINISH_PARSE(ASTNode_create((Token){.type = RETURN_STMT}, true));
     }
 }
 
@@ -1545,10 +1549,10 @@ ParseResult parse_modify_stmt(int idx) {
         
         
         
-        ASTNode node = create_ast_node((Token){.type = ASSIGN_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = ASSIGN_STMT}, true);
         
         
-        array_append(node.children, primary_res.node);
+        ASTNode_add_child(node, primary_res.node);
         TokenType op_type;
         
         match (get_token(op_idx).type) {
@@ -1572,12 +1576,12 @@ ParseResult parse_modify_stmt(int idx) {
             )
         }
         
-        ASTNode op_node = create_ast_node((Token){.type = op_type}, true);
+        ASTNode op_node = ASTNode_create((Token){.type = op_type}, true);
         
-        ASTNode primary_res_node_copy = copy_ast(&primary_res.node);
-        array_append(op_node.children, primary_res_node_copy); // because we already added that node to the tree
-        array_append(op_node.children, expr_res.node);
-        array_append(node.children, op_node);
+        ASTNode primary_res_node_copy = ASTNode_copy(&primary_res.node);
+        ASTNode_add_child(op_node, primary_res_node_copy); // because we already added that node to the tree
+        ASTNode_add_child(op_node, expr_res.node);
+        ASTNode_add_child(node, op_node);
 
         FINISH_PARSE(node);
     }
@@ -1591,8 +1595,8 @@ ParseResult parse_defer_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = create_ast_node((Token){.type = DEFER_STMT}, true);
-        array_append(node.children, stmt_res.node);
+        ASTNode node = ASTNode_create((Token){.type = DEFER_STMT}, true);
+        ASTNode_add_child(node, stmt_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1611,15 +1615,15 @@ ParseResult _parse_decl_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(decl_res, _parse_vardecl_and_or_assign_decl(idx), "declaration");
 
-        ASTNode node = create_ast_node((Token){.type = DECL_SEQ}, true);
+        ASTNode node = ASTNode_create((Token){.type = DECL_SEQ}, true);
 
-        array_append(node.children, decl_res.node);
+        ASTNode_add_child(node, decl_res.node);
 
         while (true) {
             TRY_MATCH_PARSE(res, _parse_vardecl_and_or_assign_decl(idx));
             if (!res.success) break;
 
-            array_append(node.children, res.node);
+            ASTNode_add_child(node, res.node);
         }
 
         FINISH_PARSE(node);
@@ -1640,10 +1644,10 @@ ParseResult parse_struct_decl(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(RCURLY);
 
-        ASTNode node = create_ast_node((Token){.type = STRUCT_DECL_STMT}, true);
+        ASTNode node = ASTNode_create((Token){.type = STRUCT_DECL_STMT}, true);
 
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
-        array_append(node.children, decl_seq_res.node);
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, decl_seq_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1656,8 +1660,8 @@ ParseResult parse_attr_postfix(int idx) {
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
         
-        ASTNode node = create_ast_node((Token){.type = ATTR_ACCESS}, false);
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
+        ASTNode node = ASTNode_create((Token){.type = ATTR_ACCESS}, false);
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
         FINISH_PARSE(node);
     }
 }
@@ -1671,17 +1675,17 @@ ParseResult parse_func_call_postfix(int idx) {
         if (val_seq_res.success) {
             MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-            ASTNode node = create_ast_node((Token){.type = FUNC_CALL}, false);
+            ASTNode node = ASTNode_create((Token){.type = FUNC_CALL}, false);
 
-            array_append(node.children, val_seq_res.node);
+            ASTNode_add_child(node, val_seq_res.node);
             FINISH_PARSE(node);
         }
 
         MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-        ASTNode node = create_ast_node((Token){.type = FUNC_CALL}, false);
+        ASTNode node = ASTNode_create((Token){.type = FUNC_CALL}, false);
 
-        array_append(node.children, create_ast_node((Token){.type = VAL_SEQ}, true));
+        ASTNode_add_child(node, ASTNode_create((Token){.type = VAL_SEQ}, true));
 
         FINISH_PARSE(node);
     }
@@ -1754,8 +1758,8 @@ ParseResult parse_unary_minus(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_TYPE(OP_SUB);
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "value after unary minus");
-        ASTNode node = create_ast_node((Token){.type = OP_UNARY_MINUS}, true);
-        array_append(node.children, unary_res.node);
+        ASTNode node = ASTNode_create((Token){.type = OP_UNARY_MINUS}, true);
+        ASTNode_add_child(node, unary_res.node);
         FINISH_PARSE(node);
     }
 }
@@ -1764,8 +1768,8 @@ ParseResult parse_unary_not(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_TYPE(OP_NOT);
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "value after unary not");
-        ASTNode node = create_ast_node((Token){.type = OP_NOT}, true);
-        array_append(node.children, unary_res.node);
+        ASTNode node = ASTNode_create((Token){.type = OP_NOT}, true);
+        ASTNode_add_child(node, unary_res.node);
         FINISH_PARSE(node);
     }
 }
@@ -1793,9 +1797,9 @@ ParseResult _parse_assign(int idx) {
 
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
 
-        ASTNode node = create_ast_node((Token){.type = OP_ASSIGN}, true);
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
-        array_append(node.children, expr_res.node);
+        ASTNode node = ASTNode_create((Token){.type = OP_ASSIGN}, true);
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, expr_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1805,9 +1809,9 @@ ParseResult parse_assign_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(assign_res, _parse_assign(idx), "assignment");
 
-        ASTNode node = create_ast_node((Token){.type = ASSIGN_SEQ}, true);
+        ASTNode node = ASTNode_create((Token){.type = ASSIGN_SEQ}, true);
 
-        array_append(node.children, assign_res.node);
+        ASTNode_add_child(node, assign_res.node);
 
         while (true) {
 
@@ -1819,7 +1823,7 @@ ParseResult parse_assign_seq(int idx) {
             TRY_MATCH_PARSE(res, _parse_assign(idx));
             if (!res.success) break;
 
-            array_append(node.children, res.node);
+            ASTNode_add_child(node, res.node);
         }
 
         FINISH_PARSE(node);
@@ -1848,18 +1852,18 @@ ParseResult parse_new_rule(int idx) {
         if (assign_seq_res.success) {
             MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-            ASTNode node = create_ast_node((Token){.type = OP_NEW}, true);
-            array_append(node.children, create_ast_node(get_token(name_idx), true));
-            array_append(node.children, assign_seq_res.node);
+            ASTNode node = ASTNode_create((Token){.type = OP_NEW}, true);
+            ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+            ASTNode_add_child(node, assign_seq_res.node);
 
             FINISH_PARSE(node);
         }
 
         MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-        ASTNode node = create_ast_node((Token){.type = OP_NEW}, true);
-        array_append(node.children, create_ast_node(get_token(name_idx), true));
-        array_append(node.children, create_ast_node((Token){.type = ASSIGN_SEQ}, true));
+        ASTNode node = ASTNode_create((Token){.type = OP_NEW}, true);
+        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_create((Token){.type = ASSIGN_SEQ}, true));
 
         FINISH_PARSE(node);
     }
@@ -1872,8 +1876,8 @@ ParseResult parse_delete_stmt(int idx) {
         MATCH_PARSE(primary_res, parse_primary(idx), "variable");
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = create_ast_node((Token){.type = DELETE_STMT}, true);
-        array_append(node.children, primary_res.node);
+        ASTNode node = ASTNode_create((Token){.type = DELETE_STMT}, true);
+        ASTNode_add_child(node, primary_res.node);
 
         FINISH_PARSE(node);
     }
@@ -1889,21 +1893,21 @@ ParseResult parse_for_stmt(int idx) {
         MATCH_PARSE(update_stmt, parse_stmt(idx), "last statement in for");
         MATCH_TOKEN_WITH_TYPE(RPAREN);
         MATCH_PARSE(code_stmt, parse_stmt(idx), "statement after for");
-        ASTNode node = create_ast_node((Token){.type = BLOCK}, true);
-        array_append(node.children, init_stmt.node);
+        ASTNode node = ASTNode_create((Token){.type = BLOCK}, true);
+        ASTNode_add_child(node, init_stmt.node);
 
-        ASTNode while_node = create_ast_node((Token){.type = WHILE_STMT}, true);
-        array_append(while_node.children, cond_expr.node);
+        ASTNode while_node = ASTNode_create((Token){.type = WHILE_STMT}, true);
+        ASTNode_add_child(while_node, cond_expr.node);
 
         if (code_stmt.node.token.type != BLOCK) {
             code_stmt.node = wrap_with_block(code_stmt.node);
         }
 
-        array_append(code_stmt.node.children, update_stmt.node);
+        ASTNode_add_child(code_stmt.node, update_stmt.node);
 
-        array_append(while_node.children, code_stmt.node);
+        ASTNode_add_child(while_node, code_stmt.node);
 
-        array_append(node.children, while_node);
+        ASTNode_add_child(node, while_node);
 
         FINISH_PARSE(node);
     }
@@ -2527,7 +2531,8 @@ void move_defers_to_end(ASTNode *node) {
     
     int defer_count = array_length(defers);
     for (int i = 0; i < defer_count; i++) {
-        array_append(node->children, defers[i].children[0]); // we dont actually care about the defer, only about it's statement
+        // we dont actually care about the defer, only about it's statement
+        ASTNode_add_child(*node, defers[i].children[0]); 
     }
     
     // guranteed to be the same
@@ -5346,7 +5351,7 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 // #MAIN
 
 int main() {
-
+    
     while (true) {
 
 
