@@ -22,9 +22,8 @@
 #define _MAKE_CASED_(N) _MAKE_CASED_##N
 #define _MAKE_CASED(N) _MAKE_CASED_##N
 
-#define case(...) _N_CASES(_ARG_COUNT(__VA_ARGS__), __VA_ARGS__)
-#define then(...) __VA_ARGS__; break;
-#define default(...) default: __VA_ARGS__; break;
+#define case(...) break; _N_CASES(_ARG_COUNT(__VA_ARGS__), __VA_ARGS__)
+#define default() break; default: 
 #define match switch
 #define _N_CASES(N, ...) _MAKE_CASED(N)(__VA_ARGS__)
 

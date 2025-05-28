@@ -79,30 +79,30 @@ bool types_are_equal(Type *t1, Type *t2) {
     TypeKind kind = t1->kind;
 
     match (kind) {
-        case (TYPE_array) then (
+        case (TYPE_array) 
             return types_are_equal(t1->array_data.type, t2->array_data.type);
-        )
-        case (TYPE_struct) then (
+
+        case (TYPE_struct) 
             return String_equal(t1->struct_data.name, t2->struct_data.name);
-        )
-        default (
+
+        default ()
             return true;
-        )
+
     }
 }
 
 StringRef type_get_name(Type *type) {
     match (type->kind) {
-        case (TYPE_array) then (
+        case (TYPE_array) 
             print_err("Not implemented yet!");
             return String_null;
-        )
-        case (TYPE_struct) then (
+
+        case (TYPE_struct) 
             return type->struct_data.name;
-        )
-        default (
+
+        default ()
             return StringRef(type_kind_names[type->kind]);
-        )
+
     }
 }
 
@@ -114,16 +114,16 @@ void print_type(Type *type) {
     }
 
     match (type->kind) {
-        case (TYPE_array) then (
+        case (TYPE_array) 
             print_type(type->array_data.type);
             printf("[]");
-        )
-        case (TYPE_struct) then (
+
+        case (TYPE_struct) 
             printf("%s", type->struct_data.name.data);
-        )
-        default (
+
+        default ()
             printf("%s", type_kind_names[type->kind]);
-        )
+
     }
 }
 

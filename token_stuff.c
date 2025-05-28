@@ -7,19 +7,15 @@
 
 static inline int get_typekind_size(u8 t) {
     match (t) {
-        case (TYPE_int) then (
+        case (TYPE_int) 
             return 4;
-        )
-        case (TYPE_float, TYPE_string, TYPE_struct, TYPE_array) then (
+        case (TYPE_float, TYPE_string, TYPE_struct, TYPE_array) 
             return 8;
-        )
-        case (TYPE_bool) then (
+        case (TYPE_bool) 
             return 1;
-        )
-        default (
+        default ()
             print_err("Tried to get size of unknown type! Type: %s \n", type_kind_names[t]);
             return -1;
-        )
     }
 }
 

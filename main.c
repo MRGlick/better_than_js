@@ -534,10 +534,9 @@ Token *get_token_ref(int idx) {
 
 bool is_valid_stmt_boundary(Token tok) {
     match (tok.type) {
-        case (RCURLY, STMT_END) then (
-            return true
-        );
-        case (KEYWORD) then (
+        case (RCURLY, STMT_END) 
+            return true;
+        case (KEYWORD) 
             return check_keyword(tok, "if")
                 || check_keyword(tok, "for")
                 || check_keyword(tok, "while")
@@ -545,10 +544,9 @@ bool is_valid_stmt_boundary(Token tok) {
                 || check_keyword(tok, "input")
                 || check_keyword(tok, "delete")
                 || check_keyword(tok, "struct");
-        )
-        default (
+        
+        default ()
             return false;
-        )
     }
 }
 
@@ -1292,14 +1290,12 @@ Type *make_type_from_tree(ASTNode *ast) {
     }
 
     match (ast->token.var_type->kind) {
-        case (TYPE_array) then (
+        case (TYPE_array) 
             return make_array_type(make_type_from_tree(&ast->children[0]));
-        )
         // more cases later i promise
 
-        default (
+        default () 
             return copy_type(ast->token.var_type);
-        )
     }
 }
 
@@ -1556,24 +1552,22 @@ ParseResult parse_modify_stmt(int idx) {
         TokenType op_type;
         
         match (get_token(op_idx).type) {
-            case (OP_ASSIGN_ADD) then (
+            case (OP_ASSIGN_ADD) 
                 op_type = OP_ADD;
-            )
-            case (OP_ASSIGN_SUB) then (
+            
+            case (OP_ASSIGN_SUB) 
                 op_type = OP_SUB;
-            )
-            case (OP_ASSIGN_MUL) then (
+            
+            case (OP_ASSIGN_MUL) 
                 op_type = OP_MUL;
-            )
-            case (OP_ASSIGN_DIV) then (
+            
+            case (OP_ASSIGN_DIV) 
                 op_type = OP_DIV;
-            )
-            case (OP_ASSIGN_MOD) then (
+            
+            case (OP_ASSIGN_MOD) 
                 op_type = OP_MOD;
-            )
-            default (
-                print_err("LITERALLY CAN'T HAPPEN. KYS.");
-            )
+            
+            default () print_err("LITERALLY CAN'T HAPPEN. KYS.");
         }
         
         ASTNode op_node = ASTNode_create((Token){.type = op_type}, true);
@@ -2083,24 +2077,22 @@ int get_type_precedence(Type *type) {
     if (type == NULL) return -1;
 
     match (type->kind) {
-        case (TYPE_bool) then (
+        case (TYPE_bool) 
             return 0;
-        )
-        case (TYPE_int) then (
+        
+        case (TYPE_int) 
             return 1;
-        )
-        case (TYPE_float) then (
+        
+        case (TYPE_float) 
             return 2;
-        )
-        case (TYPE_string) then (
+        
+        case (TYPE_string) 
             return 3;
-        )
-        case (TYPE_struct) then (
+        
+        case (TYPE_struct) 
             return 4;
-        )
-        default (
-            return -1;
-        )
+        
+        default () return -1;
     }
 }
 
@@ -2316,7 +2308,7 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 void typeify_tree(ASTNode *node, HashMap *var_map) {
 
     match (node->token.type) {
-        case(BLOCK) then({
+        case(BLOCK) {
             HashMap *copy = HashMap_copy(var_map);
 
             for (int i = 0; i < array_length(node->children); i++) {
@@ -2324,8 +2316,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             }
 
             HashMap_free(copy);
-        })
-        case(DECL_STMT, DECL_ASSIGN_STMT) then({
+        }
+        case(DECL_STMT, DECL_ASSIGN_STMT) {
 
             String var_name = node->children[1].token.text;
             Type *type = node->children[0].token.var_type;
@@ -2336,31 +2328,31 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             for (int i = 0; i < array_length(node->children); i++) {
                 typeify_tree(&node->children[i], var_map);
             }
-        })
-        case(INTEGER) then({
+        }
+        case(INTEGER) {
             node->expected_return_type = make_type(TYPE_int);
-        })
-        case(FLOAT) then({
+        }
+        case(FLOAT) {
             node->expected_return_type = make_type(TYPE_float);
-        })
-        case(BOOL) then({
+        }
+        case(BOOL) {
             node->expected_return_type = make_type(TYPE_bool);
-        })
-        case(STRING_LITERAL) then({
+        }
+        case(STRING_LITERAL) {
             node->expected_return_type = make_type(TYPE_string);
-        })
-        case(NULL_REF) then({
+        }
+        case(NULL_REF) {
             node->expected_return_type = make_type(TYPE_null_ref);
-        })
-        case(NAME) then ({
+        }
+        case(NAME) {
             VarHeader *vh = HashMap_get_safe(var_map, node->token.text, NULL);
             if (!vh) 
                 return_err("Identifier '%s' Doesn't exist within the current scope!", node->token.text.data);
             
             
             node->expected_return_type = copy_type(vh->var_type);
-        })
-        case(FUNC_DECL_STMT) then({
+        }
+        case(FUNC_DECL_STMT) {
             ASTNode func_args = node->children[2];
 
             String func_name = node->children[1].token.text;
@@ -2371,17 +2363,6 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 -1, 
                 get_args_from_func_decl_ast(&func_args)
             );
-
-            // {
-            //     printf("Name: %s \n", vh.name.data);
-            //     printf("Args: \n");
-            //     for (int j = 0; j < array_length(vh.func_args); j++) {
-            //         printf(" - name: %s, type: %s \n", vh.func_args[j].name.data, type_get_name(vh.func_args[j].var_type).data);
-            //     }
-            // }
-
-
-
 
             VarHeader *overloads_ptr = HashMap_get_safe(var_map, func_name, NULL);
             if (overloads_ptr) {
@@ -2422,20 +2403,19 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             int result = validate_return_paths(node);
             
             match (result) {
-                case(UNREACHABLE_CODE) then (
+                case(UNREACHABLE_CODE) 
                     return_err("Return might cause unreachable code in function '%s()'!", func_name.data);
-                )
-                case(MISSING_RETURN_PATHS) then (
+                
+                case(MISSING_RETURN_PATHS) 
                     return_err("Not all return paths return type '%s' in function '%s()'!", 
                         type_kind_names[node->children[0].token.var_type->kind], func_name.data);    
-                )
-                case(RETURN_FROM_VOID_FUNCTION) then (
+                
+                case(RETURN_FROM_VOID_FUNCTION) 
                     return_err("Tried to return a value from '%s()', which returns void!", func_name.data);
-                )
             }
 
-        })
-        case (STRUCT_DECL_STMT) then({
+        }
+        case (STRUCT_DECL_STMT) {
             String name = node->children[0].token.text;
             ASTNode members = node->children[1];
     
@@ -2457,8 +2437,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             VarHeader vh = create_struct_header(name, arr, offset, -1);
     
             HashMap_put(var_map, name, &vh);    
-        })
-        case (ATTR_ACCESS) then({
+        }
+        case (ATTR_ACCESS) {
             typeify_tree(&node->children[0], var_map);
             Type *left_type = node->children[0].expected_return_type;
 
@@ -2479,9 +2459,9 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             VarHeader *attr_header = find_attr_in_struct(struct_header, attr_name);
 
             node->expected_return_type = attr_header->var_type;
-        })
+        }
 
-        case (OP_NEW) then({
+        case (OP_NEW) {
             String struct_name = node->children[0].token.text;
             VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
             if (!struct_vh) {
@@ -2502,14 +2482,14 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 
                 typeify_tree(expr, var_map);
             }
-        })
+        }
 
-        case (OP_UNARY_MINUS) then({
+        case (OP_UNARY_MINUS) {
             typeify_tree(&node->children[0], var_map);
             node->expected_return_type = node->children[0].expected_return_type;    
-        })
+        }
 
-        case (FUNC_CALL) then({
+        case (FUNC_CALL) {
             VarHeader *overloads = HashMap_get_safe(var_map, node->children[0].token.text, NULL);
             if (!overloads) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
     
@@ -2521,22 +2501,12 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 typeify_tree(&args_ast->children[i], var_map);
             }
     
-            // {
-            //     printf("%d Arguments passed into call to %s(): \n", array_length(args_ast->children), node->children[0].token.text.data);
-            //     for (int i = 0; i < array_length(args_ast->children); i++) {
-            //         String var_type = type_get_name(args_ast->children[i].expected_return_type);
-
-            //         printf(" - type: %s \n", var_type.data);
-            //     }
-            // }
-
-
             VarHeader *vh = get_best_overload(overloads, args_ast);
     
             node->expected_return_type = copy_type(vh->func_return_type);
-        })
+        }
 
-        case (ARRAY_LITERAL) then ({
+        case (ARRAY_LITERAL) {
             Type *t = NULL;
             for (int i = 0; i < array_length(node->children); i++) {
                 typeify_tree(&node->children[i], var_map);
@@ -2546,19 +2516,22 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             }
 
             node->expected_return_type = make_array_type(copy_type(t));
-        })
-        case (ARRAY_INITIALIZER) then ({
+        }
+        case (ARRAY_INITIALIZER) {
             ASTNode *dims = &node->children[1];
+            Type *t = copy_type(node->children[0].token.var_type);
             for (int i = 0; i < array_length(dims->children); i++) {
                 typeify_tree(&dims->children[i], var_map);
+                t = make_array_type(t);
                 if (dims->children[i].expected_return_type->kind != TYPE_int)
                     return_err("Dimension value must be of type int!");
             }
 
-            node->expected_return_type = make_array_type(copy_type(node->children[0].token.var_type));
-        })
+            node->expected_return_type = move(t);
 
-        default({
+        }
+
+        default() {
             if (in_range(node->token.type, ARITHOPS_START, ARITHOPS_END)) {
                 Type *highest_precedence_type = NULL;
                 int len = array_length(node->children);
@@ -2568,7 +2541,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                         highest_precedence_type = node->children[i].expected_return_type;
                     }
                 }
-                node->expected_return_type = highest_precedence_type; // #MAYBENULL
+                node->expected_return_type = move(highest_precedence_type); // #MAYBENULL
             } else if (in_range(node->token.type, BOOLOPS_START, BOOLOPS_END)) {
         
                 node->expected_return_type = make_type(TYPE_bool);
@@ -2583,7 +2556,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                     typeify_tree(&node->children[i], var_map);
                 }
             } 
-        })
+        }
     }
 }
 
@@ -2689,22 +2662,22 @@ void _fold(ASTNode *node) {
     }
 
     switch (node->token.type) {
-        case OP_ADD:
+        case (OP_ADD)
             BINOP_LOGIC(+)
             break;
-        case OP_SUB:
+        case (OP_SUB)
             BINOP_LOGIC(-)
             break;
-        case OP_DIV:
+        case (OP_DIV)
             BINOP_LOGIC(/)
             break;
-        case OP_MUL:
+        case (OP_MUL)
             BINOP_LOGIC(*)
             break;
-        case OP_MOD:
+        case (OP_MOD)
             BINOP_MOD_LOGIC()
             break;
-        case OP_UNARY_MINUS:
+        case (OP_UNARY_MINUS)
             if (node->expected_return_type->kind == TYPE_int) {
                 node->token.type = INTEGER;
                 node->token.int_val = node->children[0].token.int_val;
@@ -2856,19 +2829,19 @@ Inst create_inst(InstType type, Val arg1, Val arg2) {
 void print_val(Val val) {
     printf("(%s, ", type_kind_names[val.type]);
     switch (val.type) {
-        case TYPE_int:
+        case (TYPE_int)
             printf("%d", val.i_val);
             break;
-        case TYPE_float:
+        case (TYPE_float)
             printf("%.2f", val.f_val);
             break;
-        case TYPE_bool:
+        case (TYPE_bool)
             printf("%s", val.b_val ? "true" : "false");
             break;
-        case TYPE_string:
+        case (TYPE_string)
             printf("\"%s\"", val.s_val);
             break;
-        case TYPE_struct:
+        case (TYPE_struct)
             if (!val.any_val) printf("null");
             else printf("%p", val.any_val);
             break;
@@ -2883,35 +2856,35 @@ void print_instruction(Inst inst) {
     printf("[%s", inst_names[inst.type]);
     
     switch (inst.type) {
-        case I_PUSH:
+        case (I_PUSH)
             printf(", ");
             print_val(inst.arg2);
             break;
-        case I_CALL:
-        case I_JUMP:
-        case I_JUMP_IF:
-        case I_JUMP_NOT:
+        case (I_CALL)
+        case (I_JUMP)
+        case (I_JUMP_IF)
+        case (I_JUMP_NOT)
             printf(", #%d", inst.arg1.i_val);
             break;
-        case I_STACK_PTR_ADD:
+        case (I_STACK_PTR_ADD)
             printf(", %d", inst.arg1.i_val);
             break;
-        case I_STACK_STORE:
-        case I_READ:
+        case (I_STACK_STORE)
+        case (I_READ)
             printf(", sz: %d, pos: fp + %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
-        case I_STACK_STORE_GLOBAL:
-        case I_READ_GLOBAL:
+        case (I_STACK_STORE_GLOBAL)
+        case (I_READ_GLOBAL)
             printf(", sz: %d, pos: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
-        case I_READ_ATTR:
+        case (I_READ_ATTR)
             printf(", sz: %d, offset: %d", inst.arg1.i_val, inst.arg2.i_val);
             break;
-        case I_GET_ATTR_ADDR:
+        case (I_GET_ATTR_ADDR)
             printf(", offset: %d", inst.arg1.i_val);
             break;
-        case I_ALLOC:
-        case I_HEAP_STORE:
+        case (I_ALLOC)
+        case (I_HEAP_STORE)
             printf(", sz: %d", inst.arg1.i_val);
             break;
         default:
@@ -3274,21 +3247,20 @@ void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedLi
 
 InstType get_print_inst_for_type(Type *type) {
     match (type->kind) {
-        case (TYPE_int) then (
+        case (TYPE_int) 
             return I_PRINT_INT;
-        )
-        case (TYPE_float) then (
+        
+        case (TYPE_float) 
             return I_PRINT_FLOAT;
-        )
-        case (TYPE_bool) then (
+        
+        case (TYPE_bool) 
             return I_PRINT_BOOL;
-        )
-        case (TYPE_string) then (
+        
+        case (TYPE_string) 
             return I_PRINT_STR;
-        )
-        default (
+        
+        default ()
             return I_INVALID;
-        )
     }
 }
 
@@ -3437,13 +3409,9 @@ bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHea
             }
         } else {
             match (child->token.type) {
-                case (DECL_ASSIGN_STMT, DECL_STMT) then ( ;
+                case (DECL_ASSIGN_STMT, DECL_STMT);
                     String name = child->children[1].token.text;
                     array_append(arr, get_varheader_from_map_list(var_map_list, name, NULL));
-                )
-                default (
-
-                )
             }
         }
     }
@@ -3853,55 +3821,54 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
     bool handled = true;
 
     match (ast->token.type) {
-        case (DECL_ASSIGN_STMT, DECL_STMT) then (
+        case (DECL_ASSIGN_STMT, DECL_STMT) 
             generate_instructions_for_vardecl(ast, instructions, var_map_list);
-        )
-        case (ASSIGN_STMT) then (
+        
+        case (ASSIGN_STMT) 
             generate_instructions_for_assign(ast, instructions, var_map_list);
-        )
-        case (PRINT_STMT, WRITE_STMT) then (
+        
+        case (PRINT_STMT, WRITE_STMT) 
             generate_instructions_for_print(ast, instructions, var_map_list);
-        )
-        case (IF_STMT, IF_ELSE_STMT) then (
+        
+        case (IF_STMT, IF_ELSE_STMT) 
             generate_instructions_for_if(ast, instructions, var_map_list);
-        )
-        case (WHILE_STMT) then (
+        
+        case (WHILE_STMT) 
             generate_instructions_for_while(ast, instructions, var_map_list);
-        )
-        case (INPUT_STMT) then (
+        
+        case (INPUT_STMT) 
             generate_instructions_for_input(ast, instructions, var_map_list);
-        )
-        case (FUNC_DECL_STMT) then (
+        
+        case (FUNC_DECL_STMT) 
             generate_instructions_for_func_decl(ast, instructions, var_map_list);
-        )
-        case (FUNC_CALL) then (
+        
+        case (FUNC_CALL) 
             generate_instructions_for_func_call(ast, instructions, var_map_list);
-        )
-        case (OP_UNARY_MINUS) then (
+        
+        case (OP_UNARY_MINUS) 
             generate_instructions_for_unary_minus(ast, instructions, var_map_list);
-        )
-        case (STRUCT_DECL_STMT) then (
+        
+        case (STRUCT_DECL_STMT) 
             generate_instructions_for_struct_decl(ast, var_map_list);
-        )
-        case (ATTR_ACCESS) then (
+        
+        case (ATTR_ACCESS) 
             generate_instructions_for_attr_access(ast, instructions, var_map_list);
-        )
-        case (OP_NEW) then (
+        
+        case (OP_NEW) 
             generate_instructions_for_new(ast, instructions, var_map_list);
-        )
-        case (DELETE_STMT) then (
+        
+        case (DELETE_STMT) 
             generate_instructions_for_delete(ast, instructions, var_map_list);
-        )
-        case (RETURN_STMT) then (
+        
+        case (RETURN_STMT) 
             generate_instructions_for_return_stmt(ast, instructions, var_map_list);
-        )
-        default (
+        
+        default ()
             if (in_range(ast->token.type, BINOPS_START, BINOPS_END)) {
                 generate_instructions_for_binop(ast, instructions, var_map_list);
             } else {
                 handled = false;
             }
-        )
     }
 
     if (handled) return;
@@ -3910,18 +3877,13 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
 
     // pre children operators
     match (ast->token.type) {
-        case (STMT_SEQ) then ( ;
+        case (STMT_SEQ)  ;
             int size = calc_stack_space_for_scope(ast);
             array_append(*instructions, create_inst(I_STACK_PTR_ADD, (Val){.type = TYPE_int, .i_val = size}, null(Val)));
-        )
-        case (BLOCK) then (
-            temp_stack_ptr = gi_stack_pos;
-            LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));
-        )
         
-        default (
-
-        )
+        case (BLOCK) 
+            temp_stack_ptr = gi_stack_pos;
+            LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));    
     }
         
     for (int i = 0; i < array_length(ast->children); i++) {
@@ -3931,88 +3893,88 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
 
     // post children operators
     match (ast->token.type) {
-        case (INTEGER) then (
+        case (INTEGER) 
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 4}, 
                                                     (Val){.type = TYPE_int, .i_val = ast->token.int_val}));
-        )
-        case (FLOAT) then (
+        
+        case (FLOAT) 
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 8}, 
                                                     (Val){.type = TYPE_float, .f_val = ast->token.double_val}));
-        )
-        case (BOOL) then (
+        
+        case (BOOL) 
             if (ast->token.int_val == MAYBE) {
                 array_append(*instructions, create_inst(I_PUSH_MAYBE, null(Val), null(Val)));
             } else {
                 array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 1}, 
                                                         (Val){.type = TYPE_bool, .b_val = ast->token.int_val}));
             }
-        )
-        case (NULL_REF) then (
+        
+        case (NULL_REF) 
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 8}, 
                                                     (Val){.type = TYPE_struct, .any_val = NULL}));
-        )
-        case (STRING_LITERAL) then (
+        
+        case (STRING_LITERAL) 
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 8}, 
                                                     (Val){.type = TYPE_string, .s_val = ast->token.text.data}));
-        )
-        case (OP_ADD) then (
+        
+        case (OP_ADD) 
             array_append(*instructions, create_inst(I_ADD, null(Val), null(Val)));
-        )
-        case (OP_SUB) then (
+        
+        case (OP_SUB) 
             array_append(*instructions, create_inst(I_SUB, null(Val), null(Val)));
-        )
-        case (OP_MUL) then (
+        
+        case (OP_MUL) 
             array_append(*instructions, create_inst(I_MUL, null(Val), null(Val)));
-        )
-        case (OP_DIV) then (
+        
+        case (OP_DIV) 
             array_append(*instructions, create_inst(I_DIV, null(Val), null(Val)));
-        )
-        case (OP_MOD) then (
+        
+        case (OP_MOD) 
             array_append(*instructions, create_inst(I_MOD, null(Val), null(Val)));
-        )
-        case (OP_GREATER) then (
+        
+        case (OP_GREATER) 
             array_append(*instructions, create_inst(I_GREATER, null(Val), null(Val)));
-        )
-        case (OP_GREATEREQ) then (
+        
+        case (OP_GREATEREQ) 
             array_append(*instructions, create_inst(I_GREATER_EQUAL, null(Val), null(Val)));
-        )
-        case (OP_LESS) then (
+        
+        case (OP_LESS) 
             array_append(*instructions, create_inst(I_LESS, null(Val), null(Val)));
-        )
-        case (OP_LESSEQ) then (
+        
+        case (OP_LESSEQ) 
             array_append(*instructions, create_inst(I_LESS_EQUAL, null(Val), null(Val)));
-        )
-        case (OP_EQ) then (
+        
+        case (OP_EQ) 
             array_append(*instructions, create_inst(I_EQUAL, null(Val), null(Val)));
-        )
-        case (OP_NOTEQ) then (
+        
+        case (OP_NOTEQ) 
             array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val), null(Val)));
-        )
-        case (OP_NOT) then (
+        
+        case (OP_NOT) 
             array_append(*instructions, create_inst(I_NOT, null(Val), null(Val)));
-        )
-        case (NAME) then ( ;
+        
+        case (NAME)  ;
             bool isglobal;
             VarHeader *vh = get_varheader_from_map_list(var_map_list, ast->token.text, &isglobal);
             array_append(*instructions, create_inst(isglobal ? I_READ_GLOBAL : I_READ,
                 (Val){.i_val = get_vartype_size(vh->var_type), .type = TYPE_int},
                 (Val){.i_val = vh->var_pos, .type = TYPE_int}));
-        )
-        case (BLOCK) then (
+        
+        case (BLOCK) 
 
             generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, false);
 
             HashMap_free(var_map_list->head->val);
             LL_pop_head(var_map_list);
             gi_stack_pos = temp_stack_ptr;
-        )
-        case (STMT_SEQ) then (
+        
+        case (STMT_SEQ) 
             generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, true);
-        )
-        default (
+        
+        default ()
             print_err("Unhandled case!");
             print_token(ast->token, 0);
-        )
+        
     }
 }
 
@@ -4107,412 +4069,59 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 #define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
 #define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr * 8); val;})
 
-#define execute_instruction() switch (inst.type) { \
-    case I_PUSH: \
-        append(&inst.arg2.any_val, inst.arg1.i_val); \
-        break; \
-    case I_PUSH_MAYBE:; \
-        bool m = rand() % 2; \
-        append(&m, 1); \
-        break; \
-    case I_READ: { \
-        append(var_stack + frame_ptr + inst.arg2.i_val, inst.arg1.i_val); \
-        break; \
-    } \
-    case I_READ_GLOBAL: { \
-        append(var_stack + inst.arg2.i_val, inst.arg1.i_val); \
-        break; \
-    } \
-    case I_PRINT_INT: { \
-        int num = pop(int); \
-        printf("%d", num); \
-        break; \
-    } \
-    case I_PRINT_STR: { \
-        char *str = pop(char *); \
-        printf("%s", str); \
-        break; \
-    } \
-    case I_PRINT_FLOAT: { \
-        double num = pop(double); \
-        print_double(num); \
-        break; \
-    } \
-    case I_PRINT_BOOL: { \
-        bool b = pop(bool); \
-        printf("%s", b ? "true" : "false"); \
-        break; \
-    } \
-    case I_PRINT_NEWLINE: { \
-        printf("\n"); \
-        break; \
-    } \
-    case I_ADD: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) += num; \
-        break; \
-    } \
-    case I_SUB: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) -= num; \
-        break; \
-    } \
-    case I_MUL: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) *= num; \
-        break; \
-    } \
-    case I_DIV: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) /= num; \
-        break; \
-    } \
-    case I_MOD: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) %= num; \
-        break; \
-    } \
-    case I_ADD_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) += num; \
-        break; \
-    } \
-    case I_SUB_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) -= num; \
-        break; \
-    } \
-    case I_MUL_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) *= num; \
-        break; \
-    } \
-    case I_DIV_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) /= num; \
-        break; \
-    } \
-    case I_MOD_FLOAT: { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = fmod(*top, num); \
-        break; \
-    } \
-    case I_CONVERT_BOOL_FLOAT: { \
-        double num = pop(bool) ? 1.0 : 0.0; \
-        append(&num, 8); \
-        break; \
-    } \
-    case I_CONVERT_BOOL_INT: { \
-        int num = pop(bool) ? 1 : 0; \
-        append(&num, 4); \
-        break; \
-    } \
-    case I_CONVERT_BOOL_STR: { \
-        StringRef string = pop(bool) == 0 ? StringRef("false") : StringRef("true");  \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        append(&str, 8); \
-        break; \
-    } \
-    case I_CONVERT_FLOAT_BOOL: { \
-        bool b = pop(double) > 0 ? true : false; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_CONVERT_FLOAT_INT: { \
-        int num = pop(double); \
-        append(&num, 4); \
-        break; \
-    } \
-    case I_CONVERT_FLOAT_STR: { \
-        String string = String_from_double(pop(double), 2); \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        String_delete(&string); \
-        append(&str, 8); \
-        break; \
-    } \
-    case I_CONVERT_INT_BOOL: { \
-        bool b = pop(int) ? true : false; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_CONVERT_INT_FLOAT: { \
-        double num = pop(int); \
-        append(&num, 8); \
-        break; \
-    } \
-    case I_CONVERT_INT_STR: { \
-        String string = String_from_int(pop(int)); \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        String_delete(&string); \
-        append(&str, 8); \
-        break; \
-    } \
-    case I_CONVERT_STR_FLOAT: { \
-        char *str = pop(char *); \
-        double res = String_to_double(StringRef(str)); \
-        append(&res, 8); \
-        break; \
-    } \
-    case I_CONVERT_STR_BOOL: { \
-        char *str = pop(char *); \
-        bool b = String_equal(StringRef(str), StringRef("true")); \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_CONVERT_STR_INT: { \
-        char *str = pop(char *); \
-        int res = String_to_int(StringRef(str)); \
-        append(&res, 4); \
-        break; \
-    } \
-    case I_GREATER: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) > num; \
-        break; \
-    } \
-    case I_GREATER_EQUAL: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) >= num; \
-        break; \
-    } \
-    case I_LESS: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) < num; \
-        break; \
-    } \
-    case I_LESS_EQUAL: { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) <= num; \
-        break; \
-    } \
-    case I_GREATER_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) > num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_GREATER_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) >= num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_LESS_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) < num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_LESS_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) <= num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL: { \
-        int num = pop(int); \
-        bool res = pop(int) == num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) == num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL_BOOL: { \
-        bool b = pop(bool); \
-        bool b2 = pop(bool); \
-        bool res = b2 == b; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_EQUAL_STR: { \
-        char *str = pop(char *); \
-        char *str2 = pop(char *); \
-        bool res = !strcmp(str, str2); \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL: { \
-        int num = pop(int); \
-        bool res = pop(int) != num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL_FLOAT: { \
-        double num = pop(double); \
-        bool res = pop(double) != num; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL_BOOL: { \
-        bool b = pop(bool); \
-        bool res = pop(bool) != b; \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_NOT_EQUAL_STR: { \
-        char *str = pop(char *); \
-        char *str2 = pop(char *); \
-        bool res = !(!strcmp(str, str2)); \
-        append(&res, 1); \
-        break; \
-    } \
-    case I_STACK_STORE: { \
-        my_memcpy(var_stack + frame_ptr + inst.arg2.i_val, temp_stack + --temp_stack_ptr, inst.arg1.i_val); \
-        break; \
-    } \
-    case I_STACK_STORE_GLOBAL: { \
-        my_memcpy(var_stack + inst.arg2.i_val, temp_stack + --temp_stack_ptr, inst.arg1.i_val); \
-        break; \
-    } \
-    case I_JUMP: { \
-        inst_ptr = inst.arg1.i_val - 1; \
-        break; \
-    } \
-    case I_JUMP_IF: { \
-        bool b = pop(bool); \
-        if (b) inst_ptr = inst.arg1.i_val - 1; \
-        break; \
-    } \
-    case I_JUMP_NOT: { \
-        bool b = pop(bool); \
-        if (!b) inst_ptr = inst.arg1.i_val - 1; \
-        break; \
-    } \
-    case I_AND: { \
-        bool b = pop(bool); \
-        b = pop(bool) && b; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_OR: { \
-        bool b = pop(bool); \
-        b = pop(bool) || b; \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_NOT: { \
-        bool b = !pop(bool); \
-        append(&b, 1); \
-        break; \
-    } \
-    case I_INPUT: { \
-        char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE); \
-        fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin); \
-        string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0; \
-        char *str = append_to_text_buffer(string_im_not_gonna_free, strlen(string_im_not_gonna_free)); \
-        free(string_im_not_gonna_free); \
-        append(&str, 4); \
-        break; \
-    } \
-    case I_CALL: { \
-        Inst inst = instructions[inst_ptr]; \
-        int val = inst_ptr + 1; \
-        tuck(&frame_ptr, 4); \
-        tuck(&stack_ptr, 4); \
-        tuck(&val, 4); \
-        frame_ptr += stack_ptr; \
-        stack_ptr = 0; \
-        inst_ptr = inst.arg1.i_val - 1; \
-        break; \
-    } \
-    case I_RETURN: { \
-        int ret_addr = pop_bottom(int); \
-        inst_ptr = ret_addr - 1; \
-        stack_ptr = pop_bottom(int); \
-        frame_ptr = pop_bottom(int); \
-        break; \
-    } \
-    case I_STACK_PTR_ADD: { \
-        stack_ptr += instructions[inst_ptr].arg1.i_val; \
-        break; \
-    } \
-    case I_LABEL: \
-    break; \
-    default: { \
-        print_err("Too stupid. cant.\n"); \
-        printf("instruction: %s \n", inst_names[inst.type]); \
-        break; \
-    } \
-}
-
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
-    case (I_POP_BOTTOM) then ({ \
+    case (I_POP_BOTTOM) { \
         u64 obj = pop_bottom(u64); \
         append(&obj, 8); \
-    }) \
-    case (I_TUCK) then ({ \
+    } \
+    case (I_TUCK) { \
         u64 obj = pop(u64); \
         tuck(&obj, 8); \
-    }) \
-    case (I_INIT_OBJ_HEADER) then ({; \
+    } \
+    case (I_INIT_OBJ_HEADER) {; \
         void *obj = pop(void *); \
         u8 struct_meta_idx = byte_arr[++inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         object_init_header(obj, struct_meta_idx); \
-    }) \
-    case(I_INC_REFCOUNT) then ({; \
+    } \
+    case(I_INC_REFCOUNT) {; \
         void *obj = pop(void *); \
         object_inc_ref(obj); \
-    }) \
-    case(I_DEC_REFCOUNT) then ({; \
+    } \
+    case(I_DEC_REFCOUNT) {; \
         void *obj = pop(void *); \
         object_dec_ref(obj); \
-    }) \
-    case (I_NOP) then ( \
-         \
-    ) \
-    case I_PUSH:; \
+    } \
+    case (I_NOP); \
+    case (I_PUSH); \
         int size = *(int *)&byte_arr[++inst_ptr]; \
         append(byte_arr + (inst_ptr += sizeof(int)), size); \
         inst_ptr += size - 1; \
-        break; \
-    case I_PUSH_MAYBE:; \
+	case (I_PUSH_MAYBE); \
         bool m = rand() % 2; \
         temp_stack[temp_stack_ptr++] = m; \
-        break; \
-    case I_DUP: { \
+	case (I_DUP) { \
         dup(); \
-        break; \
     } \
-    case I_READ: { \
+    case (I_READ) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int); \
         int pos = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         append(var_stack + frame_ptr + pos, size); \
-        break; \
     } \
-    case I_READ_GLOBAL: { \
+    case (I_READ_GLOBAL) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int); \
         int pos = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         append(var_stack + pos, size); \
-        break; \
     } \
-    case I_READ_ATTR: { \
+    case (I_READ_ATTR) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int); \
@@ -4521,9 +4130,8 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         char *addr = pop(char *); \
         if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr); \
         append(addr + offset, size); \
-        break; \
     } \
-    case I_GET_ATTR_ADDR: { \
+    case (I_GET_ATTR_ADDR) { \
         inst_ptr += 1; \
         int offset = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
@@ -4531,67 +4139,58 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr); \
         addr += offset; \
         append(&addr, sizeof(char *)); \
-        break; \
     } \
-    case I_STACK_STORE: { \
+    case (I_STACK_STORE) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int); \
         int pos = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         my_memcpy(var_stack + frame_ptr + pos, temp_stack + --temp_stack_ptr, size); \
-        break; \
     } \
-    case I_STACK_STORE_GLOBAL: { \
+    case (I_STACK_STORE_GLOBAL) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int); \
         int pos = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         my_memcpy(var_stack + pos, temp_stack + --temp_stack_ptr, size); \
-        break; \
     } \
-    case I_HEAP_STORE: { \
+    case (I_HEAP_STORE) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         u64 value = pop(u64); \
         char *addr = pop(char *); \
         memcpy(addr, &value, size); \
-        break; \
     } \
-    case I_ALLOC: { \
+    case (I_ALLOC) { \
         inst_ptr += 1; \
         int size = *(int *)&byte_arr[inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         void *addr = alloc_object(size); \
         append(&addr, sizeof(addr)); \
-        break; \
     } \
-    case I_FREE: { \
+    case (I_FREE) { \
         print_err("Bro tried to delete manually"); \
-        break; \
     } \
-    case I_JUMP: { \
+    case (I_JUMP) { \
         int pos = *(int *)&byte_arr[++inst_ptr]; \
         inst_ptr = pos - 1; \
-        break; \
     } \
-    case I_JUMP_IF: { \
+    case (I_JUMP_IF) { \
         bool b = pop(bool); \
         int pos = *(int *)&byte_arr[++inst_ptr]; \
         if (b) inst_ptr = pos - 1; \
         else inst_ptr += sizeof(int) - 1; \
-        break; \
     } \
-    case I_JUMP_NOT: { \
+    case (I_JUMP_NOT) { \
         bool b = pop(bool); \
         int pos = *(int *)&byte_arr[++inst_ptr]; \
         if (!b) inst_ptr = pos - 1; \
         else inst_ptr += sizeof(int) - 1; \
-        break; \
     } \
-    case I_CALL: { \
+    case (I_CALL) { \
         int callpos = *(int *)&byte_arr[++inst_ptr]; \
         inst_ptr += sizeof(int) - 1; \
         int val = inst_ptr + 1; \
@@ -4601,319 +4200,265 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
         frame_ptr += stack_ptr; \
         stack_ptr = 0; \
         inst_ptr = callpos - 1; \
-        break; \
     } \
-    case I_RETURN: { \
+    case (I_RETURN) { \
         int ret_addr = pop_bottom(int); \
         inst_ptr = ret_addr - 1; \
         stack_ptr = pop_bottom(int); \
         frame_ptr = pop_bottom(int); \
-        break; \
     } \
-    case I_STACK_PTR_ADD: { \
+    case (I_STACK_PTR_ADD) { \
         inst_ptr += 1; \
         int size = *(int *)(byte_arr + inst_ptr);\
         inst_ptr += sizeof(int) - 1; \
         stack_ptr += size; \
-        break; \
     } \
-    case I_PRINT_INT: { \
+    case (I_PRINT_INT) { \
         int num = pop(int); \
         printf("%d", num); \
-        break; \
     } \
-    case I_PRINT_STR: { \
+    case (I_PRINT_STR) { \
         char *str = pop(char *); \
         printf("%s", str); \
-        break; \
     } \
-    case I_PRINT_FLOAT: { \
+    case (I_PRINT_FLOAT) { \
         double num = pop(double); \
         print_double(num); \
-        break; \
     } \
-    case I_PRINT_BOOL: { \
+    case (I_PRINT_BOOL) { \
         bool b = pop(bool); \
         printf("%s", b ? "true" : "false"); \
-        break; \
     } \
-    case I_PRINT_NEWLINE: { \
+    case (I_PRINT_NEWLINE) { \
         printf("\n"); \
-        break; \
     } \
-    case I_ADD: { \
+    case (I_ADD) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) += num; \
-        break; \
     } \
-    case I_SUB: { \
+    case (I_SUB) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) -= num; \
-        break; \
     } \
-    case I_MUL: { \
+    case (I_MUL) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) *= num; \
-        break; \
     } \
-    case I_DIV: { \
+    case (I_DIV) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) /= num; \
-        break; \
     } \
-    case I_MOD: { \
+    case (I_MOD) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) %= num; \
-        break; \
     } \
-    case I_ADD_FLOAT: { \
+    case (I_ADD_FLOAT) { \
         double num = pop(double); \
         double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
         (*top) += num; \
-        break; \
     } \
-    case I_SUB_FLOAT: { \
+    case (I_SUB_FLOAT) { \
         double num = pop(double); \
         double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
         (*top) -= num; \
-        break; \
     } \
-    case I_MUL_FLOAT: { \
+    case (I_MUL_FLOAT) { \
         double num = pop(double); \
         double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
         (*top) *= num; \
-        break; \
     } \
-    case I_DIV_FLOAT: { \
+    case (I_DIV_FLOAT) { \
         double num = pop(double); \
         double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
         (*top) /= num; \
-        break; \
     } \
-    case I_MOD_FLOAT: { \
+    case (I_MOD_FLOAT) { \
         double num = pop(double); \
         double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
         (*top) = fmod(*top, num); \
-        break; \
     } \
-    case I_CONVERT_BOOL_FLOAT: { \
+    case (I_CONVERT_BOOL_FLOAT) { \
         double num = pop(bool) ? 1.0 : 0.0; \
         append(&num, 8); \
-        break; \
     } \
-    case I_CONVERT_BOOL_INT: { \
+    case (I_CONVERT_BOOL_INT) { \
         int num = pop(bool) ? 1 : 0; \
         append(&num, 4); \
-        break; \
     } \
-    case I_CONVERT_BOOL_STR: { \
+    case (I_CONVERT_BOOL_STR) { \
         StringRef string = pop(bool) == 0 ? StringRef("false") : StringRef("true");  \
         char *str = append_to_text_buffer(string.data, string.len); \
         append(&str, 8); \
-        break; \
     } \
-    case I_CONVERT_FLOAT_BOOL: { \
+    case (I_CONVERT_FLOAT_BOOL) { \
         bool b = pop(double) > 0 ? true : false; \
         append(&b, 1); \
-        break; \
     } \
-    case I_CONVERT_FLOAT_INT: { \
+    case (I_CONVERT_FLOAT_INT) { \
         int num = pop(double); \
         append(&num, 4); \
-        break; \
     } \
-    case I_CONVERT_FLOAT_STR: { \
+    case (I_CONVERT_FLOAT_STR) { \
         String string = String_from_double(pop(double), 2); \
         char *str = append_to_text_buffer(string.data, string.len); \
         String_delete(&string); \
         append(&str, 8); \
-        break; \
     } \
-    case I_CONVERT_INT_BOOL: { \
+    case (I_CONVERT_INT_BOOL) { \
         bool b = pop(int) ? true : false; \
         append(&b, 1); \
-        break; \
     } \
-    case I_CONVERT_INT_FLOAT: { \
+    case (I_CONVERT_INT_FLOAT) { \
         double num = pop(int); \
         append(&num, 8); \
-        break; \
     } \
-    case I_CONVERT_INT_STR: { \
+    case (I_CONVERT_INT_STR) { \
         String string = String_from_int(pop(int)); \
         char *str = append_to_text_buffer(string.data, string.len); \
         String_delete(&string); \
         append(&str, 8); \
-        break; \
     } \
-    case I_CONVERT_STR_FLOAT: { \
+    case (I_CONVERT_STR_FLOAT) { \
         char *str = pop(char *); \
         double res = String_to_double(StringRef(str)); \
         append(&res, 8); \
-        break; \
     } \
-    case I_CONVERT_STR_BOOL: { \
+    case (I_CONVERT_STR_BOOL) { \
         char *str = pop(char *); \
         bool b = String_equal(StringRef(str), StringRef("true")); \
         append(&b, 1); \
-        break; \
     } \
-    case I_CONVERT_STR_INT: { \
+    case (I_CONVERT_STR_INT) { \
         char *str = pop(char *); \
         int res = String_to_int(StringRef(str)); \
         append(&res, 4); \
-        break; \
     } \
-    case I_GREATER: { \
+    case (I_GREATER) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) = (*top) > num; \
-        break; \
     } \
-    case I_GREATER_EQUAL: { \
+    case (I_GREATER_EQUAL) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) = (*top) >= num; \
-        break; \
     } \
-    case I_LESS: { \
+    case (I_LESS) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) = (*top) < num; \
-        break; \
     } \
-    case I_LESS_EQUAL: { \
+    case (I_LESS_EQUAL) { \
         int num = pop(int); \
         int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
         (*top) = (*top) <= num; \
-        break; \
     } \
-    case I_GREATER_FLOAT: { \
+    case (I_GREATER_FLOAT) { \
         double num = pop(double); \
         bool res = pop(double) > num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_GREATER_EQUAL_FLOAT: { \
+    case (I_GREATER_EQUAL_FLOAT) { \
         double num = pop(double); \
         bool res = pop(double) >= num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_LESS_FLOAT: { \
+    case (I_LESS_FLOAT) { \
         double num = pop(double); \
         bool res = pop(double) < num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_LESS_EQUAL_FLOAT: { \
+    case (I_LESS_EQUAL_FLOAT) { \
         double num = pop(double); \
         bool res = pop(double) <= num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_EQUAL: { \
+    case (I_EQUAL) { \
         int num = pop(int); \
         bool res = pop(int) == num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_EQUAL_FLOAT: { \
+    case (I_EQUAL_FLOAT) { \
         double num = pop(double); \
         bool res = pop(double) == num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_EQUAL_BOOL: { \
+    case (I_EQUAL_BOOL) { \
         bool b = pop(bool); \
         bool b2 = pop(bool); \
         bool res = b2 == b; \
         append(&res, 1); \
-        break; \
     } \
-    case I_EQUAL_STR: { \
+    case (I_EQUAL_STR) { \
         char *str = pop(char *); \
         char *str2 = pop(char *); \
         bool res = !strcmp(str, str2); \
         append(&res, 1); \
-        break; \
     } \
-    case I_EQUAL_REF: { \
+    case (I_EQUAL_REF) { \
         char *p1 = pop(char *); \
         char *p2 = pop(char *); \
         bool res = p1 == p2; \
         append(&res, 1); \
-        break; \
     } \
-    case I_NOT_EQUAL: { \
+    case (I_NOT_EQUAL) { \
         int num = pop(int); \
         bool res = pop(int) != num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_NOT_EQUAL_FLOAT: { \
+    case (I_NOT_EQUAL_FLOAT) { \
         double num = pop(double); \
         bool res = pop(double) != num; \
         append(&res, 1); \
-        break; \
     } \
-    case I_NOT_EQUAL_BOOL: { \
+    case (I_NOT_EQUAL_BOOL) { \
         bool b = pop(bool); \
         bool res = pop(bool) != b; \
         append(&res, 1); \
-        break; \
     } \
-    case I_NOT_EQUAL_STR: { \
+    case (I_NOT_EQUAL_STR) { \
         char *str = pop(char *); \
         char *str2 = pop(char *); \
         bool res = !(!strcmp(str, str2)); \
         append(&res, 1); \
-        break; \
     } \
-    case I_NOT_EQUAL_REF: { \
+    case (I_NOT_EQUAL_REF) { \
         char *p1 = pop(char *); \
         char *p2 = pop(char *); \
         bool res = p1 != p2; \
         append(&res, 1); \
-        break; \
     } \
-    case I_AND: { \
+    case (I_AND) { \
         bool b = pop(bool); \
         b = pop(bool) && b; \
         append(&b, 1); \
-        break; \
     } \
-    case I_OR: { \
+    case (I_OR) { \
         bool b = pop(bool); \
         b = pop(bool) || b; \
         append(&b, 1); \
-        break; \
     } \
-    case I_NOT: { \
+    case (I_NOT) { \
         bool b = !pop(bool); \
         append(&b, 1); \
-        break; \
     } \
-    case I_INPUT: { \
+    case (I_INPUT) { \
         char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE); \
         fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin); \
         string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0; \
         char *str = append_to_text_buffer(string_im_not_gonna_free, strlen(string_im_not_gonna_free)); \
         free(string_im_not_gonna_free); \
         append(&str, 4); \
-        break; \
     } \
-    case I_LABEL: \
-        break; \
-    default: { \
+    case (I_LABEL); \
+    default () { \
         print_err("Too stupid. cant.\n"); \
         printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]); \
-        break; \
     } \
 }
 
@@ -5052,33 +4597,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     array_free(byte_arr);
 }
 
-void run_instructions(Inst *instructions, double *time) {
-    
-    memset(temp_stack, 0, STACK_SIZE);
-    temp_stack_ptr = 0;
-    memset(var_stack, 0, STACK_SIZE);
-    memset(text_buffer, 0, TEXT_BUF_SIZE);
-    text_buffer_ptr = 0;
-    stack_ptr = 0;
-    frame_ptr = 0;
-
-    preprocess_string_literals(instructions);
-
-    int len = array_length(instructions);
-    
-    double start = get_current_process_time_seconds();
-
-    for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
-        Inst inst = instructions[inst_ptr];
-        // printf("inst %d \n", inst_ptr);
-        execute_instruction();
-    }
-
-    double end = get_current_process_time_seconds();
-
-    if (time != NULL) *time = end - start;
-}
-
 void print_text_buffer() {
     printf("text buffer: [");
     for (int i = 0; i < TEXT_BUF_SIZE; i++) {
@@ -5157,15 +4675,15 @@ void run_benchmark(Inst *instructions) {
 //         printf("; %s\n", inst_names[inst.type]);
 //         write("; %s\n", inst_names[inst.type]);
 //         switch (inst.type) {
-//             case I_STACK_PTR_ADD:
+//             case (I_STACK_PTR_ADD)
 //                 write("\tadd rsp, %d \n", inst.arg1.i_val);
 //                 break;
-//             case I_PUSH:
+//             case (I_PUSH)
 //                 if (inst.arg1.type == TYPE_int) {
 //                     write("\tpush %d \n", inst.arg1.i_val);
 //                 }
 //                 break;
-//             case I_ADD:
+//             case (I_ADD)
 //                 write("\tpop rax \n\tpop rbx \n\tadd rax, rbx \n\tpush rax \n");
 //                 break;
 //             default:
@@ -5318,25 +4836,25 @@ void print_token(Token token, int level) {
 
     printf("[%s", token_type_names[token.type]);
     switch (token.type) {
-        case INTEGER:
+        case (INTEGER)
             printf(", %d", token.int_val);
             break;
-        case FLOAT:
+        case (FLOAT)
             printf(", %.2f", token.double_val);
             break;
-        case BOOL:
+        case (BOOL)
             printf(", %s", token.int_val == 1 ? "true" : ((char)token.int_val == MAYBE ? "maybe" : "false"));
             break;
-        case STRING_LITERAL:
+        case (STRING_LITERAL)
             printf(", \"%s\"", token.text.data);
             break;
-        case NAME:
+        case (NAME)
             printf(", %s", token.text.data);
             break;
-        case KEYWORD:
+        case (KEYWORD)
             printf(", %s", token.text.data);
             break;
-        case TYPE:
+        case (TYPE)
             printf(", ");
             print_type(token.var_type);
             break;
@@ -5453,12 +4971,11 @@ int main() {
         int result = handle_text_interface(buf, CODE_MAX_LEN, &benchmark);
 
         match (result) {
-            case (RESULT_COULDNT_OPEN_FILE) then (
+            case (RESULT_COULDNT_OPEN_FILE) 
                 print_err("Couldn't open file! errno: %d", errno);
-            )
-            case (RESULT_INVALID_COMMAND) then (
+            
+            case (RESULT_INVALID_COMMAND) 
                 print_err("Invalid command! use 'file' to open a file and 'code' to enter raw code.");
-            )
         }
         if (result != RESULT_OK) continue;
 
