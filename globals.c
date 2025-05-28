@@ -103,6 +103,9 @@ char *KEYWORDS[] = {
     X(ARRAY) \
     X(LBRACKET) \
     X(RBRACKET) \
+    X(ARRAY_LITERAL) \
+    X(ARRAY_INITIALIZER) \
+    X(DIMENSION_SEQ) \
     X(TOKEN_TYPE_COUNT) 
 
 //              term i made up VVV

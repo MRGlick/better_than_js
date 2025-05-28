@@ -8,9 +8,9 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_RUN_CODE
+#define COMPILATION_STAGE STAGE_PARSER
 
-#define PREPROCESS_AST 1
+#define PREPROCESS_AST 0
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 1
@@ -428,9 +428,7 @@ ASTNode ASTNode_create(Token tk, bool complete) {
     return node;
 }
 
-void ASTNode_add_child(ASTNode parent, ASTNode child) {
-    array_append(parent.children, child);
-}
+#define ASTNode_add_child(parent, child) array_append(parent.children, child);
 
 ASTNode ASTNode_copy(ASTNode *ast) {
     ASTNode copy = *ast;
@@ -459,8 +457,6 @@ int _free_ast(ASTNode ast) {
         print_err("Tried to free an AST with null children!");
         return -1;
     }
-
-    print_token(ast.token, 0);
 
     for (int i = 0; i < array_length(ast.children); i++) {
         free_ast(ast.children[i]);
@@ -709,6 +705,10 @@ ParseResult parse_delete_stmt(int idx);
 
 ParseResult parse_for_stmt(int idx);
 
+ParseResult parse_array_literal(int idx);
+
+ParseResult parse_array_initializer(int idx);
+
 void print_ast(ASTNode node, int level);
 
 
@@ -735,6 +735,8 @@ ParseResult parse_base_rule(int idx) {
     START_PARSE {
         MATCH_RETURN_IF_PARSED(parse_value(idx));
         MATCH_RETURN_IF_PARSED(parse_new_rule(idx));
+        MATCH_RETURN_IF_PARSED(parse_array_literal(idx));
+        MATCH_RETURN_IF_PARSED(parse_array_initializer(idx));
         MATCH_TOKEN_WITH_TYPE(LPAREN);
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
         MATCH_TOKEN_WITH_TYPE(RPAREN);
@@ -1326,8 +1328,6 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
 
             ASTNode_add_child(leaf, ASTNode_create((Token){.type = TYPE, .var_type = move(base_type)}, true));
 
-            print_ast(postfix_seq_res.node, 0);
-
             t = make_type_from_tree(&postfix_seq_res.node);
 
             free_ast(postfix_seq_res.node);
@@ -1913,6 +1913,62 @@ ParseResult parse_for_stmt(int idx) {
     }
 }
 
+ParseResult parse_array_literal(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LBRACKET);
+        MATCH_PARSE(val_seq_res, parse_val_seq(idx), "sequence of expressions");
+        MATCH_TOKEN_WITH_TYPE(RBRACKET);
+        
+        val_seq_res.node.token.type = ARRAY_LITERAL;
+
+
+        FINISH_PARSE(val_seq_res.node);
+    }
+}
+
+ParseResult parse_dimension_seq(int idx) {
+    START_PARSE {
+        MATCH_PARSE(expr_res, parse_expr(idx), "expression in dimension sequence");
+        
+        ASTNode node = ASTNode_create((Token){.type = DIMENSION_SEQ}, true);
+
+        ASTNode_add_child(node, expr_res.node);
+
+        while (true) {
+
+            if (get_token(idx).type != STMT_END) break;
+
+            MATCH_TOKEN_WITH_TYPE(STMT_END);
+
+            TRY_MATCH_PARSE(res, parse_expr(idx));
+
+            if (!res.success) break;
+
+            ASTNode_add_child(node, res.node);
+        }
+
+        FINISH_PARSE(node);
+
+    }
+}
+
+
+ParseResult parse_array_initializer(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LBRACKET);
+        MATCH_PARSE(type_res, parse_type(idx, NULL), "type");
+        MATCH_TOKEN_WITH_TYPE(STMT_END);
+        MATCH_PARSE(dim_seq_res, parse_dimension_seq(idx), "sequence of dimensions");
+        MATCH_TOKEN_WITH_TYPE(RBRACKET);
+
+        ASTNode node = ASTNode_create((Token){.type = ARRAY_INITIALIZER}, true);
+        ASTNode_add_child(node, type_res.node);
+        ASTNode_add_child(node, dim_seq_res.node);
+
+
+        FINISH_PARSE(node);
+    }
+}
 
 // #PARSE END
 
@@ -2532,7 +2588,7 @@ void move_defers_to_end(ASTNode *node) {
     int defer_count = array_length(defers);
     for (int i = 0; i < defer_count; i++) {
         // we dont actually care about the defer, only about it's statement
-        ASTNode_add_child(*node, defers[i].children[0]); 
+        ASTNode_add_child((*node), defers[i].children[0]); 
     }
     
     // guranteed to be the same
