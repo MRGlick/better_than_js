@@ -10,7 +10,7 @@
 
 #define COMPILATION_STAGE STAGE_PARSER
 
-#define PREPROCESS_AST 0
+#define PREPROCESS_AST 1
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 1
@@ -2534,6 +2534,28 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             VarHeader *vh = get_best_overload(overloads, args_ast);
     
             node->expected_return_type = copy_type(vh->func_return_type);
+        })
+
+        case (ARRAY_LITERAL) then ({
+            Type *t = NULL;
+            for (int i = 0; i < array_length(node->children); i++) {
+                typeify_tree(&node->children[i], var_map);
+                if (!t) t = node->children[i].expected_return_type;
+                else if (!types_are_equal(t, node->children[i].expected_return_type))
+                    return_err("Array literals can't contain multiple types!");
+            }
+
+            node->expected_return_type = make_array_type(copy_type(t));
+        })
+        case (ARRAY_INITIALIZER) then ({
+            ASTNode *dims = &node->children[1];
+            for (int i = 0; i < array_length(dims->children); i++) {
+                typeify_tree(&dims->children[i], var_map);
+                if (dims->children[i].expected_return_type->kind != TYPE_int)
+                    return_err("Dimension value must be of type int!");
+            }
+
+            node->expected_return_type = make_array_type(copy_type(node->children[0].token.var_type));
         })
 
         default({
