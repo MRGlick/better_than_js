@@ -1,6 +1,21 @@
 
 
-int[] arr = [1, 2, 3];
+int[] arr = [1, 2, 3, 4, 5];
 
-int[] arr2 = [int; 5];
+for (int i = 0; i < 5; i += 1; ) {
+    print arr[i], ": ", arr[i] * arr[i];
+}
 
+int[][] board = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+];
+
+for (int i = 0; i < 3; i += 1; ) {
+    for (int j = 0; j < 3; j += 1; ) {
+        print board[i][j];
+    }
+}
+
+print "Finished! ";

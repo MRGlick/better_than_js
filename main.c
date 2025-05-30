@@ -8,14 +8,14 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_PARSER
+#define COMPILATION_STAGE STAGE_RUN_CODE
 
 #define PREPROCESS_AST 1
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 1
-#define IR_PRINT 0
+#define PARSER_PRINT 0
+#define IR_PRINT 1
 // #FLAGS END
 
 
@@ -2083,7 +2083,7 @@ STACK_STORE
 */
 
 
-
+#define calculate_array_offset(idx, elem_size) (sizeof(ObjectHeader) + sizeof(int) + idx * elem_size)
 
 
 int get_type_precedence(Type *type) {
@@ -2832,6 +2832,7 @@ X(I_INIT_OBJ_HEADER) \
 X(I_TUCK) \
 X(I_POP_BOTTOM) \
 X(I_NOP) \
+X(I_ARRAY_SUBSCRIPT) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3082,9 +3083,12 @@ static inline bool is_reference(ASTNode *ast) {
 
 static inline bool is_temporary_reference(ASTNode *ast) {
     return ast->token.type == OP_NEW
-        || (ast->token.type == FUNC_CALL 
-            && (ast->expected_return_type->kind == TYPE_struct 
-                || ast->expected_return_type->kind == TYPE_array)
+        || ast->token.type == ARRAY_LITERAL
+        || ast->token.type == ARRAY_INITIALIZER
+        || (ast->token.type == FUNC_CALL && (
+                ast->expected_return_type->kind == TYPE_struct 
+                || ast->expected_return_type->kind == TYPE_array
+                )
             );
 }
 
@@ -3858,6 +3862,56 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
     array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
 }
 
+// ARRAY STRUCTURE
+// RCHeader(4 bytes), length(4 bytes), data(typesize * length bytes)
+
+
+void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    int len = array_length(ast->children);
+    int element_size = get_vartype_size(ast->expected_return_type->array_data.type);
+
+
+
+    int size = calculate_array_offset(len, element_size);
+
+    array_append(*instructions, create_inst(I_ALLOC, (Val){.type = TYPE_int, .i_val = size}, null(Val)));
+    array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+    array_append(*instructions, create_inst(I_INIT_OBJ_HEADER, (Val){.type = TYPE_int, .i_val = 255}, null(Val)));
+
+    for (int i = 0; i < len; i++) {
+
+        int offset = calculate_array_offset(i, element_size);
+
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .i_val = offset}, null(Val)));
+        
+        generate_instructions_for_node(&ast->children[i], instructions, var_map_list);
+
+        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = get_vartype_size(ast->children[i].expected_return_type)}, null(Val)));
+    }
+
+}
+
+void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    Type *subtype = ast->children[0].expected_return_type->array_data.type;
+
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
+
+    array_append(*instructions, create_inst(I_ARRAY_SUBSCRIPT, (Val){.type = TYPE_int, .i_val = get_vartype_size(subtype)}, null(Val)));
+
+}   
+
+void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    print_todo("implement instructions for array subscript addr");
+}
+
+void generate_instructions_for_array_initializer(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    print_todo("implement instructions for array initializer");    
+}
+
 void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     bool handled = true;
@@ -3899,11 +3953,21 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         case (OP_NEW) 
             generate_instructions_for_new(ast, instructions, var_map_list);
         
+        case (ARRAY_LITERAL)
+            generate_instructions_for_array_literal(ast, instructions, var_map_list);
+        
+        case (ARRAY_INITIALIZER)
+            generate_instructions_for_array_initializer(ast, instructions, var_map_list);
+        
+        case (ARRAY_SUBSCRIPT)
+            generate_instructions_for_array_subscript(ast, instructions, var_map_list);
+
         case (DELETE_STMT) 
             generate_instructions_for_delete(ast, instructions, var_map_list);
         
         case (RETURN_STMT) 
             generate_instructions_for_return_stmt(ast, instructions, var_map_list);
+
         
         default ()
             if (in_range(ast->token.type, BINOPS_START, BINOPS_END)) {
@@ -4114,6 +4178,15 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
+    case (I_ARRAY_SUBSCRIPT) { \
+        inst_ptr += 1; \
+        int elem_size = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        int idx = pop(int); \
+        void *addr = pop(char *); \
+        void *final = addr + calculate_array_offset(idx, elem_size); \
+        append(final, sizeof(void *)); \
+    } \
     case (I_POP_BOTTOM) { \
         u64 obj = pop_bottom(u64); \
         append(&obj, 8); \

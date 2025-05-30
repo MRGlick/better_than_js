@@ -12,7 +12,8 @@
     "stdlib.h": "c",
     "inttypes.h": "c",
     "stdbool.h": "c",
-    "globals.h": "c"
+    "globals.h": "c",
+    "match.h": "c"
   },
   "github.copilot.enable": {
     "*": false,
