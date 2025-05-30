@@ -8,14 +8,14 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_RUN_CODE
+#define COMPILATION_STAGE STAGE_PARSER
 
 #define PREPROCESS_AST 1
 
 #define LEXER_PRINT 0
-#define TOKENIZER_PRINT 1
-#define PARSER_PRINT 0
-#define IR_PRINT 1
+#define TOKENIZER_PRINT 0
+#define PARSER_PRINT 1
+#define IR_PRINT 0
 // #FLAGS END
 
 
@@ -1683,11 +1683,26 @@ ParseResult parse_func_call_postfix(int idx) {
     }
 }
 
+ParseResult parse_subscript_postfix(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LBRACKET);
+        MATCH_PARSE(expr_res, parse_expr(idx), "expression in subscript");
+        MATCH_TOKEN_WITH_TYPE(RBRACKET);
+
+        ASTNode node = ASTNode_create((Token){.type = ARRAY_SUBSCRIPT}, false);
+
+        ASTNode_add_child(node, expr_res.node);
+
+        FINISH_PARSE(node);
+    }
+}
+
 ParseResult parse_postfix(int idx) {
 
     START_PARSE {
         MATCH_RETURN_IF_PARSED(parse_attr_postfix(idx));
         MATCH_RETURN_IF_PARSED(parse_func_call_postfix(idx));
+        MATCH_RETURN_IF_PARSED(parse_subscript_postfix(idx));
 
 
         FINISH_PARSE(null(ASTNode));
@@ -2527,6 +2542,23 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             node->expected_return_type = move(t);
 
+        }
+        case (ARRAY_SUBSCRIPT) {
+
+            typeify_tree(&node->children[0], var_map);
+            typeify_tree(&node->children[1], var_map);
+
+            ASTNode *left = &node->children[0];
+            ASTNode *subscript_expr = &node->children[1];
+
+            if (left->expected_return_type->kind != TYPE_array)
+                print_err("Can't subscript a value of type '%s'! maybe later with traits..", type_get_name(left->expected_return_type).data);
+            
+            if (subscript_expr->expected_return_type->kind != TYPE_int) 
+                return_err("Array subscript expression must be of type 'int'!");
+            
+            node->expected_return_type = copy_type(left->expected_return_type->array_data.type);            
+            
         }
 
         default() {
@@ -3429,6 +3461,11 @@ VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_n
         array_append(arr, get_varheader_from_map_list(var_map_list, arg_name, NULL));
     }
 
+    // int:
+    //  #          #
+    // ##   ###   ###
+    //  #   #  #   #
+    // ###  #  #   ##
 
     bool res = _get_all_vardecls_before_return(func_node, return_node, &arr, var_map_list);
     if (!res && return_node != NULL) {

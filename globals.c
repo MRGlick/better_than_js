@@ -106,6 +106,7 @@ char *KEYWORDS[] = {
     X(ARRAY_LITERAL) \
     X(ARRAY_INITIALIZER) \
     X(DIMENSION_SEQ) \
+    X(ARRAY_SUBSCRIPT) \
     X(TOKEN_TYPE_COUNT) 
 
 //              term i made up VVV
@@ -249,6 +250,7 @@ const char *token_type_to_pretty_str(TokenType type) {
         case DELETE_STMT:         return "delete";
         case TOKEN_TYPE_COUNT:    return "count";
         case ARRAY:               return "array";
+        case ARRAY_SUBSCRIPT:     return "array subscript";
     }
 
     return "<unknown>";
