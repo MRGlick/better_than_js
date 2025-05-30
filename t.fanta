@@ -17,37 +17,22 @@ int rand() {
     return sum;
 }
 
-int rand(int upper) return rand() % upper;
+int rand(int lower, int upper) return lower + rand() % (upper - lower);
 
-int rand(int lower, int upper) return lower + rand(upper - lower);
+bool other(float a) return a > 2;
+
 
 Node create_list(int len) {
     Node head = new Node(val = -1);
-    print "Created head!";
     Node tail = head;
-    print "Created tail!";
     for (int i = 0; i < len; i += 1; ) {
-        tail.next = new Node(val = rand(i, i + 10));
+        tail.next = new Node(val = rand(1, 10));
         tail = tail.next;
     }
 
-    print "About to return!";
     return head.next;
 }
 
-int square(int a) return a * a;
-
-
-
-
 Node lst = create_list(10);
-print "Returned and assigned result to variable!";
 
-defer print "Finished!";
-
-while (lst != null) {
-    print "#", lst.val, ": ", square(lst.val);
-    lst = lst.next;
-}
-
-
+print lst.val;

@@ -3,6 +3,7 @@
 #include "utils.c"
 #include <stdio.h>
 #include "debug.h"
+#include "mystring.c"
 
 #define COUNTER_BITMASK 0x00FFFFFF
 #define STRUCT_METADATA_BITMASK 0xFF000000
@@ -93,6 +94,7 @@ static inline void object_inc_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+    // debug printf("<%p>: inc refcount to %d \n", obj, _object_get_refcount(obj));
 }
 
 static inline void object_dec_ref(void *obj) {
@@ -103,6 +105,7 @@ static inline void object_dec_ref(void *obj) {
 
     ObjectHeader *header = obj;
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+    // debug printf("<%p>: dec refcount to %d \n", obj, _object_get_refcount(obj));
 
     if ((header->data & COUNTER_BITMASK) == 0) {
         free_object(obj);

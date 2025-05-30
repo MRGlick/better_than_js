@@ -8,14 +8,14 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_PARSER
+#define COMPILATION_STAGE STAGE_RUN_CODE
 
 #define PREPROCESS_AST 1
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 1
-#define PARSER_PRINT 1
-#define IR_PRINT 0
+#define PARSER_PRINT 0
+#define IR_PRINT 1
 // #FLAGS END
 
 
@@ -1587,8 +1587,6 @@ ParseResult parse_defer_stmt(int idx) {
 
         MATCH_PARSE(stmt_res, parse_stmt(idx), "statement after defer");
 
-        MATCH_TOKEN_WITH_TYPE(STMT_END);
-
         ASTNode node = ASTNode_create((Token){.type = DEFER_STMT}, true);
         ASTNode_add_child(node, stmt_res.node);
 
@@ -2859,36 +2857,27 @@ void print_instruction(Inst inst) {
         case (I_PUSH)
             printf(", ");
             print_val(inst.arg2);
-            break;
-        case (I_CALL)
-        case (I_JUMP)
-        case (I_JUMP_IF)
-        case (I_JUMP_NOT)
+
+        case (I_JUMP_NOT, I_JUMP_IF, I_JUMP, I_CALL)
             printf(", #%d", inst.arg1.i_val);
-            break;
+
         case (I_STACK_PTR_ADD)
             printf(", %d", inst.arg1.i_val);
-            break;
-        case (I_STACK_STORE)
-        case (I_READ)
+
+        case (I_READ, I_STACK_STORE)
             printf(", sz: %d, pos: fp + %d", inst.arg1.i_val, inst.arg2.i_val);
-            break;
-        case (I_STACK_STORE_GLOBAL)
-        case (I_READ_GLOBAL)
+
+        case (I_READ_GLOBAL, I_STACK_STORE_GLOBAL)
             printf(", sz: %d, pos: %d", inst.arg1.i_val, inst.arg2.i_val);
-            break;
+
         case (I_READ_ATTR)
             printf(", sz: %d, offset: %d", inst.arg1.i_val, inst.arg2.i_val);
-            break;
+
         case (I_GET_ATTR_ADDR)
             printf(", offset: %d", inst.arg1.i_val);
-            break;
-        case (I_ALLOC)
-        case (I_HEAP_STORE)
+
+        case (I_HEAP_STORE, I_ALLOC)
             printf(", sz: %d", inst.arg1.i_val);
-            break;
-        default:
-            break;
     }
     printf("] \n");
 }
@@ -3131,9 +3120,12 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
 
     // RC
-    if (is_reference(left_side)) {
+
+    bool dec_refcount_for_left_side = is_reference(left_side);
+
+    if (dec_refcount_for_left_side) {
         generate_instructions_for_node(left_side, instructions, var_map_list);
-        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val))); // decrement always after increment
     }
 
     bool inc_refcount_for_right_side = is_nontemporary_reference(right_side);
@@ -3193,6 +3185,11 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
         }
 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = get_vartype_size(left_side->expected_return_type)}, null(Val)));
+    }
+
+    if (dec_refcount_for_left_side) {
+        array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
     }
     
     
@@ -3390,7 +3387,7 @@ void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedLi
 }
 
 
-bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHeader **arr, LinkedList *var_map_list) {
+bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHeader ***arr_ptr, LinkedList *var_map_list) {
     
     if (node == return_node) return true;
 
@@ -3402,7 +3399,7 @@ bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHea
         ASTNode *child = &node->children[i];
 
         if (!found) {
-            bool result = _get_all_vardecls_before_return(child, return_node, arr, var_map_list);
+            bool result = _get_all_vardecls_before_return(child, return_node, arr_ptr, var_map_list);
             if (result) {
                 found = true;
                 continue;
@@ -3411,7 +3408,7 @@ bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHea
             match (child->token.type) {
                 case (DECL_ASSIGN_STMT, DECL_STMT);
                     String name = child->children[1].token.text;
-                    array_append(arr, get_varheader_from_map_list(var_map_list, name, NULL));
+                    array_append(*arr_ptr, get_varheader_from_map_list(var_map_list, name, NULL));
             }
         }
     }
@@ -3433,7 +3430,7 @@ VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_n
     }
 
 
-    bool res = _get_all_vardecls_before_return(func_node, return_node, arr, var_map_list);
+    bool res = _get_all_vardecls_before_return(func_node, return_node, &arr, var_map_list);
     if (!res && return_node != NULL) {
         print_err("Didn't find the return in the function provided! \n");
         return NULL;
@@ -3512,6 +3509,8 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
 
         for (int i = 0; i < array_length(vardecls); i++) {
             if (vardecls[i]->var_type->kind != TYPE_struct) continue;
+
+            debug printf("var name: %s, type: %s \n", vardecls[i]->name.data, type_get_name(vardecls[i]->var_type).data);
 
             array_append(
                 *instructions, 
@@ -3788,14 +3787,20 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
     }
 
     { 
-        VarHeader **vardecls = get_all_vardecls_before_return(gi_current_function, ast, var_map_list);
 
-        for (int i = 0; i < array_length(vardecls); i++) {
+        ASTNode *func = gi_current_function;
+
+        VarHeader **vardecls = get_all_vardecls_before_return(func, ast, var_map_list);
+
+        int l = array_length(vardecls);
+
+        for (int i = 0; i < l; i++) {
             VarHeader *decl = vardecls[i];
 
-            printf("Name: %s, Type: %s \n", decl->name.data, type_get_name(decl->var_type).data);
-
             if (decl->var_type->kind != TYPE_struct) continue;
+
+            debug printf("var name: %s, type: %s \n", vardecls[i]->name.data, type_get_name(vardecls[i]->var_type).data);
+
 
             array_append(
                 *instructions, 
@@ -4584,7 +4589,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     double end = get_current_process_time_seconds();
 
     if (runtime_mallocs > runtime_frees) {
-        print_err("Detected a memory leak! Where? you figure it out.");
+        print_err("Detected a memory leak! Where? you figure it out. Mallocs: %d, Frees: %d ", runtime_mallocs, runtime_frees);
     } else if (runtime_frees > runtime_mallocs) {
         print_err("Detected excess memory deletions! How did the program even survive this far?");
     } else {
@@ -4966,7 +4971,7 @@ int main() {
 
 
         char buf[CODE_MAX_LEN] = {0};
-        bool benchmark;
+        bool benchmark = false;
 
         int result = handle_text_interface(buf, CODE_MAX_LEN, &benchmark);
 

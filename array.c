@@ -111,6 +111,7 @@ void _array_ensure_capacity(void **array) {
     }
 }
 
+// PASS ME AROUND AND I WILL BITE
 #define array(type, size) _create_array(sizeof(type), size)
 
 
