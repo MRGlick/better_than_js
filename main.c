@@ -3297,6 +3297,8 @@ InstType get_print_inst_for_type(Type *type) {
     }
 }
 
+// test commit
+
 void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
     int len = array_length(ast->children);
