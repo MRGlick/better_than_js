@@ -2371,6 +2371,9 @@ void try_infer_array_literal_type_from_overloads(ASTNode *node, VarHeader *overl
 
 void typeify_tree(ASTNode *node, HashMap *var_map) {
 
+    static ASTNode *current_func = NULL;
+
+
     match (node->token.type) {
         case(BLOCK) {
             HashMap *copy = HashMap_copy(var_map);
@@ -2459,14 +2462,19 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             ASTNode *func_scope = &node->children[3];
 
+            ASTNode *prev_func = current_func;
+            current_func = node;
+
             // this ensures we don't copy the hashmap twice because of the scope
             for (int i = 0; i < array_length(func_scope->children); i++) {
                 typeify_tree(&func_scope->children[i], var_map);
             }
 
+            current_func = prev_func;
+
             HashMap_free(var_map);
 
-
+            print_ast(*node, 0);
 
             int result = validate_return_paths(node);
             
@@ -2658,13 +2666,25 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             ASTNode *subscript_expr = &node->children[1];
 
             if (left->expected_return_type->kind != TYPE_array)
-                print_err("Can't subscript a value of type '%s'! maybe later with traits..", type_get_name(left->expected_return_type).data);
+                return_err("Can't subscript a value of type '%s'! maybe later with traits..", type_get_name(left->expected_return_type).data);
             
             if (subscript_expr->expected_return_type->kind != TYPE_int) 
                 return_err("Array subscript expression must be of type 'int'!");
             
             node->expected_return_type = copy_type(left->expected_return_type->array_data.type);            
             
+        }
+
+        case (RETURN_STMT) {
+            if (!current_func) return_err(
+                "Tried to return outside of a function!"
+            );
+            Type *return_type = current_func->children[0].token.var_type;
+
+            if (return_type->kind == TYPE_array)
+                try_set_array_literal_type(&node->children[0], return_type->array_data.type);
+            
+            typeify_tree(&node->children[0], var_map);
         }
 
         default() {
@@ -3056,6 +3076,8 @@ InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
     if (from->kind == TYPE_null_ref) {
         if (to->kind == TYPE_struct) return I_NOP;
     }
+
+    if (types_are_equal(from, to)) return I_NOP;
 
     return I_INVALID;
 }
