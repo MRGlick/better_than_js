@@ -14,7 +14,7 @@
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 0
+#define PARSER_PRINT 1
 #define IR_PRINT 1
 // #FLAGS END
 
@@ -428,7 +428,9 @@ ASTNode ASTNode_create(Token tk, bool complete) {
     return node;
 }
 
-#define ASTNode_add_child(parent, child) array_append(parent.children, child);
+#define ASTNode_add_child(parent, child) array_append(parent.children, child)
+
+#define ASTNode_insert_child(parent, child, idx) array_insert(parent.children, child, idx)
 
 ASTNode ASTNode_copy(ASTNode *ast) {
     ASTNode copy = *ast;
@@ -1923,13 +1925,17 @@ ParseResult parse_for_stmt(int idx) {
 ParseResult parse_array_literal(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_TYPE(LBRACKET);
-        MATCH_PARSE(val_seq_res, parse_val_seq(idx), "sequence of expressions");
+        TRY_MATCH_PARSE(val_seq_res, parse_val_seq(idx));
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
         
-        val_seq_res.node.token.type = ARRAY_LITERAL;
+        ASTNode node = ASTNode_create((Token){.type = ARRAY_LITERAL}, true);
+        if (val_seq_res.success) {
+            ASTNode_add_child(node, val_seq_res.node);
+        } else {
+            ASTNode_add_child(node, ASTNode_create((Token){.type = VAL_SEQ}, true));
+        }
 
-
-        FINISH_PARSE(val_seq_res.node);
+        FINISH_PARSE(node);
     }
 }
 
@@ -2149,6 +2155,8 @@ VarHeader *get_args_from_func_decl_ast(ASTNode *ast) {
 #define MISSING_RETURN_PATHS -1
 #define RETURN_FROM_VOID_FUNCTION -2
 
+bool is_valid_type_conversion(Type *from, Type *to);
+
 // TODO: A BLOCK CAN BE A BLOCKER!
 int _validate_return_paths(ASTNode *ast, Type *return_type) {
 
@@ -2158,7 +2166,7 @@ int _validate_return_paths(ASTNode *ast, Type *return_type) {
     }
     for (int i = 0; i < array_length(ast->children); i++) {
         ASTNode *child = &ast->children[i];
-        if (child->token.type == RETURN_STMT && types_are_equal(child->children[0].expected_return_type, return_type)) {
+        if (child->token.type == RETURN_STMT && is_valid_type_conversion(child->children[0].expected_return_type, return_type)) {
             if (i < array_length(ast->children) - 1) return UNREACHABLE_CODE;
             return RETURN_PATHS_OK;
         }
@@ -2316,6 +2324,49 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 
 }
 
+
+void try_set_array_literal_type(ASTNode *node, Type *target_type) {
+    if (node->token.type != ARRAY_LITERAL) return;
+    ASTNode_insert_child(
+        (*node), 
+        ASTNode_create((Token){.type = TYPE, .var_type = copy_type(target_type)}, true),
+        0
+    );
+}
+
+void try_infer_array_literal_type_from_overloads(ASTNode *node, VarHeader *overloads, int arg_idx) {
+    if (node->token.type != ARRAY_LITERAL) return;    
+    bool found = false;
+    Type *t = NULL;
+
+    for (int i = 0; i < array_length(overloads->funcs); i++) {
+
+        if (arg_idx >= array_length(overloads->funcs[i].func_args)) continue;
+
+        VarHeader *arg = &overloads->funcs[i].func_args[arg_idx];
+        if (arg->var_type->kind == TYPE_array) {
+            if (!found) {
+                found = true;
+                t = arg->var_type;
+            } else return_err(
+                "Cannot infer array type from function, overloads are ambiguous! Try to cast the array into the wanted type."
+            );
+        }
+    }
+
+    if (!found) return_err(
+        "Tried to call a function with invalid arguments! Passed in an array in place of another type!"
+    );
+
+    Type *subtype = t->array_data.type;
+
+    ASTNode_insert_child(
+        (*node), 
+        ASTNode_create((Token){.type = TYPE, .var_type = copy_type(subtype)}, true),
+        0
+    );
+}
+
 // anything this function doesn't touch is meant to return void
 
 void typeify_tree(ASTNode *node, HashMap *var_map) {
@@ -2334,9 +2385,13 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             String var_name = node->children[1].token.text;
             Type *type = node->children[0].token.var_type;
+            ASTNode *expr_node = &node->children[2];
             
             VarHeader vh = create_var_header(var_name, type, -1);
             HashMap_put(var_map, var_name, &vh);
+
+            if (node->token.type == DECL_ASSIGN_STMT && type->kind == TYPE_array)
+                try_set_array_literal_type(expr_node, type->array_data.type);
 
             for (int i = 0; i < array_length(node->children); i++) {
                 typeify_tree(&node->children[i], var_map);
@@ -2417,14 +2472,23 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             
             match (result) {
                 case(UNREACHABLE_CODE) 
-                    return_err("Return might cause unreachable code in function '%s()'!", func_name.data);
+                    return_err(
+                        "Return might cause unreachable code in function '%s()'!", 
+                        func_name.data
+                    );
                 
                 case(MISSING_RETURN_PATHS) 
-                    return_err("Not all return paths return type '%s' in function '%s()'!", 
-                        type_kind_names[node->children[0].token.var_type->kind], func_name.data);    
+                    return_err(
+                        "Not all return paths return type '%s' in function '%s()'!", 
+                        type_kind_names[node->children[0].token.var_type->kind], 
+                        func_name.data
+                    );    
                 
                 case(RETURN_FROM_VOID_FUNCTION) 
-                    return_err("Tried to return a value from '%s()', which returns void!", func_name.data);
+                    return_err(
+                        "Tried to return a value from '%s()', which returns void!", 
+                        func_name.data
+                    );
             }
 
         }
@@ -2452,22 +2516,42 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             HashMap_put(var_map, name, &vh);    
         }
         case (ATTR_ACCESS) {
-            typeify_tree(&node->children[0], var_map);
-            Type *left_type = node->children[0].expected_return_type;
+            
+            ASTNode *left_side = &node->children[0];
+            ASTNode *attr_node = &node->children[1];
 
-            if (left_type->kind != TYPE_struct) {
-                return_err("Tried accessing attribute in '%s' type instead of struct!", type_get_name(left_type).data);
+            if (left_side->token.type == ARRAY_LITERAL) return_err(
+                "Cannot access attribute of ambiguous array literal!"
+            );
+            
+            typeify_tree(left_side, var_map);
+            Type *left_type = left_side->expected_return_type;
+
+            if (left_type->kind == TYPE_array) {
+                // assume it's the length attribute, verify at IR stage
+                node->expected_return_type = make_type(TYPE_int);
+                return;
             }
 
-            String attr_name = node->children[1].token.text;
+
+
+            if (left_type->kind != TYPE_struct) return_err(
+                "Tried accessing attribute in primitive type '%s'!", 
+                type_get_name(left_type).data
+            );
+            
+            
+            String attr_name = attr_node->token.text;
 
             String struct_name = type_get_name(left_type);
 
             VarHeader *struct_header = HashMap_get_safe(var_map, struct_name, NULL);
 
-            if (!struct_header) {
-                return_err("Tried accessing attribute of struct '%s' which is not defined!", struct_name.data);
-            }
+            if (!struct_header) return_err(
+                "Tried accessing attribute of struct '%s' which is not defined!", 
+                struct_name.data
+            );
+            
 
             VarHeader *attr_header = find_attr_in_struct(struct_header, attr_name);
 
@@ -2477,9 +2561,11 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         case (OP_NEW) {
             String struct_name = node->children[0].token.text;
             VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
-            if (!struct_vh) {
-                return_err("can't create new '%s', as that struct is not defined!", struct_name.data);
-            }
+            if (!struct_vh) return_err(
+                "can't create new '%s', as that struct is not defined!", 
+                struct_name.data
+            );
+            
 
             node->expected_return_type = make_struct_type(struct_name);
 
@@ -2492,6 +2578,12 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 VarHeader *member_vh = find_attr_in_struct(struct_vh, member->token.text);
 
                 member->expected_return_type = copy_type(member_vh->var_type);
+
+                if (member->expected_return_type->kind == TYPE_array) {
+                    Type *subtype = member->expected_return_type->array_data.type;
+                    try_set_array_literal_type(expr, subtype);
+                }
+
                 
                 typeify_tree(expr, var_map);
             }
@@ -2511,7 +2603,9 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             ASTNode *args_ast = &node->children[1];
     
             for (int i = 0; i < array_length(args_ast->children); i++) {
-                typeify_tree(&args_ast->children[i], var_map);
+                ASTNode *child = &args_ast->children[i];
+                try_infer_array_literal_type_from_overloads(child, overloads, i);
+                typeify_tree(child, var_map);
             }
     
             VarHeader *vh = get_best_overload(overloads, args_ast);
@@ -2520,15 +2614,22 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         }
 
         case (ARRAY_LITERAL) {
-            Type *t = NULL;
-            for (int i = 0; i < array_length(node->children); i++) {
-                typeify_tree(&node->children[i], var_map);
-                if (!t) t = node->children[i].expected_return_type;
-                else if (!types_are_equal(t, node->children[i].expected_return_type))
-                    return_err("Array literals can't contain multiple types!");
+
+            assert(array_length(node->children) == 2);
+
+            ASTNode *type_node = &node->children[0];
+            node->expected_return_type = make_array_type(copy_type(type_node->token.var_type));
+
+            ASTNode *values_node = &node->children[1];
+
+            for (int i = 0; i < array_length(values_node->children); i++) {
+                ASTNode *child = &values_node->children[i];
+                if (type_node->token.var_type->kind == TYPE_array)
+                    try_set_array_literal_type(child, type_node->token.var_type->array_data.type);
+                typeify_tree(child, var_map);
             }
 
-            node->expected_return_type = make_array_type(copy_type(t));
+
         }
         case (ARRAY_INITIALIZER) {
             ASTNode *dims = &node->children[1];
@@ -2544,6 +2645,11 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         }
         case (ARRAY_SUBSCRIPT) {
+
+            if (node->children[0].token.type == ARRAY_LITERAL) return_err(
+                "Cannot index into ambiguous array literal! Try casting it to a specific type first. "
+            );
+            
 
             typeify_tree(&node->children[0], var_map);
             typeify_tree(&node->children[1], var_map);
@@ -2954,6 +3060,10 @@ InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
     return I_INVALID;
 }
 
+bool is_valid_type_conversion(Type *from, Type *to) {
+    return _get_cvt_inst_type_for_types(from, to) != I_INVALID;
+}
+
 bool generate_cvt_inst_for_types(Type *from, Type *to, Inst **instructions) {
     InstType inst = _get_cvt_inst_type_for_types(from, to);
     if (inst == I_INVALID) return false;
@@ -3296,8 +3406,6 @@ InstType get_print_inst_for_type(Type *type) {
             return I_INVALID;
     }
 }
-
-// test commit
 
 void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
@@ -3686,11 +3794,23 @@ void generate_instructions_for_struct_decl(ASTNode *ast, LinkedList *var_map_lis
 
     add_varheader_to_map_list(var_map_list, name, &vh);
 
-}   
+}
 
 void generate_instructions_for_array_attr_access(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
+    ASTNode *left_side = &ast->children[0];
+    ASTNode *attr_node = &ast->children[1];
+
+
+    if (!String_equal(attr_node->token.text, StringRef("length"))) {
+        return_err(
+            "Attribute doesn't exist in arrays! (the only attribute is 'length')"
+        );
+    }
     
+    generate_instructions_for_node(left_side, instructions, var_map_list);
+    array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = TYPE_int, .i_val = sizeof(int)}, (Val){.type = TYPE_int, .i_val = sizeof(ObjectHeader)}));
+
 
 }
 
@@ -3819,19 +3939,25 @@ void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instruct
 
 
 void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    
+    ASTNode *func = gi_current_function;
 
-    if (!gi_current_function) return_err("Tried to return outside of a function!");
+    if (!func) return_err("Tried to return outside of a function!");
 
-    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+    bool has_value = array_length(ast->children) != 0;
 
-    if (is_nontemporary_reference(&ast->children[0])) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+    if (has_value) {
+        generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+    
+        if (is_nontemporary_reference(&ast->children[0])) {
+            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+        }
     }
+
 
     { 
 
-        ASTNode *func = gi_current_function;
 
         VarHeader **vardecls = get_all_vardecls_before_return(func, ast, var_map_list);
 
@@ -3861,6 +3987,28 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
         array_free(vardecls);
     }
 
+    if (has_value) {
+        Type *target_type = func->children[0].token.var_type;
+
+        debug {
+            printf("target type: ");
+            print_type(target_type);
+            printf("\n current type: ");
+            print_type(ast->children[0].expected_return_type);
+            printf("\n");
+        }
+        
+        if (!types_are_equal(target_type, ast->children[0].expected_return_type)) {
+            bool res = generate_cvt_inst_for_types(
+                ast->children[0].expected_return_type, 
+                target_type, 
+                instructions
+            );
+            if (!res) return_err("Type of returned value doesn't match the function signature!");
+        }
+    }
+
+
     array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
 }
 
@@ -3870,27 +4018,47 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
 
 void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    int len = array_length(ast->children);
+    ASTNode *values_node = &ast->children[1];
+    int len = array_length(values_node->children);
     int element_size = get_vartype_size(ast->expected_return_type->array_data.type);
-
-
-
+    
+    
+    
     int size = calculate_array_offset(len, element_size);
-
+    
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = TYPE_int, .i_val = size}, null(Val)));
     array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
     array_append(*instructions, create_inst(I_INIT_OBJ_HEADER, (Val){.type = TYPE_int, .i_val = 255}, null(Val)));
-
+    
+    // length variable
+    array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+    array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .i_val = sizeof(ObjectHeader)}, null(Val)));
+    array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 4}, (Val){.type = TYPE_int, .i_val = len}));
+    array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = sizeof(int)}, null(Val)));
+    
+    Type *target_subtype = ast->expected_return_type->array_data.type;
+    
     for (int i = 0; i < len; i++) {
+        
+        ASTNode *child = &values_node->children[i];
 
         int offset = calculate_array_offset(i, element_size);
 
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
         array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .i_val = offset}, null(Val)));
         
-        generate_instructions_for_node(&ast->children[i], instructions, var_map_list);
+        generate_instructions_for_node(child, instructions, var_map_list);
 
-        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = get_vartype_size(ast->children[i].expected_return_type)}, null(Val)));
+        if (!types_are_equal(child->expected_return_type, target_subtype)) {
+            bool res = generate_cvt_inst_for_types(child->expected_return_type, target_subtype, instructions);
+            if (!res) return_err(
+                "Invalid element type in array literal! Cannot convert from %s to %s!",
+                type_get_name(child->expected_return_type).data,
+                type_get_name(target_subtype).data
+            );
+        }
+
+        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = get_vartype_size(child->expected_return_type)}, null(Val)));
     }
 
 }

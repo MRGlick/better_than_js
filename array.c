@@ -116,11 +116,11 @@ void _array_ensure_capacity(void **array) {
 
 
 // MIGHT CHANGE THE ADDRESS OF THE ARRAY
-#define array_append(array, val) do { \
+#define array_append(array, val) { \
     _array_ensure_capacity((void **)&(array)); \
     (array)[array_length(array)] = val; \
     array_header(array)->length++; \
-} while (0)
+}
 
 // Note: i = array_length is possible because the bounds of the insert are 0 -> array_length (including)
 #define array_insert(array, val, i) do { \
