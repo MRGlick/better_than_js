@@ -94,8 +94,9 @@ bool types_are_equal(Type *t1, Type *t2) {
 StringRef type_get_name(Type *type) {
     match (type->kind) {
         case (TYPE_array) 
-            print_err("Not implemented yet!");
-            return String_null;
+            // it only leaks a little bit and it's barely called anyways and dealing with this will be a pain
+            print_warning("This leaks memory! I don't care enough to deal with this.");
+            return String_concat(type_get_name(type->array_data.type), StringRef("[]"));
 
         case (TYPE_struct) 
             return type->struct_data.name;

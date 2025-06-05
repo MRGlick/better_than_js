@@ -28,6 +28,10 @@ char *KEYWORDS[] = {
 // dont ask
 #define MAYBE 2
 
+
+#define calculate_array_offset(idx, elem_size) (sizeof(ObjectHeader) + sizeof(int) + idx * elem_size)
+
+
 #define TOKEN_TYPES \
     X(NULL_TOKEN) \
     X(KEYWORD) \

@@ -4,10 +4,12 @@
 #include <stdio.h>
 #include "debug.h"
 #include "mystring.c"
+#include "globals.c"
+#include "stdbool.h"
 
 #define COUNTER_BITMASK 0x00FFFFFF
-#define STRUCT_METADATA_BITMASK 0xFF000000
-#define STRUCT_METADATA_BIT_OFFSET 24
+#define METADATA_BITMASK 0xFF000000
+#define METADATA_BIT_OFFSET 24
 #define STACK_SIZE 8192
 #define print_stack_data(...) printf(__VA_ARGS__"stack ptr: %d, frame ptr: %d, inst: %d \n", stack_ptr, frame_ptr, inst_ptr)
 
@@ -17,10 +19,15 @@
 #define TEXT_BUF_SIZE 8192
 #define REFCOUNTER_START_VALUE 1
 
+typedef struct RefOffset {
+    u16 offset;
+    bool is_array;
+} RefOffset;
+
 typedef struct StructMetadata {
     u32 size;
     u32 offset_count;
-    u32 *offsets;
+    RefOffset *offsets;
     String struct_name;
 } StructMetadata;
 
@@ -46,7 +53,8 @@ void print_struct_meta(StructMetadata sm) {
     printf("    Name: %s \n", sm.struct_name.data);
     printf("    Offset count: %d \n", sm.offset_count);
     printf("    offsets: ");
-    for (size_t i = 0; i < sm.offset_count; i++) printf("%d ", sm.offsets[i]);
+    for (size_t i = 0; i < sm.offset_count; i++)
+        printf("offset: %d is_arr: %s", sm.offsets[i].offset, sm.offsets[i].is_array ? "true" : "false");
     printf("\n");
     printf("    Size: %d bytes\n ", sm.size);
 } 
@@ -59,7 +67,7 @@ static inline int _object_get_refcount(void *obj) {
     return header->data & COUNTER_BITMASK;
 }
 
-static inline void object_dec_ref(void *obj);
+static inline void object_dec_ref(void *obj, bool is_array);
 
 static inline void *alloc_object(u32 size) {
     runtime_mallocs++;
@@ -75,14 +83,38 @@ static inline void free_object(void *obj) {
 
     ObjectHeader *header = obj;
 
-    int sm_idx = header->data >> STRUCT_METADATA_BIT_OFFSET;
+    int sm_idx = header->data >> METADATA_BIT_OFFSET;
 
     StructMetadata sm = struct_metadata[sm_idx];
 
     for (u32 i = 0; i < sm.offset_count; i++) {
 
-        void *child_obj = *(void **)((char *)obj + sm.offsets[i]);
-        object_dec_ref(child_obj);
+        void *child_obj = *(void **)((char *)obj + sm.offsets[i].offset);
+        object_dec_ref(child_obj, sm.offsets[i].is_array);
+    }
+
+    runtime_frees++;
+    free(obj);
+}
+
+static inline bool is_reference_typekind(TypeKind);
+
+static inline void free_object_array(void *obj) {
+    assert(obj != NULL); 
+
+    ObjectHeader *header = obj;
+
+    TypeKind subtype_kind = header->data >> METADATA_BIT_OFFSET;
+
+    if (is_reference_typekind(subtype_kind)) {
+        int elem_size = get_typekind_size(subtype_kind);
+        int len = *(int *)(obj + sizeof(ObjectHeader));
+
+        for (int i = 0; i < len; i++) {
+            void *child_obj = *(void **)(obj + calculate_array_offset(i, elem_size));
+
+            object_dec_ref(child_obj, subtype_kind == TYPE_array);
+        }
     }
 
     runtime_frees++;
@@ -95,22 +127,23 @@ static inline void object_inc_ref(void *obj) {
     if (obj == NULL) return; // this is fine
 
     ObjectHeader *header = obj;
-    header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+    header->data = ((header->data + 1) & COUNTER_BITMASK) | (header->data & METADATA_BITMASK);
     // debug printf("<%p>: inc refcount to %d \n", obj, _object_get_refcount(obj));
 }
 
-static inline void object_dec_ref(void *obj) {
+static inline void object_dec_ref(void *obj, bool is_array) {
 
     if (obj == NULL) return; // this is also fine? yeah its fine
 
     assert(_object_get_refcount(obj) != 0); // is it worth the performance? yes
 
     ObjectHeader *header = obj;
-    header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & STRUCT_METADATA_BITMASK);
+    header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & METADATA_BITMASK);
     // debug printf("<%p>: dec refcount to %d \n", obj, _object_get_refcount(obj));
 
     if ((header->data & COUNTER_BITMASK) == 0) {
-        free_object(obj);
+        if (is_array) free_object_array(obj);
+        else free_object(obj);
     }
 }
 
@@ -122,7 +155,7 @@ static inline void object_init_header(void *obj, int meta_idx) {
     ObjectHeader *header = obj;
     //   VV meta_idx
     // 0x__000000
-    header->data = (meta_idx << STRUCT_METADATA_BIT_OFFSET) | REFCOUNTER_START_VALUE; 
+    header->data = (meta_idx << METADATA_BIT_OFFSET) | REFCOUNTER_START_VALUE; 
 }
 
 void clear_struct_metadata() {

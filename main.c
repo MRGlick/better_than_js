@@ -2089,7 +2089,6 @@ STACK_STORE
 */
 
 
-#define calculate_array_offset(idx, elem_size) (sizeof(ObjectHeader) + sizeof(int) + idx * elem_size)
 
 
 int get_type_precedence(Type *type) {
@@ -2213,7 +2212,7 @@ int validate_return_paths(ASTNode *ast) {
 }
 
 int get_match_score_for_types(Type *t1, Type *t2) {
-    if (t1->kind == TYPE_array || t1->kind == TYPE_struct || t2->kind == TYPE_array || t2->kind == TYPE_struct) {
+    if (is_reference_typekind(t1->kind) || is_reference_typekind(t2->kind)) {
         return types_are_equal(t1, t2) ? 4 : 0;
     }
 
@@ -2954,7 +2953,9 @@ X(I_FREE) \
 X(I_DUP) \
 X(I_INC_REFCOUNT) \
 X(I_DEC_REFCOUNT) \
+X(I_DEC_REFCOUNT_ARRAY) \
 X(I_INIT_OBJ_HEADER) \
+X(I_INIT_ARRAY_HEADER) \
 X(I_TUCK) \
 X(I_POP_BOTTOM) \
 X(I_NOP) \
@@ -3158,6 +3159,17 @@ InstType get_inst_type_for_op(TokenType op, Type *var_type) {
     return I_INVALID;
 }
 
+InstType get_dec_ref_inst_by_typekind(TypeKind kind) {
+    match (kind) {
+        case (TYPE_array) return I_DEC_REFCOUNT_ARRAY;
+        case (TYPE_struct) return I_DEC_REFCOUNT;
+        default() print_err("There is no dec refcount instruction for typekind '%s'!", type_kind_names[kind]);
+    }
+    return I_INVALID;
+}
+
+
+
 int gi_stack_pos = 0;
 int gi_label_idx = 0;
 ASTNode *gi_current_function = NULL;
@@ -3209,8 +3221,12 @@ int calc_stack_space_for_scope(ASTNode *ast) {
 
 void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedList *var_map_list);
 
+static inline bool is_reference_typekind(TypeKind kind) {
+    return kind == TYPE_struct || kind == TYPE_array;
+}
+
 static inline bool is_reference(ASTNode *ast) {
-    return ast->expected_return_type->kind == TYPE_struct || ast->expected_return_type->kind == TYPE_array;
+    return is_reference_typekind(ast->expected_return_type->kind);
 }
 
 static inline bool is_temporary_reference(ASTNode *ast) {
@@ -3357,7 +3373,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
     if (dec_refcount_for_left_side) {
         array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(left_side->expected_return_type->kind), null(Val), null(Val)));
     }
     
     
@@ -3681,9 +3697,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
         VarHeader **vardecls = get_all_vardecls_before_return(ast, NULL, var_map_list);
 
         for (int i = 0; i < array_length(vardecls); i++) {
-            if (vardecls[i]->var_type->kind != TYPE_struct) continue;
-
-            debug printf("var name: %s, type: %s \n", vardecls[i]->name.data, type_get_name(vardecls[i]->var_type).data);
+            if (!is_reference_typekind(vardecls[i]->var_type->kind)) continue;
 
             array_append(
                 *instructions, 
@@ -3693,7 +3707,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
                 )
             );
 
-            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+            array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vardecls[i]->var_type->kind), null(Val), null(Val)));
         }
 
         array_free(vardecls);
@@ -3780,15 +3794,16 @@ void generate_instructions_for_struct_decl(ASTNode *ast, LinkedList *var_map_lis
 
     int offset = sizeof(ObjectHeader);
 
-    u32 *ref_offsets = array(int, 2);
+    RefOffset *ref_offsets = array(RefOffset, 2);
 
     for (int i = 0; i < array_length(members.children); i++) {
         
         String var_name = members.children[i].children[1].token.text;
         Type *var_type = members.children[i].children[0].token.var_type;
         
-        if (var_type->kind == TYPE_struct) {
-            array_append(ref_offsets, (u32)offset);
+        if (is_reference_typekind(var_type->kind)) {
+            RefOffset ref_offset = (RefOffset){.is_array = var_type->kind == TYPE_array, .offset = offset};
+            array_append(ref_offsets, ref_offset);
         }
 
         VarHeader vh = create_var_header(var_name, var_type, offset);
@@ -3862,7 +3877,7 @@ void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, Li
 
     if (temp_refcount) {
         array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(member_vh->var_type->kind), null(Val), null(Val)));
     }
 }
 void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -3885,7 +3900,9 @@ void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = TYPE_int, .i_val = struct_vh->struct_size}, null(Val)));
 
     array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
-    array_append(*instructions, create_inst(I_INIT_OBJ_HEADER, (Val){.type = TYPE_int, .i_val = struct_vh->struct_metadata_idx}, null(Val))); // use the allocated address
+    array_append(*instructions, 
+        create_inst(I_INIT_OBJ_HEADER, (Val){.type = TYPE_int, .i_val = struct_vh->struct_metadata_idx}, 
+        null(Val))); // use the allocated address
 
     ASTNode *member_assigns = &ast->children[1];
 
@@ -3948,12 +3965,12 @@ void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instruct
     for (int i = 0; i < array_length(keys); i++) {
         VarHeader *vh = HashMap_get(scope_map, keys[i]);
         if (vh->type != VH_VAR) continue;
-        if (vh->var_type->kind != TYPE_struct) continue;
+        if (!is_reference_typekind(vh->var_type->kind)) continue;
 
         array_append(*instructions, create_inst(global ? I_READ_GLOBAL : I_READ,
             (Val){.i_val = get_vartype_size(vh->var_type), .type = TYPE_int},
             (Val){.i_val = vh->var_pos, .type = TYPE_int}));
-        array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vh->var_type->kind), null(Val), null(Val)));
 
     }
 }
@@ -3988,7 +4005,7 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
         for (int i = 0; i < l; i++) {
             VarHeader *decl = vardecls[i];
 
-            if (decl->var_type->kind != TYPE_struct) continue;
+            if (!is_reference_typekind(decl->var_type->kind)) continue;
 
             debug printf("var name: %s, type: %s \n", vardecls[i]->name.data, type_get_name(vardecls[i]->var_type).data);
 
@@ -4002,7 +4019,7 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
                 )
             );
 
-            array_append(*instructions, create_inst(I_DEC_REFCOUNT, null(Val), null(Val)));
+            array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(decl->var_type->kind), null(Val), null(Val)));
         }
 
 
@@ -4039,26 +4056,20 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
 
 
 void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    
+    Type *target_subtype = ast->expected_return_type->array_data.type;
 
     ASTNode *values_node = &ast->children[1];
     int len = array_length(values_node->children);
-    int element_size = get_vartype_size(ast->expected_return_type->array_data.type);
-    
-    
+    int element_size = get_vartype_size(target_subtype);
     
     int size = calculate_array_offset(len, element_size);
     
     array_append(*instructions, create_inst(I_ALLOC, (Val){.type = TYPE_int, .i_val = size}, null(Val)));
     array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-    array_append(*instructions, create_inst(I_INIT_OBJ_HEADER, (Val){.type = TYPE_int, .i_val = 255}, null(Val)));
-    
-    // length variable
-    array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-    array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .i_val = sizeof(ObjectHeader)}, null(Val)));
-    array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 4}, (Val){.type = TYPE_int, .i_val = len}));
-    array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = sizeof(int)}, null(Val)));
-    
-    Type *target_subtype = ast->expected_return_type->array_data.type;
+    array_append(*instructions, create_inst(
+        I_INIT_ARRAY_HEADER, (Val){.type = TYPE_int, .i_val = target_subtype->kind}, 
+        (Val){.type = TYPE_int, .i_val = len}));    
     
     for (int i = 0; i < len; i++) {
         
@@ -4370,6 +4381,19 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
+    case (I_INIT_ARRAY_HEADER) { \
+        void *obj = pop(void *); \
+        TypeKind typekind = byte_arr[++inst_ptr]; \
+        inst_ptr += sizeof(int); \
+        int len = byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        object_init_header(obj, typekind); \
+        *(int *)(obj + sizeof(ObjectHeader)) = len; \
+    } \
+    case (I_DEC_REFCOUNT_ARRAY) { \
+        void *obj = pop(void *); \
+        object_dec_ref(obj, true); \
+    } \
     case (I_ARRAY_SUBSCRIPT) { \
         inst_ptr += 1; \
         int elem_size = *(int *)&byte_arr[inst_ptr]; \
@@ -4399,7 +4423,7 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
     } \
     case(I_DEC_REFCOUNT) {; \
         void *obj = pop(void *); \
-        object_dec_ref(obj); \
+        object_dec_ref(obj, false); \
     } \
     case (I_NOP); \
     case (I_PUSH); \
