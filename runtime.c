@@ -66,6 +66,8 @@ static inline void *alloc_object(u32 size) {
     return calloc(size, 1);
 }
 
+// test
+
 // #TODO figure out optimizations for this because expensive
 static inline void free_object(void *obj) {
     
