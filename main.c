@@ -1969,13 +1969,10 @@ ParseResult parse_dimension_seq(int idx) {
 ParseResult parse_array_initializer(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_TYPE(LBRACKET);
-        MATCH_PARSE(type_res, parse_type(idx, NULL), "type");
-        MATCH_TOKEN_WITH_TYPE(STMT_END);
         MATCH_PARSE(dim_seq_res, parse_dimension_seq(idx), "sequence of dimensions");
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
 
-        ASTNode node = ASTNode_create((Token){.type = ARRAY_INITIALIZER}, true);
-        ASTNode_add_child(node, type_res.node);
+        ASTNode node = ASTNode_create((Token){.type = ARRAY_INITIALIZER}, false);
         ASTNode_add_child(node, dim_seq_res.node);
 
 
@@ -2324,13 +2321,14 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 }
 
 
-void try_set_array_literal_type(ASTNode *node, Type *target_type) {
-    if (node->token.type != ARRAY_LITERAL) return;
+void try_set_temp_array_type(ASTNode *node, Type *target_type) {
+    if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;
     ASTNode_insert_child(
         (*node), 
         ASTNode_create((Token){.type = TYPE, .var_type = copy_type(target_type)}, true),
         0
     );
+    node->complete = true;
 }
 
 void try_infer_array_literal_type_from_overloads(ASTNode *node, VarHeader *overloads, int arg_idx) {
@@ -2393,7 +2391,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             HashMap_put(var_map, var_name, &vh);
 
             if (node->token.type == DECL_ASSIGN_STMT && type->kind == TYPE_array)
-                try_set_array_literal_type(expr_node, type->array_data.type);
+                try_set_temp_array_type(expr_node, type->array_data.type);
 
             for (int i = 0; i < array_length(node->children); i++) {
                 typeify_tree(&node->children[i], var_map);
@@ -2588,7 +2586,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
                 if (member->expected_return_type->kind == TYPE_array) {
                     Type *subtype = member->expected_return_type->array_data.type;
-                    try_set_array_literal_type(expr, subtype);
+                    try_set_temp_array_type(expr, subtype);
                 }
 
                 
@@ -2632,7 +2630,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             for (int i = 0; i < array_length(values_node->children); i++) {
                 ASTNode *child = &values_node->children[i];
                 if (type_node->token.var_type->kind == TYPE_array)
-                    try_set_array_literal_type(child, type_node->token.var_type->array_data.type);
+                    try_set_temp_array_type(child, type_node->token.var_type->array_data.type);
                 typeify_tree(child, var_map);
             }
 
@@ -2681,7 +2679,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             Type *return_type = current_func->children[0].token.var_type;
 
             if (return_type->kind == TYPE_array)
-                try_set_array_literal_type(&node->children[0], return_type->array_data.type);
+                try_set_temp_array_type(&node->children[0], return_type->array_data.type);
             
             typeify_tree(&node->children[0], var_map);
         }
@@ -2960,6 +2958,7 @@ X(I_TUCK) \
 X(I_POP_BOTTOM) \
 X(I_NOP) \
 X(I_ARRAY_SUBSCRIPT) \
+X(I_ARRAY_SUBSCRIPT_ADDR) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3296,6 +3295,8 @@ void generate_instructions_for_vardecl(ASTNode *ast, Inst **instructions, Linked
 
 void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list);
 
+void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list);
+
 // #UPDATE FOR STRUCTS
 void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
@@ -3315,10 +3316,8 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
     bool inc_refcount_for_right_side = is_nontemporary_reference(right_side);
 
     if (left_side->token.type == NAME) {
-
-        
         String var_name = left_side->token.text;
-        
+            
         bool isglobal;
         
         VarHeader *vh = get_varheader_from_map_list(var_map_list, var_name, &isglobal);
@@ -3343,13 +3342,15 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
         array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = TYPE_int, .i_val = get_vartype_size(vh->var_type)}, (Val){.type = TYPE_int, .i_val = vh->var_pos}));
 
-    } else if (left_side->token.type == ATTR_ACCESS) {
-        
+    } else {
         Type *goal_type = left_side->expected_return_type;
 
-        generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
-
-
+        match (left_side->token.type) {
+            case (ATTR_ACCESS)
+                generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
+            case (ARRAY_SUBSCRIPT)
+                generate_instructions_for_array_subscript_addr(left_side, instructions, var_map_list);
+        }
 
         generate_instructions_for_node(right_side, instructions, var_map_list);
 
@@ -3369,6 +3370,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
         }
 
         array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .i_val = get_vartype_size(left_side->expected_return_type)}, null(Val)));
+
     }
 
     if (dec_refcount_for_left_side) {
@@ -4108,7 +4110,12 @@ void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions
 }   
 
 void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
-    print_todo("implement instructions for array subscript addr");
+Type *subtype = ast->children[0].expected_return_type->array_data.type;
+
+    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+    generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
+
+    array_append(*instructions, create_inst(I_ARRAY_SUBSCRIPT_ADDR, (Val){.type = TYPE_int, .i_val = get_vartype_size(subtype)}, null(Val)));
 }
 
 void generate_instructions_for_array_initializer(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -4381,6 +4388,15 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 // #EXECUTE INSTRUCTIONS
 
 #define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
+    case (I_ARRAY_SUBSCRIPT_ADDR) { \
+        inst_ptr += 1; \
+        int elem_size = *(int *)&byte_arr[inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        int idx = pop(int); \
+        void *addr = pop(char *); \
+        void *final = addr + calculate_array_offset(idx, elem_size); \
+        append(&final, sizeof(void *)); \
+    } \
     case (I_INIT_ARRAY_HEADER) { \
         void *obj = pop(void *); \
         TypeKind typekind = byte_arr[++inst_ptr]; \
