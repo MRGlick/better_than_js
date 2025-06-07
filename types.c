@@ -12,7 +12,8 @@
     X(string) \
     X(struct) \
     X(array) \
-    X(null_ref)
+    X(null_ref) \
+    X(count_)
 
 typedef enum TypeKind {
     #define X(a) TYPE_##a, 

@@ -2638,10 +2638,9 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         }
         case (ARRAY_INITIALIZER) {
             ASTNode *dims = &node->children[1];
-            Type *t = copy_type(node->children[0].token.var_type);
+            Type *t = make_array_type(copy_type(node->children[0].token.var_type));
             for (int i = 0; i < array_length(dims->children); i++) {
                 typeify_tree(&dims->children[i], var_map);
-                t = make_array_type(t);
                 if (dims->children[i].expected_return_type->kind != TYPE_int)
                     return_err("Dimension value must be of type int!");
             }
@@ -2947,6 +2946,7 @@ X(I_CALL) \
 X(I_READ_ATTR) \
 X(I_GET_ATTR_ADDR) \
 X(I_ALLOC) \
+X(I_ALLOC_DYNAMIC) \
 X(I_FREE) \
 X(I_DUP) \
 X(I_INC_REFCOUNT) \
@@ -2959,6 +2959,7 @@ X(I_POP_BOTTOM) \
 X(I_NOP) \
 X(I_ARRAY_SUBSCRIPT) \
 X(I_ARRAY_SUBSCRIPT_ADDR) \
+X(I_INIT_N_DIM_ARRAY) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -4118,8 +4119,41 @@ Type *subtype = ast->children[0].expected_return_type->array_data.type;
     array_append(*instructions, create_inst(I_ARRAY_SUBSCRIPT_ADDR, (Val){.type = TYPE_int, .i_val = get_vartype_size(subtype)}, null(Val)));
 }
 
+int get_dim_count_for_type(Type *t) {
+
+    assert(t != NULL);
+
+    if (t->kind != TYPE_array)
+        return 0;
+
+    return 1 + get_dim_count_for_type(t->array_data.type);
+}
+
 void generate_instructions_for_array_initializer(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
-    print_todo("implement instructions for array initializer");    
+
+    int dims = get_dim_count_for_type(ast->expected_return_type);
+
+    ASTNode *dims_node = &ast->children[1];
+
+    if (array_length(dims_node->children) != dims) return_err(
+        "Bad array initializer! Expected to have %d dimensions, but you specified %d dimensions!",
+        dims,
+        array_length(dims_node->children)
+    );
+
+    for (int i = 0; i < dims; i++) {
+        ASTNode *dim = &dims_node->children[i];
+
+        generate_instructions_for_node(dim, instructions, var_map_list);
+    }
+
+    Type *final_subtype = ast->expected_return_type;
+    while (final_subtype->kind == TYPE_array) final_subtype = final_subtype->array_data.type;
+
+    array_append(*instructions, create_inst(I_INIT_N_DIM_ARRAY
+        , (Val){.type = TYPE_int, .i_val = final_subtype->kind}
+        , (Val){.type = TYPE_int, .i_val = dims}));
+
 }
 
 void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -4357,29 +4391,24 @@ void print_double(double a) {
 
 
 
-
 // Use if 'size' is guranteed to be 1, 4, or 8
 static inline void my_memcpy(void *dst, const void *src, u8 size) {
-    switch (size) {
-        case 0:
-            break;
-        case 1:
+    match (size) {
+        case (0) {}
+        case (1)
             *(u8 *)dst = *(u8 *)src;
-            break;
-        case 4:
+        case (4)
             *(u32 *)dst = *(u32 *)src;
-            break;
-        case 8:
+        case (8)
             *(u64 *)dst = *(u64 *)src;
-            break;
-        default:
+        default()
             print_err("You should kill yourself NOW. unsupported size on my_memcpy(): %d", size);
             break;
     }
 }
 
 
-#define append(ptr, size) my_memcpy(temp_stack + temp_stack_ptr++, ptr, size)
+#define append(ptr, size) my_memcpy(temp_stack + temp_stack_ptr++, ptr, size);
 #define pop(type) (*(type *)(temp_stack + --temp_stack_ptr))
 #define dup() ({temp_stack[temp_stack_ptr] = temp_stack[temp_stack_ptr - 1]; temp_stack_ptr++;})
 #define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
@@ -4387,7 +4416,25 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 
 // #EXECUTE INSTRUCTIONS
 
-#define execute_instruction_bytes() switch (byte_arr[inst_ptr]) { \
+#define execute_instruction_bytes() match (byte_arr[inst_ptr]) { \
+    case (I_INIT_N_DIM_ARRAY) { \
+        int elem_size = byte_arr[++inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        int n = byte_arr[++inst_ptr]; \
+        inst_ptr += sizeof(int) - 1; \
+        int *dims = calloc(sizeof(int), n); \
+        for (int i = n - 1; i >= 0; i--) { /* bc we're popping */ \
+            dims[i] = pop(int); \
+        } \
+        void *arr = init_n_dim_array(elem_size, n, dims); \
+        free(dims); \
+        append(&arr, sizeof(void *)); \
+    } \
+    case (I_ALLOC_DYNAMIC) { \
+        int size = pop(int); \
+        void *addr = alloc_object(size); \
+        append(&addr, sizeof(addr)); \
+    } \
     case (I_ARRAY_SUBSCRIPT_ADDR) { \
         inst_ptr += 1; \
         int elem_size = *(int *)&byte_arr[inst_ptr]; \

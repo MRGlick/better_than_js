@@ -59,6 +59,16 @@ void print_struct_meta(StructMetadata sm) {
     printf("    Size: %d bytes\n ", sm.size);
 } 
 
+void *tracked_malloc(size_t size) {
+    runtime_mallocs++;
+    return calloc(size, 1);
+}
+
+void tracked_free(void *ptr) {
+    runtime_frees++;
+    free(ptr);
+}
+
 static inline int _object_get_refcount(void *obj) {
 
     assert(obj != NULL);
@@ -70,8 +80,7 @@ static inline int _object_get_refcount(void *obj) {
 static inline void object_dec_ref(void *obj, bool is_array);
 
 static inline void *alloc_object(u32 size) {
-    runtime_mallocs++;
-    return calloc(size, 1);
+    return tracked_malloc(size);
 }
 
 // test
@@ -93,8 +102,7 @@ static inline void free_object(void *obj) {
         object_dec_ref(child_obj, sm.offsets[i].is_array);
     }
 
-    runtime_frees++;
-    free(obj);
+    tracked_free(obj);
 }
 
 static inline bool is_reference_typekind(TypeKind);
@@ -105,7 +113,7 @@ static inline void free_object_array(void *obj) {
     ObjectHeader *header = obj;
 
     TypeKind subtype_kind = header->data >> METADATA_BIT_OFFSET;
-
+    
     if (is_reference_typekind(subtype_kind)) {
         int elem_size = get_typekind_size(subtype_kind);
         int len = *(int *)(obj + sizeof(ObjectHeader));
@@ -117,8 +125,7 @@ static inline void free_object_array(void *obj) {
         }
     }
 
-    runtime_frees++;
-    free(obj);
+    tracked_free(obj);
 }
 
 
@@ -157,6 +164,64 @@ static inline void object_init_header(void *obj, int meta_idx) {
     // 0x__000000
     header->data = (meta_idx << METADATA_BIT_OFFSET) | REFCOUNTER_START_VALUE; 
 }
+
+
+void *_init_n_dim_array(TypeKind final_subtype_kind, int n, int *dims, int dims_idx) {
+
+    assert(dims_idx < n);
+
+    // base case
+    if (dims_idx == n - 1) {
+        int elem_size = get_typekind_size(final_subtype_kind);
+
+        void *arr = tracked_malloc(calculate_array_offset(elem_size, n));
+        object_init_header(arr, final_subtype_kind);
+        int *length = (arr + sizeof(ObjectHeader));
+        *length = dims[dims_idx];
+        return arr;
+
+    }
+
+    int elem_size = 8;
+
+    int len = dims[dims_idx];
+
+    void *arr = tracked_malloc(calculate_array_offset(len, elem_size));
+
+    object_init_header(arr, TYPE_array);
+
+    int *length = (arr + sizeof(ObjectHeader));
+    *length = len;
+
+    for (int i = 0; i < len; i++) {
+        void **child = (void **)(arr + calculate_array_offset(i, elem_size));
+
+        assert((*child) == NULL); // if its not then we're in trouble
+
+        void *thing = _init_n_dim_array(final_subtype_kind, n, dims, dims_idx + 1);
+
+        *child = thing;
+    }
+
+    return arr;
+
+}
+
+// elem size is the size of the final subtype
+void *init_n_dim_array(TypeKind final_subtype_kind, int n, int *dims) {
+
+    // i am simply not dealing with these cases
+    assert(n > 0);
+    assert(dims != NULL);
+    assert(final_subtype_kind >= 0 && final_subtype_kind < TYPE_count_);
+
+    void *retval = _init_n_dim_array(final_subtype_kind, n, dims, 0);
+
+    return retval;
+}
+
+
+
 
 void clear_struct_metadata() {
     for (int i = 0; i < struct_metadata_ptr; i++) {
