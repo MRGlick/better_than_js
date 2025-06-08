@@ -520,37 +520,7 @@ Token *get_token_ref(int idx) {
     return &parse_tokens[idx];
 }
 
-// 1 + 2 + 3
-// +: [3]
-// +: [+: [2], 3]
-// +: [+: [1, 2], 3]
-
-// 1 + (2 + 3)
-// in brackets:
-// +: [3]
-// +: [2, 3]
-// +: [+: [2, 3]]
-// +: [1, +: [2, 3]]
-
 #define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
-
-bool is_valid_stmt_boundary(Token tok) {
-    match (tok.type) {
-        case (RCURLY, STMT_END) 
-            return true;
-        case (KEYWORD) 
-            return check_keyword(tok, "if")
-                || check_keyword(tok, "for")
-                || check_keyword(tok, "while")
-                || check_keyword(tok, "print")
-                || check_keyword(tok, "input")
-                || check_keyword(tok, "delete")
-                || check_keyword(tok, "struct");
-        
-        default ()
-            return false;
-    }
-}
 
 #define PARSE_ERR_SIZE 1024
 
