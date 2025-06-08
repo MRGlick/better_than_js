@@ -14,8 +14,8 @@
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 0
-#define IR_PRINT 0
+#define PARSER_PRINT 1
+#define IR_PRINT 1
 // #FLAGS END
 
 
@@ -1783,15 +1783,32 @@ ParseResult parse_unary_not(int idx) {
     }
 }
 
+ParseResult parse_type_conversion_prefix(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LPAREN);
+        MATCH_PARSE(type_res, parse_type(idx, NULL), "type");
+        MATCH_TOKEN_WITH_TYPE(RPAREN);
+        MATCH_PARSE(unary_res, parse_unary_rule(idx), "value after type conversion prefix");
+        ASTNode node = ASTNode_create((Token){.type = OP_CONVERT_TYPE}, true);
+        ASTNode_add_child(node, type_res.node);
+        ASTNode_add_child(node, unary_res.node);
+        FINISH_PARSE(node);
+        
+    }
+}
+
 ParseResult parse_unary_rule(int idx) {
     
     START_PARSE {
 
         MATCH_RETURN_IF_PARSED(parse_primary(idx));
+        
+        MATCH_RETURN_IF_PARSED(parse_type_conversion_prefix(idx));
 
         MATCH_RETURN_IF_PARSED(parse_unary_minus(idx));
         
         MATCH_RETURN_IF_PARSED(parse_unary_not(idx));
+
 
         MATCH_TOKEN(false);
     }
@@ -2321,7 +2338,7 @@ void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
 }
 
 
-void try_set_temp_array_type(ASTNode *node, Type *target_type) {
+void try_set_temp_array_subtype(ASTNode *node, Type *target_type) {
     if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;
     ASTNode_insert_child(
         (*node), 
@@ -2391,7 +2408,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             HashMap_put(var_map, var_name, &vh);
 
             if (node->token.type == DECL_ASSIGN_STMT && type->kind == TYPE_array)
-                try_set_temp_array_type(expr_node, type->array_data.type);
+                try_set_temp_array_subtype(expr_node, type->array_data.type);
 
             for (int i = 0; i < array_length(node->children); i++) {
                 typeify_tree(&node->children[i], var_map);
@@ -2584,7 +2601,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
                 if (member->expected_return_type->kind == TYPE_array) {
                     Type *subtype = member->expected_return_type->array_data.type;
-                    try_set_temp_array_type(expr, subtype);
+                    try_set_temp_array_subtype(expr, subtype);
                 }
 
                 
@@ -2628,7 +2645,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             for (int i = 0; i < array_length(values_node->children); i++) {
                 ASTNode *child = &values_node->children[i];
                 if (type_node->token.var_type->kind == TYPE_array)
-                    try_set_temp_array_type(child, type_node->token.var_type->array_data.type);
+                    try_set_temp_array_subtype(child, type_node->token.var_type->array_data.type);
                 typeify_tree(child, var_map);
             }
 
@@ -2676,9 +2693,20 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             Type *return_type = current_func->children[0].token.var_type;
 
             if (return_type->kind == TYPE_array)
-                try_set_temp_array_type(&node->children[0], return_type->array_data.type);
+                try_set_temp_array_subtype(&node->children[0], return_type->array_data.type);
             
             typeify_tree(&node->children[0], var_map);
+        }
+        case (OP_CONVERT_TYPE) {
+            
+            node->expected_return_type = copy_type(node->children[0].token.var_type);
+
+            if (node->expected_return_type->kind == TYPE_array)
+                try_set_temp_array_subtype(&node->children[1], node->expected_return_type->array_data.type);
+
+            typeify_tree(&node->children[1], var_map);
+            
+        
         }
 
         default() {
@@ -3051,6 +3079,9 @@ void print_instructions(Inst *arr) {
 
 
 InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
+    
+    if (types_are_equal(from, to)) return I_NOP;
+    
     // avert your eyes
     if (from->kind == TYPE_bool) {
         if (to->kind == TYPE_int) return I_CONVERT_BOOL_INT;
@@ -3076,7 +3107,6 @@ InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
         if (to->kind == TYPE_struct) return I_NOP;
     }
 
-    if (types_are_equal(from, to)) return I_NOP;
 
     return I_INVALID;
 }
@@ -3088,6 +3118,7 @@ bool is_valid_type_conversion(Type *from, Type *to) {
 bool generate_cvt_inst_for_types(Type *from, Type *to, Inst **instructions) {
     InstType inst = _get_cvt_inst_type_for_types(from, to);
     if (inst == I_INVALID) return false;
+    if (inst == I_NOP) return true;
 
     array_append(*instructions, create_inst(inst, null(Val), null(Val)));
     return true;
@@ -3238,11 +3269,9 @@ static inline bool is_temporary_reference(ASTNode *ast) {
     return ast->token.type == OP_NEW
         || ast->token.type == ARRAY_LITERAL
         || ast->token.type == ARRAY_INITIALIZER
-        || (ast->token.type == FUNC_CALL && (
-                ast->expected_return_type->kind == TYPE_struct 
-                || ast->expected_return_type->kind == TYPE_array
-                )
-            );
+        || (
+            (ast->token.type == FUNC_CALL || ast->token.type == OP_CONVERT_TYPE) 
+            && is_reference_typekind(ast->expected_return_type->kind));
 }
 
 static inline bool is_nontemporary_reference(ASTNode *ast) {
@@ -4097,15 +4126,31 @@ void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions
 
     Type *subtype = ast->children[0].expected_return_type->array_data.type;
 
+    bool dec_ref = is_temporary_reference(&ast->children[0]);
+
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+
+    if (dec_ref) {
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val)));
+    }
+
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
     array_append(*instructions, create_inst(I_ARRAY_SUBSCRIPT, (Val){.type = TYPE_int, .i_val = get_vartype_size(subtype)}, null(Val)));
 
+
+    if (dec_ref) {
+        array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
+
+        //                                        VVV its always an array for an array subscript duh
+        array_append(*instructions, create_inst(I_DEC_REFCOUNT_ARRAY, null(Val), null(Val)));
+    }
 }   
 
 void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
-Type *subtype = ast->children[0].expected_return_type->array_data.type;
+    
+    Type *subtype = ast->children[0].expected_return_type->array_data.type;
 
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
@@ -4147,6 +4192,30 @@ void generate_instructions_for_array_initializer(ASTNode *ast, Inst **instructio
     array_append(*instructions, create_inst(I_INIT_N_DIM_ARRAY
         , (Val){.type = TYPE_int, .i_val = final_subtype->kind}
         , (Val){.type = TYPE_int, .i_val = dims}));
+
+}
+
+void generate_instructions_for_type_conversion(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    ASTNode *value = &ast->children[1];
+
+    bool inc_ref = is_nontemporary_reference(value);
+
+    generate_instructions_for_node(value, instructions, var_map_list);
+
+    if (inc_ref) {
+        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));        
+    }
+
+    bool res = generate_cvt_inst_for_types(value->expected_return_type, ast->expected_return_type, instructions);
+
+    if (!res) return_err(
+        "Cannot explicitely convert from type '%s' to type '%s'!",
+        type_get_name(value->expected_return_type).data,
+        type_get_name(ast->expected_return_type).data
+    );
+
 
 }
 
@@ -4205,6 +4274,9 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         
         case (RETURN_STMT) 
             generate_instructions_for_return_stmt(ast, instructions, var_map_list);
+
+        case (OP_CONVERT_TYPE)
+            generate_instructions_for_type_conversion(ast, instructions, var_map_list);
 
         
         default ()
