@@ -14,8 +14,8 @@
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 1
-#define IR_PRINT 1
+#define PARSER_PRINT 0
+#define IR_PRINT 0
 // #FLAGS END
 
 
@@ -729,7 +729,7 @@ ParseResult parse_value(int idx) {
     }
 }
 
-#define is_null_ast(ast) (!ast.children)
+#define is_null_ast(ast) (!(ast).children)
 
 ParseResult parse_base_rule(int idx) {
     START_PARSE {
@@ -2471,8 +2471,6 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             HashMap_free(var_map);
 
-            print_ast(*node, 0);
-
             int result = validate_return_paths(node);
             
             match (result) {
@@ -3226,10 +3224,17 @@ static inline bool is_reference_typekind(TypeKind kind) {
 }
 
 static inline bool is_reference(ASTNode *ast) {
+
+    if (is_null_ast(*ast)) return false;
+
     return is_reference_typekind(ast->expected_return_type->kind);
 }
 
 static inline bool is_temporary_reference(ASTNode *ast) {
+
+    if (is_null_ast(*ast)) return false;
+
+
     return ast->token.type == OP_NEW
         || ast->token.type == ARRAY_LITERAL
         || ast->token.type == ARRAY_INITIALIZER
@@ -3277,7 +3282,7 @@ void generate_instructions_for_vardecl(ASTNode *ast, Inst **instructions, Linked
         array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
     }
 
-    bool inc_refcounter = is_nontemporary_reference(&ast->children[2]);
+    bool inc_refcounter = (ast->token.type == DECL_ASSIGN_STMT) && is_nontemporary_reference(&ast->children[2]);
 
     if (inc_refcounter) {
         array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
@@ -4010,9 +4015,6 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
 
             if (!is_reference_typekind(decl->var_type->kind)) continue;
 
-            debug printf("var name: %s, type: %s \n", vardecls[i]->name.data, type_get_name(vardecls[i]->var_type).data);
-
-
             array_append(
                 *instructions, 
                 create_inst(
@@ -4031,14 +4033,6 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
 
     if (has_value) {
         Type *target_type = func->children[0].token.var_type;
-
-        debug {
-            printf("target type: ");
-            print_type(target_type);
-            printf("\n current type: ");
-            print_type(ast->children[0].expected_return_type);
-            printf("\n");
-        }
         
         if (!types_are_equal(target_type, ast->children[0].expected_return_type)) {
             bool res = generate_cvt_inst_for_types(

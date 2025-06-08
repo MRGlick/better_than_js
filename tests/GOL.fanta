@@ -1,0 +1,72 @@
+
+
+bool[][] generate_board(int size) {
+    bool[][] board = [size; size];
+
+    for (int r = 0; r < size; r += 1; ) {
+        for (int c = 0; c < size; c += 1; ) {
+            board[r][c] = maybe;
+        }
+    }
+
+    return board;
+}
+
+int get_cell(bool[][] board, int r, int c) {
+    if (r < 0 || r >= board.length || c < 0 || c > board[0].length) return false;
+
+    return board[r][c];
+}
+
+int count_live_cells(bool[][] board, int r, int c) {
+    return get_cell(board, r, c + 1)
+     + get_cell(board, r + 1, c + 1)
+     + get_cell(board, r + 1, c)
+     + get_cell(board, r + 1, c - 1)
+     + get_cell(board, r, c - 1)
+     + get_cell(board, r - 1, c - 1)
+     + get_cell(board, r - 1, c)
+     + get_cell(board, r - 1, c + 1);
+}
+
+bool[][] step(bool[][] old_board) {
+    bool[][] new_board = [old_board.length; old_board[0].length];
+
+    for (int r = 0; r < old_board.length; r += 1; ) {
+        for (int c = 0; c < old_board[r].length; c += 1; ) {
+            int live_cells = count_live_cells(old_board, r, c);
+
+            if (live_cells == 2) new_board[r][c] = old_board[r][c];
+            else if (live_cells == 3) new_board[r][c] = true;
+            else new_board[r][c] = false;
+        } 
+    }
+
+    return new_board;
+}
+
+void print_board(bool[][] board) {
+    for (int r = 0; r < board.length; r += 1; ) {
+        for (int c = 0; c < board[r].length; c += 1; ) {
+            if (board[r][c]) write "@ ";
+            else write ". ";
+        } 
+        print "";
+    }
+}
+
+
+bool[][] board = [
+    [1, 0, 0, 0],
+    [0, 1, 1, 0],
+    [1, 1, 0, 0],
+    [0, 0, 0, 0]
+];
+
+int steps = 8;
+
+for (int i = 0; i < steps; i += 1; ) {
+    print "Board #", i, ": ";
+    print_board(board);
+    board = step(board);
+}
