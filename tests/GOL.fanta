@@ -67,10 +67,16 @@ int steps = 8;
 
 for (int i = 0; i < steps; i += 1; ) {
     print "Board #", i, ": ";
+    {   
+        bool[][] board = board;
+        for (int r = 0; r < board.length; r += 1; ) {
+            for (int c = 0; c < board[r].length; c += 1; ) {
+                if (board[r][c]) write "@ ";
+                else write ". ";
+            } 
+            print "";
+        }
+    }
     print_board(board);
     board = step(board);
 }
-
-
-
-((int[][])[[1], [2]])[1];

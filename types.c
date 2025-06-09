@@ -9,7 +9,7 @@
     X(bool) \
     X(int) \
     X(float) \
-    X(string) \
+    X(str) \
     X(struct) \
     X(array) \
     X(null_ref) \

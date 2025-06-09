@@ -1,0 +1,30 @@
+
+struct Foo {
+    int x;
+    int y;
+}
+
+
+
+int rand() {
+    int sum = 0;
+    int power = 1;
+    for (int i = 0; i < 31; {i += 1; power *= 2; } ) if (maybe) sum += power;
+    return sum;
+}
+
+void print_rand(string[] names) {
+    print names[rand() % names.length];
+}
+
+string[] names = [
+    "John",
+    "Michael",
+    "Wish",
+    "Jack",
+    "Another names which starts with J"
+];
+
+print_rand(names);
+print_rand(names);
+print_rand(names);

@@ -520,7 +520,8 @@ Token *get_token_ref(int idx) {
     return &parse_tokens[idx];
 }
 
-#define check_keyword(token, keyword_literal) (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
+#define check_keyword(token, keyword_literal) \
+    (token.type == KEYWORD && String_equal(token.text, StringRef(keyword_literal)))
 
 #define PARSE_ERR_SIZE 1024
 
@@ -2088,7 +2089,7 @@ int get_type_precedence(Type *type) {
         case (TYPE_float) 
             return 2;
         
-        case (TYPE_string) 
+        case (TYPE_str) 
             return 3;
         
         case (TYPE_struct) 
@@ -2205,19 +2206,19 @@ int get_match_score_for_types(Type *t1, Type *t2) {
     if (t1->kind == TYPE_int) {
         if (t2->kind == TYPE_float) return 3;
         if (t2->kind == TYPE_bool) return 2;
-        if (t2->kind == TYPE_string) return 1;
+        if (t2->kind == TYPE_str) return 1;
     }
     if (t1->kind == TYPE_float) {
         if (t2->kind == TYPE_int) return 3;
         if (t2->kind == TYPE_bool) return 2;
-        if (t2->kind == TYPE_string) return 1;
+        if (t2->kind == TYPE_str) return 1;
     }
     if (t1->kind == TYPE_bool) {
         if (t2->kind == TYPE_int) return 3;
         if (t2->kind == TYPE_float) return 2;
-        if (t2->kind == TYPE_string) return 1;
+        if (t2->kind == TYPE_str) return 1;
     }
-    if (t1->kind == TYPE_string) {
+    if (t1->kind == TYPE_str) {
         if (t2->kind == TYPE_int) return 1;
         if (t2->kind == TYPE_float) return 1;
         if (t2->kind == TYPE_bool) return 1;
@@ -2394,7 +2395,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             node->expected_return_type = make_type(TYPE_bool);
         }
         case(STRING_LITERAL) {
-            node->expected_return_type = make_type(TYPE_string);
+            node->expected_return_type = make_type(TYPE_str);
         }
         case(NULL_REF) {
             node->expected_return_type = make_type(TYPE_null_ref);
@@ -2992,7 +2993,7 @@ void print_val(Val val) {
         case (TYPE_bool)
             printf("%s", val.b_val ? "true" : "false");
             break;
-        case (TYPE_string)
+        case (TYPE_str)
             printf("\"%s\"", val.s_val);
             break;
         case (TYPE_struct)
@@ -3056,19 +3057,19 @@ InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
     if (from->kind == TYPE_bool) {
         if (to->kind == TYPE_int) return I_CONVERT_BOOL_INT;
         if (to->kind == TYPE_float) return I_CONVERT_BOOL_FLOAT;
-        if (to->kind == TYPE_string) return I_CONVERT_BOOL_STR;
+        if (to->kind == TYPE_str) return I_CONVERT_BOOL_STR;
     }
     if (from->kind == TYPE_int) {
         if (to->kind == TYPE_bool) return I_CONVERT_INT_BOOL;
         if (to->kind == TYPE_float) return I_CONVERT_INT_FLOAT;
-        if (to->kind == TYPE_string) return I_CONVERT_INT_STR;
+        if (to->kind == TYPE_str) return I_CONVERT_INT_STR;
     }
     if (from->kind == TYPE_float) {
         if (to->kind == TYPE_bool) return I_CONVERT_FLOAT_BOOL;
         if (to->kind == TYPE_int) return I_CONVERT_FLOAT_INT;
-        if (to->kind == TYPE_string) return I_CONVERT_FLOAT_STR;
+        if (to->kind == TYPE_str) return I_CONVERT_FLOAT_STR;
     }
-    if (from->kind == TYPE_string) {
+    if (from->kind == TYPE_str) {
         if (to->kind == TYPE_bool) return I_CONVERT_STR_BOOL;
         if (to->kind == TYPE_int) return I_CONVERT_STR_INT;
         if (to->kind == TYPE_float) return I_CONVERT_STR_FLOAT;
@@ -3138,14 +3139,14 @@ InstType get_inst_type_for_op(TokenType op, Type *var_type) {
         if (kind == TYPE_int) return I_EQUAL;
         if (kind == TYPE_float) return I_EQUAL_FLOAT;
         if (kind == TYPE_bool) return I_EQUAL_BOOL;
-        if (kind == TYPE_string) return I_EQUAL_STR;
+        if (kind == TYPE_str) return I_EQUAL_STR;
         if (kind == TYPE_struct) return I_EQUAL_REF;
     }
     if (op == OP_NOTEQ) {
         if (kind == TYPE_int) return I_NOT_EQUAL;
         if (kind == TYPE_float) return I_NOT_EQUAL_FLOAT;
         if (kind == TYPE_bool) return I_NOT_EQUAL_BOOL;
-        if (kind == TYPE_string) return I_NOT_EQUAL_STR;
+        if (kind == TYPE_str) return I_NOT_EQUAL_STR;
         if (kind == TYPE_struct) return I_NOT_EQUAL_REF;
     }
     if (op == OP_AND && kind == TYPE_bool) {
@@ -3444,7 +3445,7 @@ InstType get_print_inst_for_type(Type *type) {
         case (TYPE_bool) 
             return I_PRINT_BOOL;
         
-        case (TYPE_string) 
+        case (TYPE_str) 
             return I_PRINT_STR;
         
         default ()
@@ -3564,8 +3565,8 @@ void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedLi
 
     Type *goal_type = ast->children[0].expected_return_type;
 
-    if (goal_type->kind != TYPE_string) {
-        bool result = generate_cvt_inst_for_types(&_const_types[TYPE_string], goal_type, instructions);
+    if (goal_type->kind != TYPE_str) {
+        bool result = generate_cvt_inst_for_types(&_const_types[TYPE_str], goal_type, instructions);
         if (!result) return_err("Can't convert string to '%s'!", type_get_name(goal_type).data);
     }
 
@@ -4301,7 +4302,7 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         
         case (STRING_LITERAL) 
             array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .i_val = 8}, 
-                                                    (Val){.type = TYPE_string, .s_val = ast->token.text.data}));
+                                                    (Val){.type = TYPE_str, .s_val = ast->token.text.data}));
         
         case (OP_ADD) 
             array_append(*instructions, create_inst(I_ADD, null(Val), null(Val)));
@@ -4906,7 +4907,7 @@ void preprocess_string_literals(Inst *instructions) {
     
     for (int i = 0; i < len; i++) {
         Inst inst = instructions[i];
-        if (inst.type == I_PUSH && inst.arg1.type == TYPE_string) {
+        if (inst.type == I_PUSH && inst.arg1.type == TYPE_str) {
             inst.arg1.s_val = append_to_text_buffer(inst.arg1.s_val, strlen(inst.arg1.s_val));
         }
     }

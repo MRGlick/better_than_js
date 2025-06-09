@@ -13,7 +13,8 @@
     "inttypes.h": "c",
     "stdbool.h": "c",
     "globals.h": "c",
-    "match.h": "c"
+    "match.h": "c",
+    "random": "c"
   },
   "github.copilot.enable": {
     "*": false,
