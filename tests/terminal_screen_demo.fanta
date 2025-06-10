@@ -1,0 +1,34 @@
+
+
+bool first_render = true;
+
+int[][] generate_random_screen(int width, int height) {
+    int[][] s = [height; width];
+
+    for (int r = 0; r < height; r += 1; ) {
+        for (int c = 0; c < width; c += 1; ) {
+            s[r][c] = maybe;
+        }
+    }
+
+    return s;
+}
+
+void render(int[][] screen) {
+    first_render = false;
+
+    for (int r = 0; r < screen.length; r += 1; ) {
+        for (int c = 0; c < screen[r].length; c += 1; ) {
+            if (screen[r][c] == 0) print ".";
+            else print "@";
+        }
+        print "";
+    }
+}
+
+
+for (int i = 0; i < 6; i += 1; ) {
+    int[][] s = generate_random_screen(12, 6);
+    render(s);
+    sleep(0.5);
+}

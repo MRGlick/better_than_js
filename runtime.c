@@ -173,11 +173,12 @@ void *_init_n_dim_array(TypeKind final_subtype_kind, int n, int *dims, int dims_
     // base case
     if (dims_idx == n - 1) {
 
+        
         int elem_size = get_typekind_size(final_subtype_kind);
+        
+        int len = dims[dims_idx];
 
-        int len = dims[0];
-
-        void *arr = tracked_malloc(calculate_array_offset(elem_size, len));
+        void *arr = tracked_malloc(calculate_array_offset(len, elem_size));
         object_init_header(arr, final_subtype_kind);
         int *length = (arr + sizeof(ObjectHeader));
         *length = dims[dims_idx];
@@ -252,3 +253,14 @@ void clear_n_lines(int n) {
     
     // fflush(stdout); // not sure?
 }
+
+#ifdef _WIN32
+
+// fuck you im not including windows.h
+extern void __stdcall Sleep(unsigned long dwMilliseconds);
+
+void sleep(double seconds) {
+    Sleep(seconds * 1000);
+}
+
+#endif

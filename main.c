@@ -2080,19 +2080,26 @@ int get_type_precedence(Type *type) {
     if (type == NULL) return -1;
 
     match (type->kind) {
-        case (TYPE_bool) 
+        
+        case (TYPE_null_ref)
             return 0;
         
-        case (TYPE_int) 
+        case (TYPE_bool) 
             return 1;
         
-        case (TYPE_float) 
+        case (TYPE_int) 
             return 2;
         
-        case (TYPE_str) 
+        case (TYPE_float) 
             return 3;
         
+        case (TYPE_str) 
+            return 4;
+        
         case (TYPE_struct) 
+            return 4;
+        
+        case (TYPE_array)
             return 4;
         
         default () return -1;
@@ -2358,7 +2365,8 @@ void try_infer_array_literal_type_from_overloads(ASTNode *node, VarHeader *overl
 
 #define INTRINSICS \
     X(clear_terminal_lines) \
-    X(rand)
+    X(rand) \
+    X(sleep)
 
 typedef enum {
 
@@ -2435,7 +2443,13 @@ void typeify_intrinsic(ASTNode *node, HashMap *var_map) {
             node->expected_return_type = make_type(TYPE_void);
 
             check_arg(0, TYPE_int);
+        }
 
+        case (INTR_sleep) {
+            expect_arg_count(1);
+            node->expected_return_type = make_type(TYPE_void);
+
+            check_arg(0, TYPE_float);
         }
 
         default() print_err("typeify_intrinsic(): '%s' is unimplemented", intrinsic_names[intr]);
@@ -3066,6 +3080,7 @@ X(I_ARRAY_SUBSCRIPT) \
 X(I_ARRAY_SUBSCRIPT_ADDR) \
 X(I_INIT_N_DIM_ARRAY) \
 X(I_CLEAR_TERMI_LINES) \
+X(I_SLEEP) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3185,6 +3200,8 @@ InstType _get_cvt_inst_type_for_types(Type *from, Type *to) {
     }
     if (from->kind == TYPE_null_ref) {
         if (to->kind == TYPE_struct) return I_NOP;
+        if (to->kind == TYPE_array) return I_NOP;
+        if (to->kind == TYPE_str) return I_NOP;
     }
 
 
@@ -3249,14 +3266,14 @@ InstType get_inst_type_for_op(TokenType op, Type *var_type) {
         if (kind == TYPE_float) return I_EQUAL_FLOAT;
         if (kind == TYPE_bool) return I_EQUAL_BOOL;
         if (kind == TYPE_str) return I_EQUAL_STR;
-        if (kind == TYPE_struct) return I_EQUAL_REF;
+        if (is_reference_typekind(kind)) return I_EQUAL_REF;
     }
     if (op == OP_NOTEQ) {
         if (kind == TYPE_int) return I_NOT_EQUAL;
         if (kind == TYPE_float) return I_NOT_EQUAL_FLOAT;
         if (kind == TYPE_bool) return I_NOT_EQUAL_BOOL;
         if (kind == TYPE_str) return I_NOT_EQUAL_STR;
-        if (kind == TYPE_struct) return I_NOT_EQUAL_REF;
+        if (is_reference_typekind(kind)) return I_NOT_EQUAL_REF;
     }
     if (op == OP_AND && kind == TYPE_bool) {
         return I_AND;
@@ -3504,10 +3521,10 @@ void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedLi
     bool is_bool_op = in_range(ast->token.type, BOOLOPS_START, BOOLOPS_END);
     bool is_pure_bool_op = ast->token.type == OP_AND || ast->token.type == OP_OR;
 
-    Type *highest_prec_type = NULL;
+    Type *highest_prec_type = ast->children[0].expected_return_type;
 
     if (is_bool_op) {
-        for (int i = 0; i < len; i++) {
+        for (int i = 1; i < len; i++) {
             if (get_type_precedence(ast->children[i].expected_return_type) > get_type_precedence(highest_prec_type)) {
                 highest_prec_type = ast->children[i].expected_return_type;
             }
@@ -3848,18 +3865,32 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
 
 void generate_instructions_for_intrinsic_func_call(IntrKind intr, ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    #define push_arg(idx) \
-        generate_instructions_for_node(&ast->children[1].children[idx], instructions, var_map_list)
+    #define push_arg(idx, exp_type) \
+        { \
+            generate_instructions_for_node(&ast->children[1].children[idx], instructions, var_map_list); \
+            bool res = generate_cvt_inst_for_types( \
+                ast->children[1].children[idx].expected_return_type, \
+                exp_type, \
+                instructions \
+            ); \
+            assert(res); \
+        }
+
 
     match (intr) {
         
         case (INTR_clear_terminal_lines) {
-            push_arg(0);
+            push_arg(0, &_const_types[TYPE_int]);
             array_append(*instructions, create_inst(I_CLEAR_TERMI_LINES, null(Val), null(Val)));
         }
         
         case (INTR_rand) {
             array_append(*instructions, create_inst(I_PUSH_RAND, null(Val), null(Val)));
+        }
+
+        case (INTR_sleep) {
+            push_arg(0, &_const_types[TYPE_float]);
+            array_append(*instructions, create_inst(I_SLEEP, null(Val), null(Val)));
         }
         
         default () {
@@ -4725,6 +4756,10 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
 
         match (byte_arr[inst_ptr]) {
+            case (I_SLEEP) {
+                double seconds = pop(double);
+                sleep(seconds);
+            }
             case (I_CLEAR_TERMI_LINES) {
                 int lines = pop(int);
                 clear_n_lines(lines);
@@ -4757,6 +4792,12 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 inst_ptr += sizeof(int) - 1;
                 int idx = pop(int);
                 void *addr = pop(char *);
+                if (!addr) {
+                    print_err(
+                        "Tried to subscript a null reference!"
+                    );
+                    exit(EXIT_FAILURE);
+                }
                 int *len = addr + sizeof(ObjectHeader);
                 if (idx >= (*len)) {
                     print_err(
@@ -4788,6 +4829,12 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 inst_ptr += sizeof(int) - 1;
                 int idx = pop(int);
                 void *addr = pop(char *);
+                if (!addr) {
+                    print_err(
+                        "Tried to subscript a null reference!"
+                    );
+                    exit(EXIT_FAILURE);
+                }
                 int *len = addr + sizeof(ObjectHeader);
                 if (idx >= (*len)) {
                     print_err(
@@ -4948,6 +4995,10 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
             }
             case (I_PRINT_STR) {
                 char *str = pop(char *);
+                if (!str) {
+                    print_err("Tried to print null string!");
+                    exit(EXIT_FAILURE);
+                }
                 printf("%s", str);
             }
             case (I_PRINT_FLOAT) {

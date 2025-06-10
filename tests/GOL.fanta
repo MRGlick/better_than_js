@@ -13,7 +13,7 @@ bool[][] generate_board(int size) {
 }
 
 int get_cell(bool[][] board, int r, int c) {
-    if (r < 0 || r >= board.length || c < 0 || c > board[0].length) return false;
+    if (r < 0 || r >= board.length || c < 0 || c >= board[0].length) return false;
 
     return board[r][c];
 }
@@ -45,38 +45,38 @@ bool[][] step(bool[][] old_board) {
     return new_board;
 }
 
+
+
 void print_board(bool[][] board) {
     for (int r = 0; r < board.length; r += 1; ) {
         for (int c = 0; c < board[r].length; c += 1; ) {
+            int live_cells = count_live_cells(board, r, c);
+
             if (board[r][c]) write "@ ";
-            else write ". ";
+            else if (live_cells > 3) write "- ";
+            else if (live_cells > 1) write ". ";
+            else write "  ";
         } 
         print "";
     }
 }
 
+while (true) {    
+    int board_size;
+    write "Enter board size: ";
+    input board_size;
 
-bool[][] board = [
-    [1, 0, 0, 0],
-    [0, 1, 1, 0],
-    [1, 1, 0, 0],
-    [0, 0, 0, 0]
-];
+    int steps;
+    write "Enter iterations: ";
+    input steps;
 
-int steps = 8;
+    bool[][] board = generate_board(board_size);
 
-for (int i = 0; i < steps; i += 1; ) {
-    print "Board #", i, ": ";
-    {   
-        bool[][] board = board;
-        for (int r = 0; r < board.length; r += 1; ) {
-            for (int c = 0; c < board[r].length; c += 1; ) {
-                if (board[r][c]) write "@ ";
-                else write ". ";
-            } 
-            print "";
-        }
+    for (int i = 0; i < steps; i += 1; ) {
+        if (i > 0) clear_terminal_lines(board_size);
+        print_board(board);
+        board = step(board);
+        sleep(0.1);
     }
-    print_board(board);
-    board = step(board);
 }
+
