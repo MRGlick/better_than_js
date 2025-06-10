@@ -13,7 +13,7 @@
 #define PREPROCESS_AST 1
 
 #define LEXER_PRINT 0
-#define TOKENIZER_PRINT 0
+#define TOKENIZER_PRINT 1
 #define PARSER_PRINT 1
 #define IR_PRINT 1
 // #FLAGS END
@@ -1522,7 +1522,7 @@ ParseResult parse_modify_stmt(int idx) {
         
         
         ASTNode_add_child(node, primary_res.node);
-        TokenType op_type;
+        TokenType op_type = NULL_TOKEN;
         
         match (get_token(op_idx).type) {
             case (OP_ASSIGN_ADD) 
@@ -2352,6 +2352,99 @@ void try_infer_array_literal_type_from_overloads(ASTNode *node, VarHeader *overl
     );
 }
 
+
+
+// #INTRINSICS
+
+#define INTRINSICS \
+    X(clear_terminal_lines) \
+    X(rand)
+
+typedef enum {
+
+    INTR_NONE = -1,
+
+    #define X(a) INTR_##a,
+    INTRINSICS
+    #undef X
+} IntrKind;
+
+char *intrinsic_names[] = {
+    #define X(a) #a,
+    INTRINSICS
+    #undef X
+};
+
+int get_intrinsic_by_name(String name) {
+
+    int len = sizeof(intrinsic_names) / sizeof(char *);
+
+    for (int i = 0; i < len; i++)
+        if (String_equal(name, StringRef(intrinsic_names[i])))
+            return i;
+
+    return INTR_NONE;
+}
+
+
+void typeify_tree(ASTNode *node, HashMap *var_map);
+
+void typeify_intrinsic(ASTNode *node, HashMap *var_map) {    
+    
+    String func_name = node->children[0].token.text;
+    
+    IntrKind intr = get_intrinsic_by_name(func_name);
+    
+    int arg_count = array_length(node->children[1].children);
+    
+    for (int i = 0; i < arg_count; i++) {
+        typeify_tree(&node->children[1].children[i], var_map);
+    }
+    
+
+    #define expect_arg_count(n) \
+        if (arg_count != n) return_err( \
+            "Expected %d arguments for intrinsic function '%s', got %d!", \
+            n, \
+            intrinsic_names[intr], \
+            arg_count \
+        )
+    
+    #define check_arg(arg_idx, expected_type_kind) \
+        { \
+            ASTNode *arg = &node->children[1].children[arg_idx]; \
+            bool res = is_valid_type_conversion(arg->expected_return_type, &_const_types[expected_type_kind]); \
+            if (!res) return_err( \
+                "Invalid arguments in call to '%s' intrinsic! Argument %d is supposed to be of type '%s', but it is of type '%s'!", \
+                intrinsic_names[intr], \
+                arg_idx, \
+                type_kind_names[expected_type_kind], \
+                type_get_name(arg->expected_return_type).data \
+            ) \
+        }
+
+    match (intr) {
+
+        case (INTR_rand) {
+            expect_arg_count(0);
+            node->expected_return_type = make_type(TYPE_int);
+        }
+
+        case (INTR_clear_terminal_lines) {
+            expect_arg_count(1);
+            node->expected_return_type = make_type(TYPE_void);
+
+            check_arg(0, TYPE_int);
+
+        }
+
+        default() print_err("typeify_intrinsic(): '%s' is unimplemented", intrinsic_names[intr]);
+    }
+
+
+    #undef expect_arg_count
+    #undef check_arg
+}
 // anything this function doesn't touch is meant to return void
 
 void typeify_tree(ASTNode *node, HashMap *var_map) {
@@ -2412,6 +2505,11 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             ASTNode func_args = node->children[2];
 
             String func_name = node->children[1].token.text;
+
+            if (get_intrinsic_by_name(func_name) != -1) return_err(
+                "Can't declare function '%s', as that is an intrinsic function!",
+                func_name.data
+            );
 
             VarHeader vh = create_func_header(
                 func_name, 
@@ -2586,7 +2684,16 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         }
 
         case (FUNC_CALL) {
-            VarHeader *overloads = HashMap_get_safe(var_map, node->children[0].token.text, NULL);
+
+            String func_name = node->children[0].token.text;
+            
+            if (get_intrinsic_by_name(func_name) != INTR_NONE) {
+                typeify_intrinsic(node, var_map);
+                return;
+            }
+                
+
+            VarHeader *overloads = HashMap_get_safe(var_map, func_name, NULL);
             if (!overloads) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
     
             (&node->children[0])->expected_return_type = make_type(TYPE_void);
@@ -2873,6 +2980,7 @@ void preprocess_ast(ASTNode *ast) {
 X(I_INVALID) \
 X(I_PUSH) \
 X(I_PUSH_MAYBE) \
+X(I_PUSH_RAND) \
 X(I_READ) \
 X(I_READ_GLOBAL) \
 X(I_ADD) \
@@ -2957,6 +3065,7 @@ X(I_NOP) \
 X(I_ARRAY_SUBSCRIPT) \
 X(I_ARRAY_SUBSCRIPT_ADDR) \
 X(I_INIT_N_DIM_ARRAY) \
+X(I_CLEAR_TERMI_LINES) \
 X(INST_COUNT)
 
 typedef enum InstType {
@@ -3736,12 +3845,60 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     (*instructions)[jump_inst_idx].arg1.i_val = array_length(*instructions);
 }
 
+
+void generate_instructions_for_intrinsic_func_call(IntrKind intr, ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    
+    #define push_arg(idx) \
+        generate_instructions_for_node(&ast->children[1].children[idx], instructions, var_map_list)
+
+    match (intr) {
+        
+        case (INTR_clear_terminal_lines) {
+            push_arg(0);
+            array_append(*instructions, create_inst(I_CLEAR_TERMI_LINES, null(Val), null(Val)));
+        }
+        
+        case (INTR_rand) {
+            array_append(*instructions, create_inst(I_PUSH_RAND, null(Val), null(Val)));
+        }
+        
+        default () {
+            return_err(
+                "Unimplemented intrinsic: %s, doing nothing \n",
+                intrinsic_names[intr]
+            );
+        }
+    }
+
+
+    #undef push_arg
+}
+
+
+bool try_gen_insts_for_intrinsic(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+    String func_name = ast->children[0].token.text;
+
+    IntrKind kind = get_intrinsic_by_name(func_name);
+
+    if (kind == INTR_NONE) return false;
+
+    generate_instructions_for_intrinsic_func_call(kind, ast, instructions, var_map_list);
+
+}
+// #INTRINSICS END
+
+
+
 // #UPDATE FOR STRUCTS
 void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     ASTNode func_args = ast->children[1];
 
     String func_name = ast->children[0].token.text;
+
+    bool intr_res = try_gen_insts_for_intrinsic(ast, instructions, var_map_list);
+    if (intr_res) return;
     
     int len = array_length(func_args.children);
     
@@ -4451,449 +4608,6 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 #define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
 #define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr * 8); val;})
 
-// #EXECUTE INSTRUCTIONS
-
-#define execute_instruction_bytes() match (byte_arr[inst_ptr]) { \
-    case (I_INIT_N_DIM_ARRAY) { \
-        int elem_size = byte_arr[++inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        int n = byte_arr[++inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        int *dims = calloc(sizeof(int), n); \
-        for (int i = n - 1; i >= 0; i--) { /* bc we're popping */ \
-            dims[i] = pop(int); \
-        } \
-        void *arr = init_n_dim_array(elem_size, n, dims); \
-        free(dims); \
-        append(&arr, sizeof(void *)); \
-    } \
-    case (I_ALLOC_DYNAMIC) { \
-        int size = pop(int); \
-        void *addr = alloc_object(size); \
-        append(&addr, sizeof(addr)); \
-    } \
-    case (I_ARRAY_SUBSCRIPT_ADDR) { \
-        inst_ptr += 1; \
-        int elem_size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        int idx = pop(int); \
-        void *addr = pop(char *); \
-        void *final = addr + calculate_array_offset(idx, elem_size); \
-        append(&final, sizeof(void *)); \
-    } \
-    case (I_INIT_ARRAY_HEADER) { \
-        void *obj = pop(void *); \
-        TypeKind typekind = byte_arr[++inst_ptr]; \
-        inst_ptr += sizeof(int); \
-        int len = byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        object_init_header(obj, typekind); \
-        *(int *)(obj + sizeof(ObjectHeader)) = len; \
-    } \
-    case (I_DEC_REFCOUNT_ARRAY) { \
-        void *obj = pop(void *); \
-        object_dec_ref(obj, true); \
-    } \
-    case (I_ARRAY_SUBSCRIPT) { \
-        inst_ptr += 1; \
-        int elem_size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        int idx = pop(int); \
-        void *addr = pop(char *); \
-        void *final = addr + calculate_array_offset(idx, elem_size); \
-        append(final, sizeof(void *)); \
-    } \
-    case (I_POP_BOTTOM) { \
-        u64 obj = pop_bottom(u64); \
-        append(&obj, 8); \
-    } \
-    case (I_TUCK) { \
-        u64 obj = pop(u64); \
-        tuck(&obj, 8); \
-    } \
-    case (I_INIT_OBJ_HEADER) {; \
-        void *obj = pop(void *); \
-        u8 struct_meta_idx = byte_arr[++inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        object_init_header(obj, struct_meta_idx); \
-    } \
-    case(I_INC_REFCOUNT) {; \
-        void *obj = pop(void *); \
-        object_inc_ref(obj); \
-    } \
-    case(I_DEC_REFCOUNT) {; \
-        void *obj = pop(void *); \
-        object_dec_ref(obj, false); \
-    } \
-    case (I_NOP); \
-    case (I_PUSH); \
-        int size = *(int *)&byte_arr[++inst_ptr]; \
-        append(byte_arr + (inst_ptr += sizeof(int)), size); \
-        inst_ptr += size - 1; \
-	case (I_PUSH_MAYBE); \
-        bool m = rand() % 2; \
-        temp_stack[temp_stack_ptr++] = m; \
-	case (I_DUP) { \
-        dup(); \
-    } \
-    case (I_READ) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int); \
-        int pos = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        append(var_stack + frame_ptr + pos, size); \
-    } \
-    case (I_READ_GLOBAL) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int); \
-        int pos = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        append(var_stack + pos, size); \
-    } \
-    case (I_READ_ATTR) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int); \
-        int offset = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        char *addr = pop(char *); \
-        if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr); \
-        append(addr + offset, size); \
-    } \
-    case (I_GET_ATTR_ADDR) { \
-        inst_ptr += 1; \
-        int offset = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        char *addr = pop(char *); \
-        if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr); \
-        addr += offset; \
-        append(&addr, sizeof(char *)); \
-    } \
-    case (I_STACK_STORE) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int); \
-        int pos = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        my_memcpy(var_stack + frame_ptr + pos, temp_stack + --temp_stack_ptr, size); \
-    } \
-    case (I_STACK_STORE_GLOBAL) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int); \
-        int pos = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        my_memcpy(var_stack + pos, temp_stack + --temp_stack_ptr, size); \
-    } \
-    case (I_HEAP_STORE) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        u64 value = pop(u64); \
-        char *addr = pop(char *); \
-        memcpy(addr, &value, size); \
-    } \
-    case (I_ALLOC) { \
-        inst_ptr += 1; \
-        int size = *(int *)&byte_arr[inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        void *addr = alloc_object(size); \
-        append(&addr, sizeof(addr)); \
-    } \
-    case (I_FREE) { \
-        print_err("Bro tried to delete manually"); \
-    } \
-    case (I_JUMP) { \
-        int pos = *(int *)&byte_arr[++inst_ptr]; \
-        inst_ptr = pos - 1; \
-    } \
-    case (I_JUMP_IF) { \
-        bool b = pop(bool); \
-        int pos = *(int *)&byte_arr[++inst_ptr]; \
-        if (b) inst_ptr = pos - 1; \
-        else inst_ptr += sizeof(int) - 1; \
-    } \
-    case (I_JUMP_NOT) { \
-        bool b = pop(bool); \
-        int pos = *(int *)&byte_arr[++inst_ptr]; \
-        if (!b) inst_ptr = pos - 1; \
-        else inst_ptr += sizeof(int) - 1; \
-    } \
-    case (I_CALL) { \
-        int callpos = *(int *)&byte_arr[++inst_ptr]; \
-        inst_ptr += sizeof(int) - 1; \
-        int val = inst_ptr + 1; \
-        tuck(&frame_ptr, sizeof(int)); \
-        tuck(&stack_ptr, sizeof(int)); \
-        tuck(&val, sizeof(int)); \
-        frame_ptr += stack_ptr; \
-        stack_ptr = 0; \
-        inst_ptr = callpos - 1; \
-    } \
-    case (I_RETURN) { \
-        int ret_addr = pop_bottom(int); \
-        inst_ptr = ret_addr - 1; \
-        stack_ptr = pop_bottom(int); \
-        frame_ptr = pop_bottom(int); \
-    } \
-    case (I_STACK_PTR_ADD) { \
-        inst_ptr += 1; \
-        int size = *(int *)(byte_arr + inst_ptr);\
-        inst_ptr += sizeof(int) - 1; \
-        stack_ptr += size; \
-    } \
-    case (I_PRINT_INT) { \
-        int num = pop(int); \
-        printf("%d", num); \
-    } \
-    case (I_PRINT_STR) { \
-        char *str = pop(char *); \
-        printf("%s", str); \
-    } \
-    case (I_PRINT_FLOAT) { \
-        double num = pop(double); \
-        print_double(num); \
-    } \
-    case (I_PRINT_BOOL) { \
-        bool b = pop(bool); \
-        printf("%s", b ? "true" : "false"); \
-    } \
-    case (I_PRINT_NEWLINE) { \
-        printf("\n"); \
-    } \
-    case (I_ADD) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) += num; \
-    } \
-    case (I_SUB) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) -= num; \
-    } \
-    case (I_MUL) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) *= num; \
-    } \
-    case (I_DIV) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) /= num; \
-    } \
-    case (I_MOD) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) %= num; \
-    } \
-    case (I_ADD_FLOAT) { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) += num; \
-    } \
-    case (I_SUB_FLOAT) { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) -= num; \
-    } \
-    case (I_MUL_FLOAT) { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) *= num; \
-    } \
-    case (I_DIV_FLOAT) { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) /= num; \
-    } \
-    case (I_MOD_FLOAT) { \
-        double num = pop(double); \
-        double *top = (double *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = fmod(*top, num); \
-    } \
-    case (I_CONVERT_BOOL_FLOAT) { \
-        double num = pop(bool) ? 1.0 : 0.0; \
-        append(&num, 8); \
-    } \
-    case (I_CONVERT_BOOL_INT) { \
-        int num = pop(bool) ? 1 : 0; \
-        append(&num, 4); \
-    } \
-    case (I_CONVERT_BOOL_STR) { \
-        StringRef string = pop(bool) == 0 ? StringRef("false") : StringRef("true");  \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        append(&str, 8); \
-    } \
-    case (I_CONVERT_FLOAT_BOOL) { \
-        bool b = pop(double) > 0 ? true : false; \
-        append(&b, 1); \
-    } \
-    case (I_CONVERT_FLOAT_INT) { \
-        int num = pop(double); \
-        append(&num, 4); \
-    } \
-    case (I_CONVERT_FLOAT_STR) { \
-        String string = String_from_double(pop(double), 2); \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        String_delete(&string); \
-        append(&str, 8); \
-    } \
-    case (I_CONVERT_INT_BOOL) { \
-        bool b = pop(int) ? true : false; \
-        append(&b, 1); \
-    } \
-    case (I_CONVERT_INT_FLOAT) { \
-        double num = pop(int); \
-        append(&num, 8); \
-    } \
-    case (I_CONVERT_INT_STR) { \
-        String string = String_from_int(pop(int)); \
-        char *str = append_to_text_buffer(string.data, string.len); \
-        String_delete(&string); \
-        append(&str, 8); \
-    } \
-    case (I_CONVERT_STR_FLOAT) { \
-        char *str = pop(char *); \
-        double res = String_to_double(StringRef(str)); \
-        append(&res, 8); \
-    } \
-    case (I_CONVERT_STR_BOOL) { \
-        char *str = pop(char *); \
-        bool b = String_equal(StringRef(str), StringRef("true")); \
-        append(&b, 1); \
-    } \
-    case (I_CONVERT_STR_INT) { \
-        char *str = pop(char *); \
-        int res = String_to_int(StringRef(str)); \
-        append(&res, 4); \
-    } \
-    case (I_GREATER) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) > num; \
-    } \
-    case (I_GREATER_EQUAL) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) >= num; \
-    } \
-    case (I_LESS) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) < num; \
-    } \
-    case (I_LESS_EQUAL) { \
-        int num = pop(int); \
-        int *top = (int *)(temp_stack + temp_stack_ptr - 1); \
-        (*top) = (*top) <= num; \
-    } \
-    case (I_GREATER_FLOAT) { \
-        double num = pop(double); \
-        bool res = pop(double) > num; \
-        append(&res, 1); \
-    } \
-    case (I_GREATER_EQUAL_FLOAT) { \
-        double num = pop(double); \
-        bool res = pop(double) >= num; \
-        append(&res, 1); \
-    } \
-    case (I_LESS_FLOAT) { \
-        double num = pop(double); \
-        bool res = pop(double) < num; \
-        append(&res, 1); \
-    } \
-    case (I_LESS_EQUAL_FLOAT) { \
-        double num = pop(double); \
-        bool res = pop(double) <= num; \
-        append(&res, 1); \
-    } \
-    case (I_EQUAL) { \
-        int num = pop(int); \
-        bool res = pop(int) == num; \
-        append(&res, 1); \
-    } \
-    case (I_EQUAL_FLOAT) { \
-        double num = pop(double); \
-        bool res = pop(double) == num; \
-        append(&res, 1); \
-    } \
-    case (I_EQUAL_BOOL) { \
-        bool b = pop(bool); \
-        bool b2 = pop(bool); \
-        bool res = b2 == b; \
-        append(&res, 1); \
-    } \
-    case (I_EQUAL_STR) { \
-        char *str = pop(char *); \
-        char *str2 = pop(char *); \
-        bool res = !strcmp(str, str2); \
-        append(&res, 1); \
-    } \
-    case (I_EQUAL_REF) { \
-        char *p1 = pop(char *); \
-        char *p2 = pop(char *); \
-        bool res = p1 == p2; \
-        append(&res, 1); \
-    } \
-    case (I_NOT_EQUAL) { \
-        int num = pop(int); \
-        bool res = pop(int) != num; \
-        append(&res, 1); \
-    } \
-    case (I_NOT_EQUAL_FLOAT) { \
-        double num = pop(double); \
-        bool res = pop(double) != num; \
-        append(&res, 1); \
-    } \
-    case (I_NOT_EQUAL_BOOL) { \
-        bool b = pop(bool); \
-        bool res = pop(bool) != b; \
-        append(&res, 1); \
-    } \
-    case (I_NOT_EQUAL_STR) { \
-        char *str = pop(char *); \
-        char *str2 = pop(char *); \
-        bool res = !(!strcmp(str, str2)); \
-        append(&res, 1); \
-    } \
-    case (I_NOT_EQUAL_REF) { \
-        char *p1 = pop(char *); \
-        char *p2 = pop(char *); \
-        bool res = p1 != p2; \
-        append(&res, 1); \
-    } \
-    case (I_AND) { \
-        bool b = pop(bool); \
-        b = pop(bool) && b; \
-        append(&b, 1); \
-    } \
-    case (I_OR) { \
-        bool b = pop(bool); \
-        b = pop(bool) || b; \
-        append(&b, 1); \
-    } \
-    case (I_NOT) { \
-        bool b = !pop(bool); \
-        append(&b, 1); \
-    } \
-    case (I_INPUT) { \
-        char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE); \
-        fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin); \
-        string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0; \
-        char *str = append_to_text_buffer(string_im_not_gonna_free, strlen(string_im_not_gonna_free)); \
-        free(string_im_not_gonna_free); \
-        append(&str, 4); \
-    } \
-    case (I_LABEL); \
-    default () { \
-        print_err("Too stupid. cant.\n"); \
-        printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]); \
-    } \
-}
-
-
 void *append_to_text_buffer(const char *text, int len) {
     memcpy(text_buffer + text_buffer_ptr, text, len);
     void *retval = text_buffer + text_buffer_ptr;
@@ -5002,26 +4716,486 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     // }
     // printf("\n");
 
+    // #EXECUTE
     
-
+    srand(clock());
     double start = get_current_process_time_seconds();
 
     int len = array_length(byte_arr); // which is not equal to array_length(instructions)
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
-        // printf("inst ptr: %d \n", inst_ptr);
-        execute_instruction_bytes();
+
+        match (byte_arr[inst_ptr]) {
+            case (I_CLEAR_TERMI_LINES) {
+                int lines = pop(int);
+                clear_n_lines(lines);
+            }
+            case (I_PUSH_RAND) {
+                int rand_value = rand();
+                append(&rand_value, sizeof(int));
+            }
+            case (I_INIT_N_DIM_ARRAY) {
+                int elem_size = byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                int n = byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                int *dims = calloc(sizeof(int), n);
+                for (int i = n - 1; i >= 0; i--) { /* bc we're popping */
+                    dims[i] = pop(int);
+                }
+                void *arr = init_n_dim_array(elem_size, n, dims);
+                free(dims);
+                append(&arr, sizeof(void *));
+            }
+            case (I_ALLOC_DYNAMIC) {
+                int size = pop(int);
+                void *addr = alloc_object(size);
+                append(&addr, sizeof(addr));
+            }
+            case (I_ARRAY_SUBSCRIPT_ADDR) {
+                inst_ptr += 1;
+                int elem_size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                int idx = pop(int);
+                void *addr = pop(char *);
+                int *len = addr + sizeof(ObjectHeader);
+                if (idx >= (*len)) {
+                    print_err(
+                        "Array index out of bounds! array length: %d, tried to access index %d",
+                        *len,
+                        idx
+                    );
+                    exit(EXIT_FAILURE);
+                }
+                void *final = addr + calculate_array_offset(idx, elem_size);
+                append(&final, sizeof(void *));
+            }
+            case (I_INIT_ARRAY_HEADER) {
+                void *obj = pop(void *);
+                TypeKind typekind = byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int);
+                int len = byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                object_init_header(obj, typekind);
+                *(int *)(obj + sizeof(ObjectHeader)) = len;
+            }
+            case (I_DEC_REFCOUNT_ARRAY) {
+                void *arr = pop(void *);
+                object_dec_ref(arr, true);
+            }
+            case (I_ARRAY_SUBSCRIPT) {
+                inst_ptr += 1;
+                int elem_size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                int idx = pop(int);
+                void *addr = pop(char *);
+                int *len = addr + sizeof(ObjectHeader);
+                if (idx >= (*len)) {
+                    print_err(
+                        "Array index out of bounds! array length: %d, tried to access index %d",
+                        *len,
+                        idx
+                    );
+                    exit(EXIT_FAILURE);
+                }
+                int offset = calculate_array_offset(idx, elem_size);
+                void *final = addr + offset;
+                append(final, elem_size);
+            }
+            case (I_POP_BOTTOM) {
+                u64 obj = pop_bottom(u64);
+                append(&obj, 8);
+            }
+            case (I_TUCK) {
+                u64 obj = pop(u64);
+                tuck(&obj, 8);
+            }
+            case (I_INIT_OBJ_HEADER) {;
+                void *obj = pop(void *);
+                u8 struct_meta_idx = byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                object_init_header(obj, struct_meta_idx);
+            }
+            case(I_INC_REFCOUNT) {;
+                void *obj = pop(void *);
+                object_inc_ref(obj);
+            }
+            case(I_DEC_REFCOUNT) {;
+                void *obj = pop(void *);
+                object_dec_ref(obj, false);
+            }
+            case (I_NOP);
+            case (I_PUSH);
+                int size = *(int *)&byte_arr[++inst_ptr];
+                append(byte_arr + (inst_ptr += sizeof(int)), size);
+                inst_ptr += size - 1;
+            case (I_PUSH_MAYBE);
+                bool m = rand() % 2;
+                temp_stack[temp_stack_ptr++] = m;
+            case (I_DUP) {
+                dup();
+            }
+            case (I_READ) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int);
+                int pos = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                append(var_stack + frame_ptr + pos, size);
+            }
+            case (I_READ_GLOBAL) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int);
+                int pos = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                append(var_stack + pos, size);
+            }
+            case (I_READ_ATTR) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int);
+                int offset = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                char *addr = pop(char *);
+                if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr);
+                append(addr + offset, size);
+            }
+            case (I_GET_ATTR_ADDR) {
+                inst_ptr += 1;
+                int offset = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                char *addr = pop(char *);
+                if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr);
+                addr += offset;
+                append(&addr, sizeof(char *));
+            }
+            case (I_STACK_STORE) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int);
+                int pos = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                my_memcpy(var_stack + frame_ptr + pos, temp_stack + --temp_stack_ptr, size);
+            }
+            case (I_STACK_STORE_GLOBAL) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int);
+                int pos = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                my_memcpy(var_stack + pos, temp_stack + --temp_stack_ptr, size);
+            }
+            case (I_HEAP_STORE) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                u64 value = pop(u64);
+                char *addr = pop(char *);
+                memcpy(addr, &value, size);
+            }
+            case (I_ALLOC) {
+                inst_ptr += 1;
+                int size = *(int *)&byte_arr[inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                void *addr = alloc_object(size);
+                append(&addr, sizeof(addr));
+            }
+            case (I_FREE) {
+                print_err("Bro tried to delete manually");
+            }
+            case (I_JUMP) {
+                int pos = *(int *)&byte_arr[++inst_ptr];
+                inst_ptr = pos - 1;
+            }
+            case (I_JUMP_IF) {
+                bool b = pop(bool);
+                int pos = *(int *)&byte_arr[++inst_ptr];
+                if (b) inst_ptr = pos - 1;
+                else inst_ptr += sizeof(int) - 1;
+            }
+            case (I_JUMP_NOT) {
+                bool b = pop(bool);
+                int pos = *(int *)&byte_arr[++inst_ptr];
+                if (!b) inst_ptr = pos - 1;
+                else inst_ptr += sizeof(int) - 1;
+            }
+            case (I_CALL) {
+                int callpos = *(int *)&byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                int val = inst_ptr + 1;
+                tuck(&frame_ptr, sizeof(int));
+                tuck(&stack_ptr, sizeof(int));
+                tuck(&val, sizeof(int));
+                frame_ptr += stack_ptr;
+                stack_ptr = 0;
+                inst_ptr = callpos - 1;
+            }
+            case (I_RETURN) {
+                int ret_addr = pop_bottom(int);
+                inst_ptr = ret_addr - 1;
+                stack_ptr = pop_bottom(int);
+                frame_ptr = pop_bottom(int);
+            }
+            case (I_STACK_PTR_ADD) {
+                inst_ptr += 1;
+                int size = *(int *)(byte_arr + inst_ptr);
+                inst_ptr += sizeof(int) - 1;
+                stack_ptr += size;
+            }
+            case (I_PRINT_INT) {
+                int num = pop(int);
+                printf("%d", num);
+            }
+            case (I_PRINT_STR) {
+                char *str = pop(char *);
+                printf("%s", str);
+            }
+            case (I_PRINT_FLOAT) {
+                double num = pop(double);
+                print_double(num);
+            }
+            case (I_PRINT_BOOL) {
+                bool b = pop(bool);
+                printf("%s", b ? "true" : "false");
+            }
+            case (I_PRINT_NEWLINE) {
+                printf("\n");
+            }
+            case (I_ADD) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) += num;
+            }
+            case (I_SUB) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) -= num;
+            }
+            case (I_MUL) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) *= num;
+            }
+            case (I_DIV) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) /= num;
+            }
+            case (I_MOD) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) %= num;
+            }
+            case (I_ADD_FLOAT) {
+                double num = pop(double);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 1);
+                (*top) += num;
+            }
+            case (I_SUB_FLOAT) {
+                double num = pop(double);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 1);
+                (*top) -= num;
+            }
+            case (I_MUL_FLOAT) {
+                double num = pop(double);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 1);
+                (*top) *= num;
+            }
+            case (I_DIV_FLOAT) {
+                double num = pop(double);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 1);
+                (*top) /= num;
+            }
+            case (I_MOD_FLOAT) {
+                double num = pop(double);
+                double *top = (double *)(temp_stack + temp_stack_ptr - 1);
+                (*top) = fmod(*top, num);
+            }
+            case (I_CONVERT_BOOL_FLOAT) {
+                double num = pop(bool) ? 1.0 : 0.0;
+                append(&num, 8);
+            }
+            case (I_CONVERT_BOOL_INT) {
+                int num = pop(bool) ? 1 : 0;
+                append(&num, 4);
+            }
+            case (I_CONVERT_BOOL_STR) {
+                StringRef string = pop(bool) == 0 ? StringRef("false") : StringRef("true"); 
+                char *str = append_to_text_buffer(string.data, string.len);
+                append(&str, 8);
+            }
+            case (I_CONVERT_FLOAT_BOOL) {
+                bool b = pop(double) > 0 ? true : false;
+                append(&b, 1);
+            }
+            case (I_CONVERT_FLOAT_INT) {
+                int num = pop(double);
+                append(&num, 4);
+            }
+            case (I_CONVERT_FLOAT_STR) {
+                String string = String_from_double(pop(double), 2);
+                char *str = append_to_text_buffer(string.data, string.len);
+                String_delete(&string);
+                append(&str, 8);
+            }
+            case (I_CONVERT_INT_BOOL) {
+                bool b = pop(int) ? true : false;
+                append(&b, 1);
+            }
+            case (I_CONVERT_INT_FLOAT) {
+                double num = pop(int);
+                append(&num, 8);
+            }
+            case (I_CONVERT_INT_STR) {
+                String string = String_from_int(pop(int));
+                char *str = append_to_text_buffer(string.data, string.len);
+                String_delete(&string);
+                append(&str, 8);
+            }
+            case (I_CONVERT_STR_FLOAT) {
+                char *str = pop(char *);
+                double res = String_to_double(StringRef(str));
+                append(&res, 8);
+            }
+            case (I_CONVERT_STR_BOOL) {
+                char *str = pop(char *);
+                bool b = String_equal(StringRef(str), StringRef("true"));
+                append(&b, 1);
+            }
+            case (I_CONVERT_STR_INT) {
+                char *str = pop(char *);
+                int res = String_to_int(StringRef(str));
+                append(&res, 4);
+            }
+            case (I_GREATER) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) = (*top) > num;
+            }
+            case (I_GREATER_EQUAL) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) = (*top) >= num;
+            }
+            case (I_LESS) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) = (*top) < num;
+            }
+            case (I_LESS_EQUAL) {
+                int num = pop(int);
+                int *top = (int *)(temp_stack + temp_stack_ptr - 1);
+                (*top) = (*top) <= num;
+            }
+            case (I_GREATER_FLOAT) {
+                double num = pop(double);
+                bool res = pop(double) > num;
+                append(&res, 1);
+            }
+            case (I_GREATER_EQUAL_FLOAT) {
+                double num = pop(double);
+                bool res = pop(double) >= num;
+                append(&res, 1);
+            }
+            case (I_LESS_FLOAT) {
+                double num = pop(double);
+                bool res = pop(double) < num;
+                append(&res, 1);
+            }
+            case (I_LESS_EQUAL_FLOAT) {
+                double num = pop(double);
+                bool res = pop(double) <= num;
+                append(&res, 1);
+            }
+            case (I_EQUAL) {
+                int num = pop(int);
+                bool res = pop(int) == num;
+                append(&res, 1);
+            }
+            case (I_EQUAL_FLOAT) {
+                double num = pop(double);
+                bool res = pop(double) == num;
+                append(&res, 1);
+            }
+            case (I_EQUAL_BOOL) {
+                bool b = pop(bool);
+                bool b2 = pop(bool);
+                bool res = b2 == b;
+                append(&res, 1);
+            }
+            case (I_EQUAL_STR) {
+                char *str = pop(char *);
+                char *str2 = pop(char *);
+                bool res = !strcmp(str, str2);
+                append(&res, 1);
+            }
+            case (I_EQUAL_REF) {
+                char *p1 = pop(char *);
+                char *p2 = pop(char *);
+                bool res = p1 == p2;
+                append(&res, 1);
+            }
+            case (I_NOT_EQUAL) {
+                int num = pop(int);
+                bool res = pop(int) != num;
+                append(&res, 1);
+            }
+            case (I_NOT_EQUAL_FLOAT) {
+                double num = pop(double);
+                bool res = pop(double) != num;
+                append(&res, 1);
+            }
+            case (I_NOT_EQUAL_BOOL) {
+                bool b = pop(bool);
+                bool res = pop(bool) != b;
+                append(&res, 1);
+            }
+            case (I_NOT_EQUAL_STR) {
+                char *str = pop(char *);
+                char *str2 = pop(char *);
+                bool res = !(!strcmp(str, str2));
+                append(&res, 1);
+            }
+            case (I_NOT_EQUAL_REF) {
+                char *p1 = pop(char *);
+                char *p2 = pop(char *);
+                bool res = p1 != p2;
+                append(&res, 1);
+            }
+            case (I_AND) {
+                bool b = pop(bool);
+                b = pop(bool) && b;
+                append(&b, 1);
+            }
+            case (I_OR) {
+                bool b = pop(bool);
+                b = pop(bool) || b;
+                append(&b, 1);
+            }
+            case (I_NOT) {
+                bool b = !pop(bool);
+                append(&b, 1);
+            }
+            case (I_INPUT) {
+                char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE);
+                fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin);
+                string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0;
+                char *str = append_to_text_buffer(string_im_not_gonna_free, strlen(string_im_not_gonna_free));
+                free(string_im_not_gonna_free);
+                append(&str, 4);
+            }
+            case (I_LABEL);
+            default () {
+                print_err("Too stupid. cant.\n");
+                printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
+            }
+        }
+
     }
 
     double end = get_current_process_time_seconds();
 
-    if (runtime_mallocs > runtime_frees) {
-        print_err("Detected a memory leak! Where? you figure it out. Mallocs: %d, Frees: %d ", runtime_mallocs, runtime_frees);
-    } else if (runtime_frees > runtime_mallocs) {
-        print_err("Detected excess memory deletions! How did the program even survive this far?");
-    } else {
-        printf("No memory leaks. \n");
-    }
-
+    
     if (time != NULL) *time = end - start;
 
 
@@ -5043,7 +5217,20 @@ void run_program(Inst *instructions) {
 
     double time;
 
+    printf("\n----------------------------------\n");
+
     run_bytecode_instructions(instructions, &time);
+
+    printf("\n----------------------------------\n");
+
+    if (runtime_mallocs > runtime_frees) {
+        print_err("Detected a memory leak! Where? you figure it out. Mallocs: %d, Frees: %d ", runtime_mallocs, runtime_frees);
+    } else if (runtime_frees > runtime_mallocs) {
+        print_err("Detected excess memory deletions! How did the program even survive this far?");
+    } else {
+        printf("No memory leaks. \n\tAllocations: %d \n\tDeletions: %d \n", runtime_mallocs, runtime_frees);
+    }
+
 
     printf("Program finished successfully after %.2f seconds! \n", time);
 

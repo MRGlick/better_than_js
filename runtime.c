@@ -61,7 +61,7 @@ void print_struct_meta(StructMetadata sm) {
 
 void *tracked_malloc(size_t size) {
     runtime_mallocs++;
-    return calloc(size, 1);
+    return calloc(size, 1); // this works stop hating
 }
 
 void tracked_free(void *ptr) {
@@ -172,9 +172,12 @@ void *_init_n_dim_array(TypeKind final_subtype_kind, int n, int *dims, int dims_
 
     // base case
     if (dims_idx == n - 1) {
+
         int elem_size = get_typekind_size(final_subtype_kind);
 
-        void *arr = tracked_malloc(calculate_array_offset(elem_size, n));
+        int len = dims[0];
+
+        void *arr = tracked_malloc(calculate_array_offset(elem_size, len));
         object_init_header(arr, final_subtype_kind);
         int *length = (arr + sizeof(ObjectHeader));
         *length = dims[dims_idx];
@@ -220,9 +223,6 @@ void *init_n_dim_array(TypeKind final_subtype_kind, int n, int *dims) {
     return retval;
 }
 
-
-
-
 void clear_struct_metadata() {
     for (int i = 0; i < struct_metadata_ptr; i++) {
         array_free(struct_metadata[i].offsets);
@@ -230,4 +230,25 @@ void clear_struct_metadata() {
 
     memset(struct_metadata, 0, struct_metadata_ptr);
     struct_metadata_ptr = 0;
+}
+
+
+// Thanks Gemini
+void clear_n_lines(int n) {
+    if (n <= 0) {
+        return; // Nothing to clear
+    }
+    printf("\x1b[%dA", n);
+
+    for (int i = 0; i < n; i++) {
+        printf("\x1b[2K");
+        if (i < n - 1) {
+            printf("\x1b[1B");
+        }
+    }
+
+    printf("\x1b[%dA", n - 1);
+    printf("\r");
+    
+    // fflush(stdout); // not sure?
 }

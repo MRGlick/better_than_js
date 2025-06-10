@@ -9,7 +9,7 @@ static inline int get_typekind_size(u8 t) {
     match (t) {
         case (TYPE_int) 
             return 4;
-        case (TYPE_float, TYPE_string, TYPE_struct, TYPE_array, TYPE_null_ref) 
+        case (TYPE_float, TYPE_str, TYPE_struct, TYPE_array, TYPE_null_ref) 
             return 8;
         case (TYPE_bool) 
             return 1;
