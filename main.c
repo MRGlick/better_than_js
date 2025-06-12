@@ -36,6 +36,7 @@
 #include "errors.c"
 #include "move.c"
 #include "debug.h"
+#include "map_macro.h"
 
 VarHeader create_var_header(String name, Type *var_type, int var_pos) {
     return (VarHeader){.type = VH_VAR, .var_type = var_type, .var_pos = var_pos, .name = name};
@@ -3109,27 +3110,21 @@ X(I_SLEEP) \
 X(INST_COUNT)
 
 
-#define valify(a) Val a
-#define FIRST(a, ...) a
+
+// This took 2.5 hours. Worth every second
+#define valify(a) , Val a
 #define REST(a, ...) __VA_ARGS__
 
-#define A(a) a
-#define MAP1(f, a)
-#define MAP2(f, a, b) f(a) f(b)
-
-#define _MAP_UP_TO_2(f, a) MAP##a
-#define MAP_UP_TO_2(f, ...) _MAP_UP_TO_2(f, _ARG_COUNT(__VA_ARGS__))
-
-MAP_UP_TO_2(f, a, b)
+#define _call_create_inst(type, a, b, ...) create_inst(type, a, b)
 
 #define DEF_CREATE_INST(inst, ...) \
-    Inst create_inst_##inst (MAP2(valify, __VA_ARGS__)) { \
-        return create_inst(inst, __VA_ARGS__); \
+    Inst create_inst_##inst(EVAL1(REST SEP (MAP(valify, __VA_ARGS__)))) { \
+        return _call_create_inst(inst, __VA_ARGS__, Val_null); \
     } 
-
-DEF_CREATE_INST(I_NOP, a, b);
-
-
+#define DEF_CREATE_INST_NOARGS(inst) \
+    Inst create_inst_##inst() { \
+        return _call_create_inst(inst, Val_null, Val_null); \
+    } 
 
 typedef enum InstType {
     #define X(i) i, 
@@ -3148,10 +3143,91 @@ Inst create_inst(InstType type, Val arg1, Val arg2) {
     return (Inst){.type = type, .arg1 = arg1, .arg2 = arg2};
 }
 
-// - 1 + 1
-// 1 + - 1
-// 1 - 1
-
+DEF_CREATE_INST(I_PUSH, size, value)
+DEF_CREATE_INST_NOARGS(I_PUSH_MAYBE)
+DEF_CREATE_INST_NOARGS(I_PUSH_RAND)
+DEF_CREATE_INST(I_READ, size, pos)
+DEF_CREATE_INST(I_READ_GLOBAL, size, pos)
+DEF_CREATE_INST_NOARGS(I_ADD)
+DEF_CREATE_INST_NOARGS(I_ADD_FLOAT)
+DEF_CREATE_INST_NOARGS(I_SUB)
+DEF_CREATE_INST_NOARGS(I_SUB_FLOAT)
+DEF_CREATE_INST_NOARGS(I_MUL)
+DEF_CREATE_INST_NOARGS(I_MUL_FLOAT)
+DEF_CREATE_INST_NOARGS(I_DIV)
+DEF_CREATE_INST_NOARGS(I_DIV_FLOAT)
+DEF_CREATE_INST_NOARGS(I_MOD)
+DEF_CREATE_INST_NOARGS(I_MOD_FLOAT)
+DEF_CREATE_INST_NOARGS(I_GREATER)
+DEF_CREATE_INST_NOARGS(I_GREATER_FLOAT)
+DEF_CREATE_INST_NOARGS(I_GREATER_EQUAL)
+DEF_CREATE_INST_NOARGS(I_GREATER_EQUAL_FLOAT)
+DEF_CREATE_INST_NOARGS(I_LESS)
+DEF_CREATE_INST_NOARGS(I_LESS_FLOAT)
+DEF_CREATE_INST_NOARGS(I_LESS_EQUAL)
+DEF_CREATE_INST_NOARGS(I_LESS_EQUAL_FLOAT)
+DEF_CREATE_INST_NOARGS(I_EQUAL)
+DEF_CREATE_INST_NOARGS(I_EQUAL_FLOAT)
+DEF_CREATE_INST_NOARGS(I_EQUAL_BOOL)
+DEF_CREATE_INST_NOARGS(I_EQUAL_STR)
+DEF_CREATE_INST_NOARGS(I_EQUAL_REF)
+DEF_CREATE_INST_NOARGS(I_NOT_EQUAL)
+DEF_CREATE_INST_NOARGS(I_NOT_EQUAL_FLOAT)
+DEF_CREATE_INST_NOARGS(I_NOT_EQUAL_BOOL)
+DEF_CREATE_INST_NOARGS(I_NOT_EQUAL_STR)
+DEF_CREATE_INST_NOARGS(I_NOT_EQUAL_REF)
+DEF_CREATE_INST_NOARGS(I_AND)
+DEF_CREATE_INST_NOARGS(I_OR)
+DEF_CREATE_INST_NOARGS(I_NOT)
+DEF_CREATE_INST_NOARGS(I_LABEL)
+DEF_CREATE_INST(I_JUMP, pos)
+DEF_CREATE_INST(I_JUMP_IF, pos)
+DEF_CREATE_INST(I_JUMP_NOT, pos)
+DEF_CREATE_INST_NOARGS(I_CONVERT_BOOL_INT)
+DEF_CREATE_INST_NOARGS(I_CONVERT_BOOL_FLOAT)
+DEF_CREATE_INST_NOARGS(I_CONVERT_BOOL_STR)
+DEF_CREATE_INST_NOARGS(I_CONVERT_INT_FLOAT)
+DEF_CREATE_INST_NOARGS(I_CONVERT_INT_STR)
+DEF_CREATE_INST_NOARGS(I_CONVERT_INT_BOOL)
+DEF_CREATE_INST_NOARGS(I_CONVERT_INT_CHAR)
+DEF_CREATE_INST_NOARGS(I_CONVERT_CHAR_INT)
+DEF_CREATE_INST_NOARGS(I_CONVERT_FLOAT_STR)
+DEF_CREATE_INST_NOARGS(I_CONVERT_FLOAT_INT)
+DEF_CREATE_INST_NOARGS(I_CONVERT_FLOAT_BOOL)
+DEF_CREATE_INST_NOARGS(I_CONVERT_STR_BOOL)
+DEF_CREATE_INST_NOARGS(I_CONVERT_STR_INT)
+DEF_CREATE_INST_NOARGS(I_CONVERT_STR_FLOAT)
+DEF_CREATE_INST_NOARGS(I_PRINT_INT)
+DEF_CREATE_INST_NOARGS(I_PRINT_FLOAT)
+DEF_CREATE_INST_NOARGS(I_PRINT_CHAR)
+DEF_CREATE_INST_NOARGS(I_PRINT_STR)
+DEF_CREATE_INST_NOARGS(I_PRINT_BOOL)
+DEF_CREATE_INST_NOARGS(I_PRINT_NEWLINE)
+DEF_CREATE_INST_NOARGS(I_INPUT)
+DEF_CREATE_INST(I_STACK_STORE, size, pos)
+DEF_CREATE_INST(I_STACK_STORE_GLOBAL, size, pos)
+DEF_CREATE_INST(I_HEAP_STORE, size)
+DEF_CREATE_INST(I_STACK_PTR_ADD, n)
+DEF_CREATE_INST_NOARGS(I_RETURN)
+DEF_CREATE_INST(I_CALL, pos)
+DEF_CREATE_INST(I_READ_ATTR, size, offset)
+DEF_CREATE_INST(I_GET_ATTR_ADDR, offset)
+DEF_CREATE_INST(I_ALLOC, bytes)
+DEF_CREATE_INST_NOARGS(I_ALLOC_DYNAMIC)
+DEF_CREATE_INST_NOARGS(I_DUP)
+DEF_CREATE_INST_NOARGS(I_INC_REFCOUNT)
+DEF_CREATE_INST_NOARGS(I_DEC_REFCOUNT)
+DEF_CREATE_INST_NOARGS(I_DEC_REFCOUNT_ARRAY)
+DEF_CREATE_INST(I_INIT_OBJ_HEADER, meta)
+DEF_CREATE_INST(I_INIT_ARRAY_HEADER, meta)
+DEF_CREATE_INST_NOARGS(I_TUCK)
+DEF_CREATE_INST_NOARGS(I_POP_BOTTOM)
+DEF_CREATE_INST_NOARGS(I_NOP)
+DEF_CREATE_INST(I_ARRAY_SUBSCRIPT, elem_size)
+DEF_CREATE_INST(I_ARRAY_SUBSCRIPT_ADDR, elem_size)
+DEF_CREATE_INST(I_INIT_N_DIM_ARRAY, n_dims)
+DEF_CREATE_INST_NOARGS(I_CLEAR_TERMI_LINES)
+DEF_CREATE_INST_NOARGS(I_SLEEP)
 
 void print_val(Val val) {
     printf("(%s, ", type_kind_names[val.type]);
@@ -3265,7 +3341,7 @@ bool generate_cvt_inst_for_types(Type *from, Type *to, Inst **instructions) {
     if (inst == I_INVALID) return false;
     if (inst == I_NOP) return true;
 
-    array_append(*instructions, create_inst(inst, null(Val), null(Val)));
+    array_append(*instructions, create_inst(inst, Val_null, Val_null));
     return true;
 }
 
@@ -3451,23 +3527,23 @@ void generate_instructions_for_vardecl(ASTNode *ast, Inst **instructions, Linked
             
         }
     } else {
-        Val val = null(Val);
+        Val val = Val_null;
         val.type = type->kind;
-        array_append(*instructions, create_inst(I_PUSH, val, null(Val)));
+        array_append(*instructions, create_inst_I_PUSH(Val_int(get_vartype_size(type)), val));
     }
 
     bool inc_refcounter = (ast->token.type == DECL_ASSIGN_STMT) && is_nontemporary_reference(&ast->children[2]);
 
     if (inc_refcounter) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_DUP());
     }
         
-    array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = TYPE_int, .as_int = get_vartype_size(type)}, (Val){.type = TYPE_int, .as_int = gi_stack_pos}));
+    array_append(*instructions, create_inst_I_STACK_STORE(Val_int(get_vartype_size(type)), Val_int(gi_stack_pos)));
     gi_stack_pos += size;
 
 
     if (inc_refcounter) {
-        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
     }
 
 
@@ -3490,7 +3566,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
     if (dec_refcount_for_left_side) {
         generate_instructions_for_node(left_side, instructions, var_map_list);
-        array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val))); // decrement always after increment
+        array_append(*instructions, create_inst_I_TUCK(Val_null)); // decrement always after increment
     }
 
     bool inc_refcount_for_right_side = is_nontemporary_reference(right_side);
@@ -3505,8 +3581,8 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
         generate_instructions_for_node(right_side, instructions, var_map_list);
 
         if (inc_refcount_for_right_side) {
-            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_DUP());
+            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
         }
         
         Type *goal_type = vh->var_type;
@@ -3520,7 +3596,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
             );
         }
 
-        array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = TYPE_int, .as_int = get_vartype_size(vh->var_type)}, (Val){.type = TYPE_int, .as_int = vh->var_pos}));
+        array_append(*instructions, create_inst(isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE, Val_int(get_vartype_size(vh->var_type)), Val_int(vh->var_pos)));
 
     } else {
         Type *goal_type = left_side->expected_return_type;
@@ -3535,8 +3611,8 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
         generate_instructions_for_node(right_side, instructions, var_map_list);
 
         if (inc_refcount_for_right_side) {
-            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_DUP());
+            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
         }
 
 
@@ -3549,13 +3625,13 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
             );
         }
 
-        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .as_int = get_vartype_size(left_side->expected_return_type)}, null(Val)));
+        array_append(*instructions, create_inst_I_HEAP_STORE(Val_int(get_vartype_size(left_side->expected_return_type))));
 
     }
 
     if (dec_refcount_for_left_side) {
-        array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
-        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(left_side->expected_return_type->kind), null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_POP_BOTTOM(Val_null));
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(left_side->expected_return_type->kind), Val_null, Val_null));
     }
     
     
@@ -3606,7 +3682,7 @@ void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedLi
         print_err("Invalid operator!");
         printf("Tried to get operator '%s' between '%s' type operands! \n", token_type_names[ast->token.type], type_get_name(goal_type).data);
     } else {
-        array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
+        array_append(*instructions, create_inst(inst_type, Val_null, Val_null));
     }
 
 }
@@ -3645,11 +3721,11 @@ void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedLi
             print_err("Invalid argument for print! (seriously how could you mess this up)");
             printf("argument type: %s \n", type_get_name(ast->children[i].expected_return_type).data);
         } else {
-            array_append(*instructions, create_inst(inst_type, null(Val), null(Val)));
+            array_append(*instructions, create_inst(inst_type, Val_null, Val_null));
         }
     }
 
-    if (ast->token.type == PRINT_STMT) array_append(*instructions, create_inst(I_PRINT_NEWLINE, null(Val), null(Val)));
+    if (ast->token.type == PRINT_STMT) array_append(*instructions, create_inst_I_PRINT_NEWLINE(Val_null));
 }
 
 void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -3675,7 +3751,7 @@ void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList 
     }
     
     int first_jump_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = TYPE_int, .as_int = -1}, null(Val)));
+    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(-1)));
 
     // if-body
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
@@ -3685,17 +3761,17 @@ void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList 
     if (ast->token.type == IF_ELSE_STMT) {
 
         if_body_jump_idx = array_length(*instructions);
-        array_append(*instructions, create_inst(I_JUMP, (Val){.type = TYPE_int, .as_int = end_label_idx}, null(Val)));
+        array_append(*instructions, create_inst_I_JUMP(Val_int(end_label_idx)));
 
         else_label_true_idx = array_length(*instructions);
-        array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_LABEL(Val_null));
 
         // else-body
         generate_instructions_for_node(&ast->children[2], instructions, var_map_list);
     }
 
     end_label_true_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_LABEL(Val_null));
 
     if (ast->token.type == IF_STMT) {
         (*instructions)[first_jump_idx].arg1.as_int = end_label_true_idx;
@@ -3710,7 +3786,7 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
 
     int start_label_idx = array_length(*instructions);
 
-    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_LABEL(Val_null));
 
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
@@ -3724,15 +3800,15 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
     }
 
     int jump_not_inst_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_JUMP_NOT, (Val){.type = TYPE_int, .as_int = -1}, null(Val)));
+    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(-1)));
 
     // while body
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
-    array_append(*instructions, create_inst(I_JUMP, (Val){.type = TYPE_int, .as_int = start_label_idx}, null(Val)));
+    array_append(*instructions, create_inst_I_JUMP(Val_int(start_label_idx)));
 
     int end_label_idx = array_length(*instructions);
-    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_LABEL(Val_null));
 
     (*instructions)[jump_not_inst_idx].arg1.as_int = end_label_idx;
 
@@ -3741,7 +3817,7 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
 
 void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    array_append(*instructions, create_inst(I_INPUT, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_INPUT(Val_null));
 
     Type *goal_type = ast->children[0].expected_return_type;
 
@@ -3754,7 +3830,7 @@ void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedLi
 
     VarHeader *vh = get_varheader_from_map_list(var_map_list, ast->children[0].token.text, &isglobal);
 
-    array_append(*instructions, create_inst((isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE), (Val){.type = TYPE_int, .as_int = get_vartype_size(goal_type)}, (Val){.type = TYPE_int, .as_int = vh->var_pos}));
+    array_append(*instructions, create_inst(isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE, Val_int(get_vartype_size(goal_type)), Val_int(vh->var_pos)));
 
 }
 
@@ -3818,10 +3894,10 @@ VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_n
 
 void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    array_append(*instructions, create_inst(I_JUMP, (Val){.type = TYPE_int, .as_int = -1}, null(Val)));
+    array_append(*instructions, create_inst_I_JUMP(Val_int(-1)));
     int jump_inst_idx = array_length(*instructions) - 1;
 
-    array_append(*instructions, create_inst(I_LABEL, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_LABEL(Val_null));
 
     ASTNode var_args = ast->children[2];
 
@@ -3859,12 +3935,12 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
         size += get_vartype_size(type);
     }
     size += calc_stack_space_for_scope(&scope);
-    array_append(*instructions, create_inst(I_STACK_PTR_ADD, (Val){.type = TYPE_int, .as_int = size}, null(Val)));
+    array_append(*instructions, create_inst_I_STACK_PTR_ADD(Val_int(size)));
 
     for (int i = array_length(var_args.children) - 1; i >= 0; i--) {
         String var_name = var_args.children[i].children[1].token.text;
         Type *type = var_args.children[i].children[0].token.var_type;
-        array_append(*instructions, create_inst(I_STACK_STORE, (Val){.type = TYPE_int, .as_int = get_vartype_size(type)}, (Val){.type = TYPE_int, .as_int = gi_stack_pos}));
+        array_append(*instructions, create_inst_I_STACK_STORE(Val_int(get_vartype_size(type)), Val_int(gi_stack_pos)));
         VarHeader vh = create_var_header(var_name, type, gi_stack_pos);
         add_varheader_to_map_list(var_map_list, var_name, &vh);
         gi_stack_pos += get_vartype_size(type);
@@ -3890,12 +3966,12 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
             array_append(
                 *instructions, 
                 create_inst(I_READ, 
-                    (Val){.type = TYPE_int, .as_int = get_vartype_size(vardecls[i]->var_type)}, 
-                    (Val){.type = TYPE_int, .as_int = vardecls[i]->var_pos}
+                    Val_int(get_vartype_size(vardecls[i]->var_type)), 
+                    Val_int(vardecls[i]->var_pos)
                 )
             );
 
-            array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vardecls[i]->var_type->kind), null(Val), null(Val)));
+            array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vardecls[i]->var_type->kind), Val_null, Val_null));
         }
 
         array_free(vardecls);
@@ -3910,7 +3986,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     LL_pop_head(var_map_list);
 
     if ((*instructions)[array_length(*instructions) - 1].type != I_RETURN)
-        array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_RETURN(Val_null));
 
 
     (*instructions)[jump_inst_idx].arg1.as_int = array_length(*instructions);
@@ -3935,16 +4011,16 @@ void generate_instructions_for_intrinsic_func_call(IntrKind intr, ASTNode *ast, 
         
         case (INTR_clear_terminal_lines) {
             push_arg(0, &_const_types[TYPE_int]);
-            array_append(*instructions, create_inst(I_CLEAR_TERMI_LINES, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_CLEAR_TERMI_LINES(Val_null));
         }
         
         case (INTR_rand) {
-            array_append(*instructions, create_inst(I_PUSH_RAND, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_PUSH_RAND(Val_null));
         }
 
         case (INTR_sleep) {
             push_arg(0, &_const_types[TYPE_float]);
-            array_append(*instructions, create_inst(I_SLEEP, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_SLEEP(Val_null));
         }
         
         default () {
@@ -4001,8 +4077,8 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
 
         // RC
         if (is_nontemporary_reference(arg)) {
-            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));            
+            array_append(*instructions, create_inst_I_DUP());
+            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));            
         }
 
 
@@ -4018,7 +4094,7 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
         }
     }
 
-    array_append(*instructions, create_inst(I_CALL, (Val){.type = TYPE_int, .as_int = func_vh->func_pos}, null(Val)));
+    array_append(*instructions, create_inst_I_CALL(Val_int(func_vh->func_pos)));
 }
 
 void generate_instructions_for_unary_minus(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -4026,11 +4102,11 @@ void generate_instructions_for_unary_minus(ASTNode *ast, Inst **instructions, Li
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
     if (ast->expected_return_type->kind == TYPE_int) {
-        array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 4}, (Val){.type = TYPE_int, .as_int = -1}));
-        array_append(*instructions, create_inst(I_MUL, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_PUSH(Val_int(4), Val_int(-1)));
+        array_append(*instructions, create_inst_I_MUL(Val_null));
     } else if (ast->expected_return_type->kind == TYPE_float) {
-        array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 8}, (Val){.type = TYPE_float, .as_double = -1}));
-        array_append(*instructions, create_inst(I_MUL_FLOAT, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_PUSH(Val_int(8), Val_double(-1)));
+        array_append(*instructions, create_inst_I_MUL_FLOAT(Val_null));
     } else {
         print_err("Cannot apply unary minus to value of type '%s'!", type_get_name(ast->expected_return_type).data);
     }
@@ -4096,7 +4172,7 @@ void generate_instructions_for_array_attr_access(ASTNode *ast, Inst **instructio
     }
     
     generate_instructions_for_node(left_side, instructions, var_map_list);
-    array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = TYPE_int, .as_int = sizeof(int)}, (Val){.type = TYPE_int, .as_int = sizeof(ObjectHeader)}));
+    array_append(*instructions, create_inst_I_READ_ATTR(Val_int(sizeof(int)), Val_int(sizeof(ObjectHeader))));
 
 
 }
@@ -4132,8 +4208,8 @@ void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, Li
     bool temp_refcount = is_temporary_reference(&ast->children[0]);
 
     if (temp_refcount) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_DUP());
+        array_append(*instructions, create_inst_I_TUCK(Val_null));
     }
 
     // find member offset
@@ -4141,11 +4217,11 @@ void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, Li
 
     VarHeader *member_vh = find_attr_in_struct(struct_vh, ast->children[1].token.text);
 
-    array_append(*instructions, create_inst(I_READ_ATTR, (Val){.type = TYPE_int, .as_int = get_vartype_size(member_vh->var_type)}, (Val){.type = TYPE_int, .as_int = member_vh->var_pos}));
+    array_append(*instructions, create_inst_I_READ_ATTR(Val_int(get_vartype_size(member_vh->var_type)), Val_int(member_vh->var_pos)));
 
     if (temp_refcount) {
-        array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
-        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(member_vh->var_type->kind), null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_POP_BOTTOM(Val_null));
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(member_vh->var_type->kind), Val_null, Val_null));
     }
 }
 void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -4157,7 +4233,7 @@ void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, Link
 
     VarHeader *member_vh = find_attr_in_struct(struct_vh, ast->children[1].token.text);
 
-    array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .as_int = member_vh->var_pos}, null(Val)));
+    array_append(*instructions, create_inst_I_GET_ATTR_ADDR(Val_int(member_vh->var_pos)));
 
 }
 
@@ -4165,12 +4241,12 @@ void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList
 
     VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast->children[0].token.text, NULL);
 
-    array_append(*instructions, create_inst(I_ALLOC, (Val){.type = TYPE_int, .as_int = struct_vh->struct_size}, null(Val)));
+    array_append(*instructions, create_inst_I_ALLOC(Val_int(struct_vh->struct_size)));
 
-    array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
+    array_append(*instructions, create_inst_I_DUP()); // use the allocated address
     array_append(*instructions, 
-        create_inst(I_INIT_OBJ_HEADER, (Val){.type = TYPE_int, .as_int = struct_vh->struct_metadata_idx}, 
-        null(Val))); // use the allocated address
+        create_inst(I_INIT_OBJ_HEADER, Val_int(struct_vh->struct_metadata_idx), 
+        Val_null)); // use the allocated address
 
     ASTNode *member_assigns = &ast->children[1];
 
@@ -4178,16 +4254,16 @@ void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList
         String member_name = member_assigns->children[i].children[0].token.text;
         VarHeader *member_vh = find_attr_in_struct(struct_vh, member_name);
 
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val))); // use the allocated address
-        array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .as_int = member_vh->var_pos}, null(Val)));
+        array_append(*instructions, create_inst_I_DUP()); // use the allocated address
+        array_append(*instructions, create_inst_I_GET_ATTR_ADDR(Val_int(member_vh->var_pos)));
 
         ASTNode *expr = &member_assigns->children[i].children[1];
 
         generate_instructions_for_node(expr, instructions, var_map_list);
 
         if (is_nontemporary_reference(expr)) {
-            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_DUP());
+            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
         }
 
         Type *goal_type = member_vh->var_type;
@@ -4201,7 +4277,7 @@ void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList
             );
         }
 
-        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .as_int = get_vartype_size(member_vh->var_type)}, null(Val)));
+        array_append(*instructions, create_inst_I_HEAP_STORE(Val_int(get_vartype_size(member_vh->var_type))));
 
     }
 
@@ -4223,8 +4299,7 @@ void generate_instructions_for_delete(ASTNode *ast, Inst **instructions, LinkedL
         generate_instructions_for_node(thing, instructions, var_map_list);
     }
 
-
-    array_append(*instructions, create_inst(I_FREE, null(Val), null(Val)));
+    print_err("This is deprecated and does nothing! KYS!");
 }
 
 void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instructions, bool global) {
@@ -4238,7 +4313,7 @@ void generate_instructions_for_scope_ref_dec(HashMap *scope_map, Inst **instruct
         array_append(*instructions, create_inst(global ? I_READ_GLOBAL : I_READ,
             (Val){.as_int = get_vartype_size(vh->var_type), .type = TYPE_int},
             (Val){.as_int = vh->var_pos, .type = TYPE_int}));
-        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vh->var_type->kind), null(Val), null(Val)));
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vh->var_type->kind), Val_null, Val_null));
 
     }
 }
@@ -4257,8 +4332,8 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
         generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
     
         if (is_nontemporary_reference(&ast->children[0])) {
-            array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-            array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_DUP());
+            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
         }
     }
 
@@ -4279,12 +4354,12 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
                 *instructions, 
                 create_inst(
                     I_READ, 
-                    (Val){.type = TYPE_int, .as_int = get_vartype_size(decl->var_type)}, 
-                    (Val){.type = TYPE_int, .as_int = decl->var_pos}
+                    Val_int(get_vartype_size(decl->var_type)), 
+                    Val_int(decl->var_pos)
                 )
             );
 
-            array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(decl->var_type->kind), null(Val), null(Val)));
+            array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(decl->var_type->kind), Val_null, Val_null));
         }
 
 
@@ -4305,7 +4380,7 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
     }
 
 
-    array_append(*instructions, create_inst(I_RETURN, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_RETURN(Val_null));
 }
 
 // ARRAY STRUCTURE
@@ -4322,11 +4397,11 @@ void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, 
     
     int size = calculate_array_offset(len, element_size);
     
-    array_append(*instructions, create_inst(I_ALLOC, (Val){.type = TYPE_int, .as_int = size}, null(Val)));
-    array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
+    array_append(*instructions, create_inst_I_ALLOC(Val_int(size)));
+    array_append(*instructions, create_inst_I_DUP());
     array_append(*instructions, create_inst(
-        I_INIT_ARRAY_HEADER, (Val){.type = TYPE_int, .as_int = target_subtype->kind}, 
-        (Val){.type = TYPE_int, .as_int = len}));    
+        I_INIT_ARRAY_HEADER, Val_int(target_subtype->kind), 
+        Val_int(len)));    
     
     for (int i = 0; i < len; i++) {
         
@@ -4334,8 +4409,8 @@ void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, 
 
         int offset = calculate_array_offset(i, element_size);
 
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_GET_ATTR_ADDR, (Val){.type = TYPE_int, .as_int = offset}, null(Val)));
+        array_append(*instructions, create_inst_I_DUP());
+        array_append(*instructions, create_inst_I_GET_ATTR_ADDR(Val_int(offset)));
         
         generate_instructions_for_node(child, instructions, var_map_list);
 
@@ -4348,7 +4423,7 @@ void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, 
             );
         }
 
-        array_append(*instructions, create_inst(I_HEAP_STORE, (Val){.type = TYPE_int, .as_int = get_vartype_size(child->expected_return_type)}, null(Val)));
+        array_append(*instructions, create_inst_I_HEAP_STORE(Val_int(get_vartype_size(child->expected_return_type))));
     }
 
 }
@@ -4362,20 +4437,20 @@ void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
     if (dec_ref) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_TUCK, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_DUP());
+        array_append(*instructions, create_inst_I_TUCK(Val_null));
     }
 
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
-    array_append(*instructions, create_inst(I_ARRAY_SUBSCRIPT, (Val){.type = TYPE_int, .as_int = get_vartype_size(subtype)}, null(Val)));
+    array_append(*instructions, create_inst_I_ARRAY_SUBSCRIPT(Val_int(get_vartype_size(subtype))));
 
 
     if (dec_ref) {
-        array_append(*instructions, create_inst(I_POP_BOTTOM, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_POP_BOTTOM(Val_null));
 
         //                                        VVV its always an array for an array subscript duh
-        array_append(*instructions, create_inst(I_DEC_REFCOUNT_ARRAY, null(Val), null(Val)));
+        array_append(*instructions, create_inst_I_DEC_REFCOUNT_ARRAY(Val_null));
     }
 }   
 
@@ -4386,7 +4461,7 @@ void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instruc
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
-    array_append(*instructions, create_inst(I_ARRAY_SUBSCRIPT_ADDR, (Val){.type = TYPE_int, .as_int = get_vartype_size(subtype)}, null(Val)));
+    array_append(*instructions, create_inst_I_ARRAY_SUBSCRIPT_ADDR(Val_int(get_vartype_size(subtype))));
 }
 
 int get_dim_count_for_type(Type *t) {
@@ -4421,8 +4496,8 @@ void generate_instructions_for_array_initializer(ASTNode *ast, Inst **instructio
     while (final_subtype->kind == TYPE_array) final_subtype = final_subtype->array_data.type;
 
     array_append(*instructions, create_inst(I_INIT_N_DIM_ARRAY
-        , (Val){.type = TYPE_int, .as_int = final_subtype->kind}
-        , (Val){.type = TYPE_int, .as_int = dims}));
+        , Val_int(final_subtype->kind)
+        , Val_int(dims)));
 
 }
 
@@ -4435,8 +4510,8 @@ void generate_instructions_for_type_conversion(ASTNode *ast, Inst **instructions
     generate_instructions_for_node(value, instructions, var_map_list);
 
     if (inc_ref) {
-        array_append(*instructions, create_inst(I_DUP, null(Val), null(Val)));
-        array_append(*instructions, create_inst(I_INC_REFCOUNT, null(Val), null(Val)));        
+        array_append(*instructions, create_inst_I_DUP());
+        array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));        
     }
 
     bool res = generate_cvt_inst_for_types(value->expected_return_type, ast->expected_return_type, instructions);
@@ -4526,7 +4601,7 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
     match (ast->token.type) {
         case (STMT_SEQ)  ;
             int size = calc_stack_space_for_scope(ast);
-            array_append(*instructions, create_inst(I_STACK_PTR_ADD, (Val){.type = TYPE_int, .as_int = size}, null(Val)));
+            array_append(*instructions, create_inst_I_STACK_PTR_ADD(Val_int(size)));
         
         case (BLOCK) 
             temp_stack_ptr = gi_stack_pos;
@@ -4541,68 +4616,68 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
     // post children operators
     match (ast->token.type) {
         case (INTEGER) 
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 4}, 
-                                                    (Val){.type = TYPE_int, .as_int = ast->token.as_int}));
+            array_append(*instructions, create_inst(I_PUSH, Val_int(4), 
+                                                    Val_int(ast->token.as_int)));
         
         case (CHAR)
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 1}, 
-                                                    (Val){.type = TYPE_char, .as_char = ast->token.as_char}));
+            array_append(*instructions, create_inst(I_PUSH, Val_int(1), 
+                                                    Val_char(ast->token.as_char)));
 
         case (FLOAT) 
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 8}, 
-                                                    (Val){.type = TYPE_float, .as_double = ast->token.as_double}));
+            array_append(*instructions, create_inst(I_PUSH, Val_int(8), 
+                                                    Val_double(ast->token.as_double)));
         
         case (BOOL) 
             if (ast->token.as_int == MAYBE) {
-                array_append(*instructions, create_inst(I_PUSH_MAYBE, null(Val), null(Val)));
+                array_append(*instructions, create_inst_I_PUSH_MAYBE(Val_null));
             } else {
-                array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 1}, 
-                                                        (Val){.type = TYPE_bool, .as_bool = ast->token.as_int}));
+                array_append(*instructions, create_inst(I_PUSH, Val_int(1), 
+                                                        Val_bool(ast->token.as_int)));
             }
         
         case (NULL_REF) 
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 8}, 
+            array_append(*instructions, create_inst(I_PUSH, Val_int(8), 
                                                     (Val){.type = TYPE_struct, .as_ptr = NULL}));
         
         case (STRING_LITERAL) 
-            array_append(*instructions, create_inst(I_PUSH, (Val){.type = TYPE_int, .as_int = 8}, 
-                                                    (Val){.type = TYPE_str, .as_str = ast->token.text.data}));
+            array_append(*instructions, create_inst(I_PUSH, Val_int(8), 
+                                                    Val_str(ast->token.text.data)));
         
         case (OP_ADD) 
-            array_append(*instructions, create_inst(I_ADD, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_ADD(Val_null));
         
         case (OP_SUB) 
-            array_append(*instructions, create_inst(I_SUB, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_SUB(Val_null));
         
         case (OP_MUL) 
-            array_append(*instructions, create_inst(I_MUL, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_MUL(Val_null));
         
         case (OP_DIV) 
-            array_append(*instructions, create_inst(I_DIV, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_DIV(Val_null));
         
         case (OP_MOD) 
-            array_append(*instructions, create_inst(I_MOD, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_MOD(Val_null));
         
         case (OP_GREATER) 
-            array_append(*instructions, create_inst(I_GREATER, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_GREATER(Val_null));
         
         case (OP_GREATEREQ) 
-            array_append(*instructions, create_inst(I_GREATER_EQUAL, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_GREATER_EQUAL(Val_null));
         
         case (OP_LESS) 
-            array_append(*instructions, create_inst(I_LESS, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_LESS(Val_null));
         
         case (OP_LESSEQ) 
-            array_append(*instructions, create_inst(I_LESS_EQUAL, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_LESS_EQUAL(Val_null));
         
         case (OP_EQ) 
-            array_append(*instructions, create_inst(I_EQUAL, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_EQUAL(Val_null));
         
         case (OP_NOTEQ) 
-            array_append(*instructions, create_inst(I_NOT_EQUAL, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_NOT_EQUAL(Val_null));
         
         case (OP_NOT) 
-            array_append(*instructions, create_inst(I_NOT, null(Val), null(Val)));
+            array_append(*instructions, create_inst_I_NOT(Val_null));
         
         case (NAME)  ;
             bool isglobal;

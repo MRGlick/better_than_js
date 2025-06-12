@@ -129,6 +129,14 @@ typedef struct Val {
     u8 type;
 } Val;
 
+Val Val_int(int n) {return (Val){.type = TYPE_int, .as_int = n};}
+Val Val_char(char c) {return (Val){.type = TYPE_char, .as_char = c};}
+Val Val_double(double d) {return (Val){.type = TYPE_float, .as_double = d};}
+Val Val_bool(bool b) {return (Val){.type = TYPE_bool, .as_bool = b};}
+Val Val_str(char *str) {return (Val){.type = TYPE_str, .as_str = str};}
+const Val Val_null = {0};
+
+
 typedef struct Inst {
     u8 type;
     Val arg1;
