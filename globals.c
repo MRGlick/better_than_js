@@ -7,7 +7,7 @@
 #include "types.c"
 
 const char SYMBOLS[] = {
-    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '%', '=', '>', '<', '!', '&', '|', '.', '[', ']'
+    ' ', ',', ';', '(', ')', '{', '}', '+', '-', '/', '*', '%', '=', '>', '<', '!', '&', '|', '.', '[', ']', '\''
 };
 
 char *KEYWORDS[] = {
@@ -38,6 +38,7 @@ char *KEYWORDS[] = {
     X(NAME) \
     X(VARIABLE) \
     X(STRING_LITERAL) \
+    X(CHAR) \
     X(INTEGER) \
     X(FLOAT) \
     X(NULL_REF) \
@@ -118,11 +119,12 @@ char *KEYWORDS[] = {
 // sorted by bin-op conversion precedence (least to most)
 typedef struct Val {
     union {
-        void *any_val;
-        char *s_val;
-        double f_val;
-        int i_val;
-        bool b_val;
+        void *as_ptr;
+        char *as_str;
+        char as_char;
+        double as_double;
+        int as_int;
+        bool as_bool;
     };
     u8 type;
 } Val;
@@ -185,6 +187,7 @@ const char *token_type_to_pretty_str(TokenType type) {
         case NAME:                return "name";
         case VARIABLE:            return "var";
         case STRING_LITERAL:      return "string literal";
+        case CHAR:        return "char";
         case INTEGER:             return "integer";
         case FLOAT:               return "float";
         case NULL_REF:            return "null";
@@ -271,9 +274,9 @@ typedef struct Token {
     Type *var_type; 
     union {
         String text;
-        double double_val;
-        int int_val;
-        char symbol;
+        double as_double;
+        int as_int;
+        char as_char;
     };
 } Token;
 

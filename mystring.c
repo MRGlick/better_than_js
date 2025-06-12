@@ -228,7 +228,7 @@ StringRef String_slice(StringRef a, int start, int end) {
 String String_cslice(StringRef a, int start, int end) {
     
     if (start > end) {
-        printf("Couldn't cslice string! Start larger than end! \n");
+        printf("Couldn't cslice string! Start larger than end! start: %d, end: %d \n", start, end);
         return (StringRef){.data = NULL, .len = -1};
     }
     

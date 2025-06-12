@@ -7,6 +7,7 @@
 #define TYPE_KINDS \
     X(void) \
     X(bool) \
+    X(char) \
     X(int) \
     X(float) \
     X(str) \

@@ -15,7 +15,8 @@
     "globals.h": "c",
     "match.h": "c",
     "random": "c",
-    "windows.h": "c"
+    "windows.h": "c",
+    "typeinfo": "c"
   },
   "github.copilot.enable": {
     "*": false,
