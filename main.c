@@ -8,7 +8,7 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_RUN_CODE
+#define COMPILATION_STAGE STAGE_PARSER
 
 #define PREPROCESS_AST 1
 
@@ -182,73 +182,84 @@ int parse_int(String number) {
     return res;
 }
 
-Token *tokenize_parts(String *parts) {
+typedef struct Lexeme {
+    String text;
+    int line;
+} Lexeme;
+
+static inline Lexeme Lexeme_new(String text, int line) {
+    return (Lexeme){.text = text, .line = line};
+}
+
+
+
+Token *tokenize(Lexeme *Ls) {
     Token *tokens = array(Token, 10);
 
-    int len = array_length(parts);
+    int len = array_length(Ls);
 
     for (int i = 0; i < len; i++) {
-        if (String_equal(parts[i], StringRef("true"))) {
-            Token tk = {.type = BOOL, .as_int = true};
+        if (String_equal(Ls[i].text, StringRef("true"))) {
+            Token tk = {.type = BOOL, .as_int = true, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("false"))) {
-            Token tk = {.type = BOOL, .as_int = false};
+        if (String_equal(Ls[i].text, StringRef("false"))) {
+            Token tk = {.type = BOOL, .as_int = false, .line = Ls[i].line, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("maybe")) || String_equal(parts[i], StringRef("mabye"))) {
-            Token tk = {.type = BOOL, .as_int = MAYBE};
+        if (String_equal(Ls[i].text, StringRef("maybe")) || String_equal(Ls[i].text, StringRef("mabye"))) {
+            Token tk = {.type = BOOL, .as_int = MAYBE, .line = Ls[i].line, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("null"))) {
+        if (String_equal(Ls[i].text, StringRef("null"))) {
             Type *t = &_const_types[TYPE_struct];
-            Token tk = {.type = NULL_REF, .var_type = t};
+            Token tk = {.type = NULL_REF, .var_type = t, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
 
-        if (String_equal(parts[i], StringRef("."))) { // check this early because it conflicts with float
-            Token tk = {.type = ATTR_ACCESS};
+        if (String_equal(Ls[i].text, StringRef("."))) { // check this early because it conflicts with float
+            Token tk = {.type = ATTR_ACCESS, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (is_keyword(parts[i])) {
-            Token tk = {.type = KEYWORD, .text = parts[i]};
+        if (is_keyword(Ls[i].text)) {
+            Token tk = {.type = KEYWORD, .text = Ls[i].text, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (str_is_type(parts[i])) {
-            Token tk = {.type = TYPE, .var_type = type_from_str(parts[i])};
+        if (str_is_type(Ls[i].text)) {
+            Token tk = {.type = TYPE, .var_type = type_from_str(Ls[i].text), .line = Ls[i].line};
             array_append(tokens, tk);
 
             continue;
         }
 
-        if (is_name(parts[i])) {
-            Token tk = {.type = NAME, .text = parts[i]};
+        if (is_name(Ls[i].text)) {
+            Token tk = {.type = NAME, .text = Ls[i].text, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
 
-        if (is_int(parts[i])) {
+        if (is_int(Ls[i].text)) {
 
-            if (i + 1 < len && parts[i + 1].data[0] == '.') {
-                if (i + 2 < len && is_int(parts[i + 2])) {
-                    String full_str = String_concatf(String_concat(parts[i], StringRef(".")), String_copy(parts[i + 2]));
-                    Token tk = {.type = FLOAT, .as_double = parse_double(full_str)};
+            if (i + 1 < len && Ls[i + 1].text.data[0] == '.') {
+                if (i + 2 < len && is_int(Ls[i + 2].text)) {
+                    String full_str = String_concatf(String_concat(Ls[i].text, StringRef(".")), String_copy(Ls[i + 2].text));
+                    Token tk = {.type = FLOAT, .as_double = parse_double(full_str), .line = Ls[i].line};
                     array_append(tokens, tk);
                     String_delete(&full_str);
                     i += 2;
-                } else {// in cases like '32.' we dont have to use parts[i + 2] because all we care about is parts[i] ('32' in the example)
-                    Token tk = {.type = FLOAT, .as_double = parse_double(parts[i])};
+                } else {// in cases like '32.' we dont have to use Ls[i + 2].text because all we care about is Ls[i].text ('32' in the example)
+                    Token tk = {.type = FLOAT, .as_double = parse_double(Ls[i].text), .line = Ls[i].line};
                     array_append(tokens, tk);
                     i++;
                 }
             } else {
-                Token tk = {.type = INTEGER, .as_int = parse_int(parts[i])};
+                Token tk = {.type = INTEGER, .as_int = parse_int(Ls[i].text), .line = Ls[i].line};
                 array_append(tokens, tk);
             }
             continue;
@@ -256,158 +267,158 @@ Token *tokenize_parts(String *parts) {
 
         }
 
-        if (String_equal(parts[i], StringRef("="))) {
-            Token tk = {.type = OP_ASSIGN};
+        if (String_equal(Ls[i].text, StringRef("="))) {
+            Token tk = {.type = OP_ASSIGN, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("+="))) {
-            Token tk = {.type = OP_ASSIGN_ADD};
+        if (String_equal(Ls[i].text, StringRef("+="))) {
+            Token tk = {.type = OP_ASSIGN_ADD, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("-="))) {
-            Token tk = {.type = OP_ASSIGN_SUB};
+        if (String_equal(Ls[i].text, StringRef("-="))) {
+            Token tk = {.type = OP_ASSIGN_SUB, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("*="))) {
-            Token tk = {.type = OP_ASSIGN_MUL};
+        if (String_equal(Ls[i].text, StringRef("*="))) {
+            Token tk = {.type = OP_ASSIGN_MUL, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("/="))) {
-            Token tk = {.type = OP_ASSIGN_DIV};
+        if (String_equal(Ls[i].text, StringRef("/="))) {
+            Token tk = {.type = OP_ASSIGN_DIV, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("%="))) {
-            Token tk = {.type = OP_ASSIGN_MOD};
+        if (String_equal(Ls[i].text, StringRef("%="))) {
+            Token tk = {.type = OP_ASSIGN_MOD, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("=="))) {
-            Token tk = {.type = OP_EQ};
+        if (String_equal(Ls[i].text, StringRef("=="))) {
+            Token tk = {.type = OP_EQ, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("!"))) {
-            Token tk = {.type = OP_NOT};
+        if (String_equal(Ls[i].text, StringRef("!"))) {
+            Token tk = {.type = OP_NOT, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("!="))) {
-            Token tk = {.type = OP_NOTEQ};
+        if (String_equal(Ls[i].text, StringRef("!="))) {
+            Token tk = {.type = OP_NOTEQ, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef(">="))) {
-            Token tk = {.type = OP_GREATEREQ};
+        if (String_equal(Ls[i].text, StringRef(">="))) {
+            Token tk = {.type = OP_GREATEREQ, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef(">"))) {
-            Token tk = {.type = OP_GREATER};
+        if (String_equal(Ls[i].text, StringRef(">"))) {
+            Token tk = {.type = OP_GREATER, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("<="))) {
-            Token tk = {.type = OP_LESSEQ};
+        if (String_equal(Ls[i].text, StringRef("<="))) {
+            Token tk = {.type = OP_LESSEQ, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("<"))) {
-            Token tk = {.type = OP_LESS};
+        if (String_equal(Ls[i].text, StringRef("<"))) {
+            Token tk = {.type = OP_LESS, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("&&"))) {
-            Token tk = {.type = OP_AND};
+        if (String_equal(Ls[i].text, StringRef("&&"))) {
+            Token tk = {.type = OP_AND, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("||"))) {
-            Token tk = {.type = OP_OR};
+        if (String_equal(Ls[i].text, StringRef("||"))) {
+            Token tk = {.type = OP_OR, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("+"))) {
-            Token tk = {.type = OP_ADD};
+        if (String_equal(Ls[i].text, StringRef("+"))) {
+            Token tk = {.type = OP_ADD, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("-"))) {
-            Token tk = {.type = OP_SUB};
+        if (String_equal(Ls[i].text, StringRef("-"))) {
+            Token tk = {.type = OP_SUB, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("/"))) {
-            Token tk = {.type = OP_DIV};
+        if (String_equal(Ls[i].text, StringRef("/"))) {
+            Token tk = {.type = OP_DIV, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("*"))) {
-            Token tk = {.type = OP_MUL};
+        if (String_equal(Ls[i].text, StringRef("*"))) {
+            Token tk = {.type = OP_MUL, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("("))) {
-            Token tk = {.type = LPAREN};
+        if (String_equal(Ls[i].text, StringRef("("))) {
+            Token tk = {.type = LPAREN, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef(")"))) {
-            Token tk = {.type = RPAREN};
+        if (String_equal(Ls[i].text, StringRef(")"))) {
+            Token tk = {.type = RPAREN, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("{"))) {
-            Token tk = {.type = LCURLY};
+        if (String_equal(Ls[i].text, StringRef("{"))) {
+            Token tk = {.type = LCURLY, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("}"))) {
-            Token tk = {.type = RCURLY};
+        if (String_equal(Ls[i].text, StringRef("}"))) {
+            Token tk = {.type = RCURLY, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("["))) {
-            Token tk = {.type = LBRACKET};
+        if (String_equal(Ls[i].text, StringRef("["))) {
+            Token tk = {.type = LBRACKET, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("]"))) {
-            Token tk = {.type = RBRACKET};
+        if (String_equal(Ls[i].text, StringRef("]"))) {
+            Token tk = {.type = RBRACKET, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef(","))) {
-            Token tk = {.type = COMMA};
+        if (String_equal(Ls[i].text, StringRef(","))) {
+            Token tk = {.type = COMMA, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef(";"))) {
-            Token tk = {.type = STMT_END};
+        if (String_equal(Ls[i].text, StringRef(";"))) {
+            Token tk = {.type = STMT_END, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (String_equal(parts[i], StringRef("%"))) {
-            Token tk = {.type = OP_MOD};
+        if (String_equal(Ls[i].text, StringRef("%"))) {
+            Token tk = {.type = OP_MOD, .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
         // only need to check the first because at this point it's guranteed to be a valid literal
         // also this leaks but who gives a shit
-        if (parts[i].data[0] == '"') { 
-            Token tk = {.type = STRING_LITERAL, .text = String_cslice(parts[i], 1, parts[i].len - 1)};
+        if (Ls[i].text.data[0] == '"') { 
+            Token tk = {.type = STRING_LITERAL, .text = String_cslice(Ls[i].text, 1, Ls[i].text.len - 1), .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
-        if (parts[i].data[0] == '\'') { 
-            if (parts[i].len > 3) {
+        if (Ls[i].text.data[0] == '\'') { 
+            if (Ls[i].text.len > 3) {
                 print_err("Char literal can only be one character long!");
             }
-            Token tk = {.type = CHAR, .as_char = parts[i].data[1]};
+            Token tk = {.type = CHAR, .as_char = Ls[i].text.data[1], .line = Ls[i].line};
             array_append(tokens, tk);
             continue;
         }
@@ -417,7 +428,7 @@ Token *tokenize_parts(String *parts) {
         Token invalid_token = {.type = INVALID};
         array_append(tokens, invalid_token);
         print_err("Invalid token!");
-        printf("Token: %s \n", parts[i].data);
+        printf("Token: %s \n", Ls[i].text.data);
 
     }
 
@@ -575,7 +586,9 @@ int parse_err_most_tokens = 0;
     ParseResult varname = expr; \
     if (!varname.success) { \
         _destroy_free_list(); \
-        set_parse_error_if_deepest("Parse failed! Expected "expected"!"); \
+        char msg[200] = {0}; \
+        sprintf(msg, "Parse failed! Expected "expected"! on line %d", get_token(idx - 1).line); \
+        set_parse_error_if_deepest(msg); \
         return_correct_parse_res(__VA_ARGS__); \
     } \
     if (!is_null_ast(varname.node)) \
@@ -597,10 +610,11 @@ int parse_err_most_tokens = 0;
         if (get_token(idx).type != t__) { \
             _destroy_free_list(); \
             set_parse_error_if_deepest( \
-                "Parse failed! Expected '%s' after '%s', got '%s' instead!", \
+                "Parse failed! Expected '%s' after '%s', got '%s' instead! on line %d", \
                 token_type_to_pretty_str(t__), \
                 token_type_to_pretty_str(get_token(idx - 1).type), \
-                token_type_to_pretty_str(get_token(idx).type) \
+                token_type_to_pretty_str(get_token(idx).type), \
+                get_token(idx).line \
             ); \
             return_correct_parse_res(__VA_ARGS__); \
         } \
@@ -610,7 +624,7 @@ int parse_err_most_tokens = 0;
 #define MATCH_TOKEN_WITH_KEYWORD(kw, ...) \
     if (!check_keyword(get_token(idx), kw)) { \
         _destroy_free_list(); \
-        set_parse_error_if_deepest("Parse failed! Expected '%s', got '%s'!", kw, token_type_to_pretty_str(get_token(idx).type)); \
+        set_parse_error_if_deepest("Parse failed! Expected '%s', got '%s'! On line %d", kw, token_type_to_pretty_str(get_token(idx).type), get_token(idx).line); \
         return_correct_parse_res(__VA_ARGS__); \
     } \
     idx++;
@@ -618,7 +632,7 @@ int parse_err_most_tokens = 0;
 #define MATCH_TOKEN(truthy_cond, ...) \
     if (!(truthy_cond)) { \
         _destroy_free_list(); \
-        set_parse_error_if_deepest("Parse failed! Expected condition '"#truthy_cond"', got '%s'!", token_type_to_pretty_str(get_token(idx).type)); \
+        set_parse_error_if_deepest("Parse failed! Expected condition '"#truthy_cond"', got '%s'! on line %d", token_type_to_pretty_str(get_token(idx).type), get_token(idx).line); \
         return_correct_parse_res(__VA_ARGS__); \
     } \
     idx++;
@@ -5650,14 +5664,17 @@ bool is_stop_char(char c) {
     return false;
 }
 
-String *lex(StringRef text) {
 
-    String *parts = array(String, 10);
+Lexeme *lex(StringRef text) {
+
+    Lexeme *Ls = array(Lexeme, 10);
     
     char buf[1024] = {0};
     int pos = 0;
 
     char current_literal_bound = 0;
+
+    int line = 1;
 
 
     for (int i = 0; i < text.len - 1; i++) {
@@ -5667,13 +5684,13 @@ String *lex(StringRef text) {
         if (c == '"' || c == '\'') {
             if (!current_literal_bound) {
                 if (pos > 0) {
-                    array_append(parts, String_ncopy_from_literal(buf, pos));
+                    array_append(Ls, Lexeme_new(String_ncopy_from_literal(buf, pos), line));
                     pos = 0;
                 }
                 current_literal_bound = c;
             } else if (c == current_literal_bound) {
                 buf[pos++] = c;
-                array_append(parts, String_ncopy_from_literal(buf, pos));
+                array_append(Ls, Lexeme_new(String_ncopy_from_literal(buf, pos), line));
                 pos = 0;
                 current_literal_bound = 0;
                 continue;
@@ -5689,12 +5706,15 @@ String *lex(StringRef text) {
         
 
         if (stop_char && pos > 0) {
-            array_append(parts, String_ncopy_from_literal(buf, pos));
+            array_append(Ls, Lexeme_new(String_ncopy_from_literal(buf, pos), line));
             pos = 0;
 
         }
         
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' ) continue;
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' ) {
+            if (c == '\n') line++;
+            continue;
+        }
 
         buf[pos++] = c;
 
@@ -5723,7 +5743,7 @@ String *lex(StringRef text) {
                 i++;
             }
 
-            array_append(parts, String_ncopy_from_literal(buf, pos));
+            array_append(Ls, Lexeme_new(String_ncopy_from_literal(buf, pos), line));
             pos = 0;
         }
     }
@@ -5736,7 +5756,7 @@ String *lex(StringRef text) {
                 current_literal_bound = (!current_literal_bound) ? buf[pos] : 0;
             }
         }
-        array_append(parts, String_ncopy_from_literal(buf, pos));
+        array_append(Ls, Lexeme_new(String_ncopy_from_literal(buf, pos), line));
         pos = 0;
     }
 
@@ -5744,7 +5764,7 @@ String *lex(StringRef text) {
         print_err("Missing closing quotes in string literal!");
     }
 
-    return parts;
+    return Ls;
 
 }
 
@@ -5780,7 +5800,7 @@ void print_token(Token token, int level) {
         default();
     }
 
-    printf("] \n");
+    printf("] line: %d \n", token.line);
 }
 
 void print_tokens(Token *tokens) {
@@ -5790,23 +5810,23 @@ void print_tokens(Token *tokens) {
     }
 }
 
-void print_str_parts(String *parts) {
-    for (int i = 0; i < array_length(parts); i++) {
-        printf("> '%s' len: %d\n", parts[i].data, parts[i].len);
+void print_lexemes(Lexeme *Ls) {
+    for (int i = 0; i < array_length(Ls); i++) {
+        printf("> '%s' len: %d, line: %d \n", Ls[i].text.data, Ls[i].text.len, Ls[i].line);
     }
 }
 
-#define free_parts(parts) do { \
-    _free_parts(parts); \
-    parts = NULL; \
+#define free_lexemes(Ls) do { \
+    _free_lexemes(Ls); \
+    Ls = NULL; \
 } while (0)
 
-void _free_parts(String *parts) {
-    for (int i = 0; i < array_length(parts); i++) {
-        String_delete(&parts[i]);
+void _free_lexemes(Lexeme *Ls) {
+    for (int i = 0; i < array_length(Ls); i++) {
+        String_delete(&Ls[i].text);
     }
 
-    array_free(parts);
+    array_free(Ls);
 }
 
 #define RESULT_OK 0
@@ -5847,7 +5867,6 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
         while (fgets(buf_ptr, bufsize - (buf_ptr - buf), file)) {
             int len = strlen(buf_ptr);
             if (len > 0 && buf_ptr[len - 1] == '\n') {
-                buf_ptr[len - 1] = ' '; // get rid of \n
                 buf_ptr += len;
             }
         }
@@ -5897,16 +5916,16 @@ int main() {
         }
         if (result != RESULT_OK) continue;
 
-        String *parts = lex(StringRef(buf));
+        Lexeme *Ls = lex(StringRef(buf));
 
-        if (LEXER_PRINT) print_str_parts(parts);
+        if (LEXER_PRINT) print_lexemes(Ls);
 
         if (COMPILATION_STAGE < STAGE_TOKENIZER) {
-            free_parts(parts);
+            free_lexemes(Ls);
             continue;
         }
 
-        Token *tokens = tokenize_parts(parts);
+        Token *tokens = tokenize(Ls);
 
         if (TOKENIZER_PRINT) print_tokens(tokens);
 
@@ -5914,7 +5933,7 @@ int main() {
 
         if (COMPILATION_STAGE < STAGE_PARSER) {
             free_tokens(tokens);
-            free_parts(parts);
+            free_lexemes(Ls);
             continue;
         }
 
@@ -5923,7 +5942,7 @@ int main() {
             printf("%s \n", parse_err);
             print_err("Invalid program! Failed to parse AST!");
             free_tokens(tokens);
-            free_parts(parts);
+            free_lexemes(Ls);
             continue;
         }
         
@@ -5937,7 +5956,7 @@ int main() {
         if (COMPILATION_STAGE < STAGE_IR_GEN) {
             free_ast(res.node);
             free_tokens(tokens);
-            free_parts(parts);
+            free_lexemes(Ls);
             continue;
         }
 
@@ -5949,7 +5968,7 @@ int main() {
             array_free(instructions);
             free_ast(res.node);
             free_tokens(tokens);
-            free_parts(parts);
+            free_lexemes(Ls);
             continue;
         }
 
@@ -5964,7 +5983,7 @@ int main() {
 
         free_tokens(tokens);
 
-        free_parts(parts);
+        free_lexemes(Ls);
     }
 
     

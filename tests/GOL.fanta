@@ -30,7 +30,7 @@ int count_live_cells(bool[][] board, int r, int c) {
 }
 
 bool[][] step(bool[][] old_board) {
-    bool[][] new_board = [old_board.length; old_board[0].length];
+    bool[][] new_board = [old_board.length; old_board[0].length]
 
     for (int r = 0; r < old_board.length; r += 1; ) {
         for (int c = 0; c < old_board[r].length; c += 1; ) {

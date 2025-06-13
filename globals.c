@@ -286,6 +286,7 @@ typedef struct Token {
         int as_int;
         char as_char;
     };
+    int line;
 } Token;
 
 typedef struct TokenNode {
