@@ -2791,6 +2791,11 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             ASTNode *left = &node->children[0];
             ASTNode *subscript_expr = &node->children[1];
 
+            if (left->expected_return_type->kind == TYPE_str) {
+                node->expected_return_type = make_type(TYPE_char);
+                return;
+            }
+
             if (left->expected_return_type->kind != TYPE_array)
                 return_err("Can't subscript a value of type '%s'! maybe later with traits..", type_get_name(left->expected_return_type).data);
             
@@ -3076,6 +3081,7 @@ X(I_PRINT_INT) \
 X(I_PRINT_FLOAT) \
 X(I_PRINT_CHAR) \
 X(I_PRINT_STR) \
+X(I_PRINT_CHAR_ARRAY) /*same as print_str, but since they have different offsets ill make different instructions*/ \
 X(I_PRINT_BOOL) \
 X(I_PRINT_NEWLINE) \
 X(I_PRINT_END) \
@@ -3104,6 +3110,7 @@ X(I_POP_BOTTOM) \
 X(I_NOP) \
 X(I_ARRAY_SUBSCRIPT) \
 X(I_ARRAY_SUBSCRIPT_ADDR) \
+X(I_STR_SUBSCRIPT) \
 X(I_INIT_N_DIM_ARRAY) \
 X(I_CLEAR_TERMI_LINES) \
 X(I_SLEEP) \
@@ -3225,6 +3232,7 @@ DEF_CREATE_INST_NOARGS(I_POP_BOTTOM)
 DEF_CREATE_INST_NOARGS(I_NOP)
 DEF_CREATE_INST(I_ARRAY_SUBSCRIPT, elem_size)
 DEF_CREATE_INST(I_ARRAY_SUBSCRIPT_ADDR, elem_size)
+DEF_CREATE_INST_NOARGS(I_STR_SUBSCRIPT)
 DEF_CREATE_INST(I_INIT_N_DIM_ARRAY, n_dims)
 DEF_CREATE_INST_NOARGS(I_CLEAR_TERMI_LINES)
 DEF_CREATE_INST_NOARGS(I_SLEEP)
@@ -3703,6 +3711,12 @@ InstType get_print_inst_for_type(Type *type) {
         
         case (TYPE_char)
             return I_PRINT_CHAR;
+
+        case (TYPE_array) 
+            if (type->array_data.type->kind == TYPE_char) 
+                return I_PRINT_CHAR_ARRAY;
+            else
+                return I_INVALID;
         
         default ()
             return I_INVALID;
@@ -4188,6 +4202,8 @@ void generate_instructions_for_str_attr_access(ASTNode *ast, Inst **instructions
 
     generate_instructions_for_node(str_node, instructions, var_map_list);
 
+    array_append(*instructions, create_inst_I_READ_ATTR(Val_int(sizeof(int)), Val_int(-4)));
+
     
 }
 
@@ -4428,20 +4444,25 @@ void generate_instructions_for_array_literal(ASTNode *ast, Inst **instructions, 
 
 }
 
+
 void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    Type *subtype = ast->children[0].expected_return_type->array_data.type;
+    ASTNode *left = &ast->children[0];
 
-    bool dec_ref = is_temporary_reference(&ast->children[0]);
+    ASTNode *attr_node = &ast->children[1];
 
-    generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
+    Type *subtype = left->expected_return_type->array_data.type;
+
+    bool dec_ref = is_temporary_reference(left);
+
+    generate_instructions_for_node(left, instructions, var_map_list);
 
     if (dec_ref) {
         array_append(*instructions, create_inst_I_DUP());
         array_append(*instructions, create_inst_I_TUCK(Val_null));
     }
 
-    generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
+    generate_instructions_for_node(attr_node, instructions, var_map_list);
 
     array_append(*instructions, create_inst_I_ARRAY_SUBSCRIPT(Val_int(get_vartype_size(subtype))));
 
@@ -4452,7 +4473,26 @@ void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions
         //                                        VVV its always an array for an array subscript duh
         array_append(*instructions, create_inst_I_DEC_REFCOUNT_ARRAY(Val_null));
     }
-}   
+}
+
+void generate_instructions_for_str_subscript(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    ASTNode *left = &ast->children[0];
+    ASTNode *idx_node = &ast->children[1];
+
+    generate_instructions_for_node(left, instructions, var_map_list);
+    generate_instructions_for_node(idx_node, instructions, var_map_list);
+    array_append(*instructions, create_inst_I_STR_SUBSCRIPT());
+}
+
+void generate_instructions_for_subscript(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    ASTNode *left = &ast->children[0];
+
+    match (left->expected_return_type->kind) {
+        case (TYPE_array) generate_instructions_for_array_subscript(ast, instructions, var_map_list);
+        case (TYPE_str) generate_instructions_for_str_subscript(ast, instructions, var_map_list);
+        default() return_err("Cannot subscript value of type '%s'!", type_get_name(left->expected_return_type));
+    }
+}
 
 void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
@@ -4462,6 +4502,17 @@ void generate_instructions_for_array_subscript_addr(ASTNode *ast, Inst **instruc
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
     array_append(*instructions, create_inst_I_ARRAY_SUBSCRIPT_ADDR(Val_int(get_vartype_size(subtype))));
+}
+
+
+void generate_instructions_for_subscript_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+    ASTNode *left = &ast->children[0];
+
+    match (left->expected_return_type->kind) {
+        case (TYPE_array) generate_instructions_for_array_subscript_addr(ast, instructions, var_map_list);
+        case (TYPE_str) return_err("'str' is immmutable, you can't modify it!");
+        default() return_err("Cannot subscript value of type '%s'!", type_get_name(left->expected_return_type));
+    }
 }
 
 int get_dim_count_for_type(Type *t) {
@@ -4573,7 +4624,7 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
             generate_instructions_for_array_initializer(ast, instructions, var_map_list);
         
         case (ARRAY_SUBSCRIPT)
-            generate_instructions_for_array_subscript(ast, instructions, var_map_list);
+            generate_instructions_for_subscript(ast, instructions, var_map_list);
 
         case (DELETE_STMT) 
             generate_instructions_for_delete(ast, instructions, var_map_list);
@@ -4795,11 +4846,12 @@ void *append_to_text_buffer(const char *text, int len) {
     
     memcpy(text_buffer + text_buffer_ptr, &len, sizeof(int));
     text_buffer_ptr += sizeof(int);
-    
+
     void *retval = text_buffer + text_buffer_ptr;
     
     memcpy(text_buffer + text_buffer_ptr, text, len);
     text_buffer_ptr += len + 1;
+
     return retval;
 }
 
@@ -4808,9 +4860,9 @@ void preprocess_string_literals(Inst *instructions) {
     int len = array_length(instructions);
     
     for (int i = 0; i < len; i++) {
-        Inst inst = instructions[i];
-        if (inst.type == I_PUSH && inst.arg1.type == TYPE_str) {
-            inst.arg1.as_str = append_to_text_buffer(inst.arg1.as_str, strlen(inst.arg1.as_str));
+        Inst *inst = &instructions[i];
+        if (inst->type == I_PUSH && inst->arg2.type == TYPE_str) {
+            inst->arg2.as_str = append_to_text_buffer(inst->arg2.as_str, strlen(inst->arg2.as_str));
         }
     }
 }
@@ -4893,7 +4945,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     runtime_frees = 0;
     runtime_mallocs = 0;
     
-
     preprocess_string_literals(instructions);
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
@@ -4913,6 +4964,35 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
 
         match (byte_arr[inst_ptr]) {
+
+            case (I_PRINT_CHAR_ARRAY) {
+
+                
+                void *obj = pop(void *);
+                int len = *(int *)(obj + sizeof(ObjectHeader));
+                char *str = obj + sizeof(ObjectHeader) + sizeof(int);
+                printf("%.*s", len, str);
+            }
+
+            case (I_STR_SUBSCRIPT) {
+                int idx = pop(int);
+                char *str = pop(char *);
+                int len = *(int *)(str - sizeof(int));
+
+
+                if (idx < 0 || idx >= len) {
+                    print_err(
+                        "Invalid str subscript! Tried to access idx %d, but length is %d!",
+                        idx,
+                        len
+                    );
+                    exit(EXIT_FAILURE);
+                }
+
+                char final = str[idx];
+
+                append(&final, sizeof(char *));
+            }
 
             case (I_SLEEP) {
                 double seconds = pop(double);
@@ -4957,7 +5037,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                     exit(EXIT_FAILURE);
                 }
                 int *len = addr + sizeof(ObjectHeader);
-                if (idx >= (*len)) {
+                if (idx >= (*len) || idx < 0) {
                     print_err(
                         "Array index out of bounds! array length: %d, tried to access index %d",
                         *len,
@@ -4994,7 +5074,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                     exit(EXIT_FAILURE);
                 }
                 int *len = addr + sizeof(ObjectHeader);
-                if (idx >= (*len)) {
+                if (idx >= (*len) || idx < 0) {
                     print_err(
                         "Array index out of bounds! array length: %d, tried to access index %d",
                         *len,
@@ -5062,6 +5142,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 int offset = *(int *)&byte_arr[inst_ptr];
                 inst_ptr += sizeof(int) - 1;
                 char *addr = pop(char *);
+
                 if (!addr) print_err("Tried to get attribute of 'null'! inst: #%d \n", inst_ptr);
                 append(addr + offset, size);
             }

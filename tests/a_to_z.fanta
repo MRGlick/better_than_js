@@ -1,0 +1,5 @@
+char[] a_to_z = [26;]; 
+for (int i = 0; i < 26; i += 1; ) 
+    a_to_z[i] = 'a' + i;
+    
+print a_to_z;
