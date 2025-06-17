@@ -8,7 +8,7 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_PARSER
+#define COMPILATION_STAGE STAGE_RUN_CODE
 
 #define PREPROCESS_AST 1
 
@@ -49,13 +49,6 @@ VarHeader create_func_header(String name, Type *return_type, int pos, VarHeader 
         .func_return_type = return_type, 
         .func_pos = pos, 
         .func_args = args
-    };
-}
-
-VarHeader create_funcs_header(String name, VarHeader *funcs) {
-    return (VarHeader) {
-        .name = name,
-        .funcs = funcs
     };
 }
 
@@ -440,7 +433,7 @@ void free_tokens(Token *tokens) {
     array_free(tokens);
 }
 
-ASTNode ASTNode_create(Token tk, bool complete) {
+ASTNode ASTNode_new(Token tk, bool complete) {
     ASTNode node = {0};
     node.children = array(ASTNode, 2);
     node.token = tk;
@@ -645,7 +638,7 @@ int parse_err_most_tokens = 0;
 
 
 ASTNode wrap_with_block(ASTNode node) {
-    ASTNode block = ASTNode_create((Token){.type = BLOCK}, true);
+    ASTNode block = ASTNode_new((Token){.type = BLOCK}, true);
     ASTNode_add_child(block, node);
 
     return block;
@@ -722,7 +715,7 @@ ParseResult parse_value(int idx) {
             || get_token(idx).type == NULL_REF
             || get_token(idx).type == CHAR
         );
-        FINISH_PARSE(ASTNode_create(get_token(token_idx), true));
+        FINISH_PARSE(ASTNode_new(get_token(token_idx), true));
     }
 }
 
@@ -751,9 +744,9 @@ ParseResult parse_attr_rule_h(int idx) {
         MATCH_TOKEN_WITH_TYPE(NAME);
         MATCH_PARSE(attr_h_res, parse_attr_rule_h(idx), "NEVER");
 
-        ASTNode node = ASTNode_create(get_token(op_idx), false);
+        ASTNode node = ASTNode_new(get_token(op_idx), false);
     
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
 
         if (is_null_ast(attr_h_res.node)) FINISH_PARSE(node);
     
@@ -802,7 +795,7 @@ ParseResult parse_mul_rule_h(int idx) {
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "operand");
         MATCH_PARSE(mul_rule_h_res, parse_mul_rule_h(idx), "NEVER");
 
-        ASTNode node = ASTNode_create(get_token(op_idx), false);
+        ASTNode node = ASTNode_new(get_token(op_idx), false);
         
         ASTNode_add_child(node, unary_res.node);
 
@@ -851,7 +844,7 @@ ParseResult parse_add_rule_h(int idx) {
         MATCH_PARSE(mul_rule_res, parse_mul_rule(idx), "operand");
         MATCH_PARSE(add_rule_h_res, parse_add_rule_h(idx), "NEVER");
 
-        ASTNode node = ASTNode_create(get_token(op_idx), false);
+        ASTNode node = ASTNode_new(get_token(op_idx), false);
         
         ASTNode_add_child(node, mul_rule_res.node);
 
@@ -908,7 +901,7 @@ ParseResult parse_rel_rule_h(int idx) {
 
         MATCH_PARSE(rel_rule_h_res, parse_rel_rule_h(idx), "NEVER");
 
-        ASTNode node = ASTNode_create(get_token(op_idx), false);
+        ASTNode node = ASTNode_new(get_token(op_idx), false);
         
         ASTNode_add_child(node, add_rule_res.node);        
 
@@ -956,7 +949,7 @@ ParseResult parse_and_rule_h(int idx) {
 
         MATCH_PARSE(and_rule_h_res, parse_and_rule_h(idx), "NEVER");
 
-        ASTNode node = ASTNode_create(get_token(op_idx), false);
+        ASTNode node = ASTNode_new(get_token(op_idx), false);
         
         ASTNode_add_child(node, rel_rule_res.node);
 
@@ -1005,7 +998,7 @@ ParseResult parse_expr_h(int idx) {
 
         MATCH_PARSE(expr_h_res, parse_expr_h(idx), "NEVER");
 
-        ASTNode node = ASTNode_create(get_token(op_idx), false);
+        ASTNode node = ASTNode_new(get_token(op_idx), false);
         
         ASTNode_add_child(node, and_rule_res.node);
 
@@ -1065,7 +1058,7 @@ ParseResult parse_if_stmt(int idx) {
 
             MATCH_PARSE(stmt2_res, parse_stmt(idx), "statement after else");
 
-            ASTNode node = ASTNode_create((Token){.type = IF_ELSE_STMT}, true);
+            ASTNode node = ASTNode_new((Token){.type = IF_ELSE_STMT}, true);
 
             ASTNode_add_child(node, expr_res.node);
             if (stmt_res.node.token.type != BLOCK) {
@@ -1083,7 +1076,7 @@ ParseResult parse_if_stmt(int idx) {
             FINISH_PARSE(node);
 
         } else {
-            ASTNode node = ASTNode_create((Token){.type = IF_STMT}, true);
+            ASTNode node = ASTNode_new((Token){.type = IF_STMT}, true);
             ASTNode_add_child(node, expr_res.node);
 
             if (stmt_res.node.token.type != BLOCK) {
@@ -1146,7 +1139,7 @@ ParseResult parse_stmt_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(stmt_res, parse_stmt(idx), "statement");
         
-        ASTNode node = ASTNode_create((Token){.type = STMT_SEQ}, true);
+        ASTNode node = ASTNode_new((Token){.type = STMT_SEQ}, true);
         
         ASTNode_add_child(node, stmt_res.node);
         
@@ -1169,13 +1162,17 @@ ParseResult parse_block(int idx) {
         
         MATCH_TOKEN_WITH_TYPE(LCURLY);
         
-        MATCH_PARSE(stmt_seq_res, parse_stmt_seq(idx), "statement sequence");
-        
+        TRY_MATCH_PARSE(stmt_seq_res, parse_stmt_seq(idx));
+
         MATCH_TOKEN_WITH_TYPE(RCURLY);
         
-        stmt_seq_res.node.token.type = BLOCK;
+        if (stmt_seq_res.success) {
+            stmt_seq_res.node.token.type = BLOCK;
+            FINISH_PARSE(stmt_seq_res.node);
+        } else {
+            FINISH_PARSE(ASTNode_new((Token){.type = BLOCK}, true));
+        }
 
-        FINISH_PARSE(stmt_seq_res.node);
     }
 }
 
@@ -1184,7 +1181,7 @@ ParseResult parse_val_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
 
-        ASTNode node = ASTNode_create((Token){.type = VAL_SEQ}, true);
+        ASTNode node = ASTNode_new((Token){.type = VAL_SEQ}, true);
 
         ASTNode_add_child(node, expr_res.node);
 
@@ -1229,7 +1226,7 @@ ParseResult parse_while_stmt(int idx) {
         MATCH_TOKEN_WITH_TYPE(RPAREN);
         MATCH_PARSE(stmt_res, parse_stmt(idx), "statement after while");
 
-        ASTNode node = ASTNode_create((Token){.type =  WHILE_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type =  WHILE_STMT}, true);
 
         ASTNode_add_child(node, expr_res.node);
 
@@ -1248,7 +1245,7 @@ ParseResult parse_array_type_postfix(int idx) {
         MATCH_TOKEN_WITH_TYPE(LBRACKET);
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
 
-        FINISH_PARSE(ASTNode_create((Token){.type = TYPE, .var_type = make_array_type(NULL)}, true));
+        FINISH_PARSE(ASTNode_new((Token){.type = TYPE, .var_type = make_array_type(NULL)}, true));
     }
 }
 
@@ -1321,7 +1318,7 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
             ASTNode leaf = postfix_seq_res.node;
             while (array_length(leaf.children) != 0) leaf = leaf.children[0];
 
-            ASTNode_add_child(leaf, ASTNode_create((Token){.type = TYPE, .var_type = move(base_type)}, true));
+            ASTNode_add_child(leaf, ASTNode_new((Token){.type = TYPE, .var_type = move(base_type)}, true));
 
             t = make_type_from_tree(&postfix_seq_res.node);
 
@@ -1331,7 +1328,7 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
             t = move(base_type);
         }
 
-        ASTNode node = ASTNode_create(
+        ASTNode node = ASTNode_new(
             (Token) {
                 .type = TYPE,
                 .var_type = t
@@ -1355,11 +1352,11 @@ ParseResult parse_vardecl_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = ASTNode_create((Token){.type = DECL_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = DECL_STMT}, true);
 
         ASTNode_add_child(node, type_res.node);
 
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
 
         FINISH_PARSE(node);
     }
@@ -1376,7 +1373,7 @@ ParseResult parse_assign_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = ASTNode_create((Token){.type = ASSIGN_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = ASSIGN_STMT}, true);
     
         ASTNode_add_child(node, primary_res.node);
         
@@ -1400,11 +1397,11 @@ ParseResult parse_vardecl_assign_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = ASTNode_create((Token){.type = DECL_ASSIGN_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = DECL_ASSIGN_STMT}, true);
     
         ASTNode_add_child(node, type_res.node);
         
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
         
         ASTNode_add_child(node, expr_res.node);
         
@@ -1420,7 +1417,7 @@ ParseResult parse_input_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = ASTNode_create((Token){.type = INPUT_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = INPUT_STMT}, true);
 
         ASTNode_add_child(node, primary_res.node);
 
@@ -1435,9 +1432,9 @@ ParseResult parse_func_arg(int idx) {
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
 
-        ASTNode node = ASTNode_create((Token){.type = FUNC_ARG}, true);
+        ASTNode node = ASTNode_new((Token){.type = FUNC_ARG}, true);
         ASTNode_add_child(node, type_res.node);
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
 
         FINISH_PARSE(node);
     }
@@ -1447,7 +1444,7 @@ ParseResult parse_func_args_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(func_arg_res, parse_func_arg(idx), "function argument", CAN_FAIL);
 
-        ASTNode node = ASTNode_create((Token){.type = FUNC_ARGS_SEQ}, true);
+        ASTNode node = ASTNode_new((Token){.type = FUNC_ARGS_SEQ}, true);
 
         ASTNode_add_child(node, func_arg_res.node);
 
@@ -1490,17 +1487,17 @@ ParseResult parse_func_decl_stmt(int idx) {
             stmt_res.node = wrap_with_block(stmt_res.node);
         }
 
-        ASTNode node = ASTNode_create((Token){.type = FUNC_DECL_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = FUNC_DECL_STMT}, true);
 
         ASTNode_add_child(node, type_res.node);
 
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
 
         if (!is_null_ast(func_args_res.node)) {
             ASTNode_add_child(node, func_args_res.node);
         } else {
             // empty placeholder node
-            ASTNode_add_child(node, ASTNode_create((Token){.type = FUNC_ARGS_SEQ}, true));
+            ASTNode_add_child(node, ASTNode_new((Token){.type = FUNC_ARGS_SEQ}, true));
         }
 
         ASTNode_add_child(node, stmt_res.node);
@@ -1518,7 +1515,7 @@ ParseResult parse_return_stmt(int idx) {
         if (expr_res.success) {
             MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-            ASTNode node = ASTNode_create((Token){.type = RETURN_STMT}, true);
+            ASTNode node = ASTNode_new((Token){.type = RETURN_STMT}, true);
 
             ASTNode_add_child(node, expr_res.node);
 
@@ -1527,7 +1524,7 @@ ParseResult parse_return_stmt(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        FINISH_PARSE(ASTNode_create((Token){.type = RETURN_STMT}, true));
+        FINISH_PARSE(ASTNode_new((Token){.type = RETURN_STMT}, true));
     }
 }
 
@@ -1544,7 +1541,7 @@ ParseResult parse_modify_stmt(int idx) {
         
         
         
-        ASTNode node = ASTNode_create((Token){.type = ASSIGN_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = ASSIGN_STMT}, true);
         
         
         ASTNode_add_child(node, primary_res.node);
@@ -1569,7 +1566,7 @@ ParseResult parse_modify_stmt(int idx) {
             default () print_err("LITERALLY CAN'T HAPPEN. KYS.");
         }
         
-        ASTNode op_node = ASTNode_create((Token){.type = op_type}, true);
+        ASTNode op_node = ASTNode_new((Token){.type = op_type}, true);
         
         ASTNode primary_res_node_copy = ASTNode_copy(&primary_res.node);
         ASTNode_add_child(op_node, primary_res_node_copy); // because we already added that node to the tree
@@ -1586,7 +1583,7 @@ ParseResult parse_defer_stmt(int idx) {
 
         MATCH_PARSE(stmt_res, parse_stmt(idx), "statement after defer");
 
-        ASTNode node = ASTNode_create((Token){.type = DEFER_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = DEFER_STMT}, true);
         ASTNode_add_child(node, stmt_res.node);
 
         FINISH_PARSE(node);
@@ -1606,7 +1603,7 @@ ParseResult _parse_decl_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(decl_res, _parse_vardecl_and_or_assign_decl(idx), "declaration");
 
-        ASTNode node = ASTNode_create((Token){.type = DECL_SEQ}, true);
+        ASTNode node = ASTNode_new((Token){.type = DECL_SEQ}, true);
 
         ASTNode_add_child(node, decl_res.node);
 
@@ -1635,9 +1632,9 @@ ParseResult parse_struct_decl(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(RCURLY);
 
-        ASTNode node = ASTNode_create((Token){.type = STRUCT_DECL_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = STRUCT_DECL_STMT}, true);
 
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
         ASTNode_add_child(node, decl_seq_res.node);
 
         FINISH_PARSE(node);
@@ -1651,8 +1648,8 @@ ParseResult parse_attr_postfix(int idx) {
         int name_idx = idx;
         MATCH_TOKEN_WITH_TYPE(NAME);
         
-        ASTNode node = ASTNode_create((Token){.type = ATTR_ACCESS}, false);
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode node = ASTNode_new((Token){.type = ATTR_ACCESS}, false);
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
         FINISH_PARSE(node);
     }
 }
@@ -1666,7 +1663,7 @@ ParseResult parse_func_call_postfix(int idx) {
         if (val_seq_res.success) {
             MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-            ASTNode node = ASTNode_create((Token){.type = FUNC_CALL}, false);
+            ASTNode node = ASTNode_new((Token){.type = FUNC_CALL}, false);
 
             ASTNode_add_child(node, val_seq_res.node);
             FINISH_PARSE(node);
@@ -1674,9 +1671,9 @@ ParseResult parse_func_call_postfix(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-        ASTNode node = ASTNode_create((Token){.type = FUNC_CALL}, false);
+        ASTNode node = ASTNode_new((Token){.type = FUNC_CALL}, false);
 
-        ASTNode_add_child(node, ASTNode_create((Token){.type = VAL_SEQ}, true));
+        ASTNode_add_child(node, ASTNode_new((Token){.type = VAL_SEQ}, true));
 
         FINISH_PARSE(node);
     }
@@ -1688,7 +1685,7 @@ ParseResult parse_subscript_postfix(int idx) {
         MATCH_PARSE(expr_res, parse_expr(idx), "expression in subscript");
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
 
-        ASTNode node = ASTNode_create((Token){.type = ARRAY_SUBSCRIPT}, false);
+        ASTNode node = ASTNode_new((Token){.type = ARRAY_SUBSCRIPT}, false);
 
         ASTNode_add_child(node, expr_res.node);
 
@@ -1764,7 +1761,7 @@ ParseResult parse_unary_minus(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_TYPE(OP_SUB);
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "value after unary minus");
-        ASTNode node = ASTNode_create((Token){.type = OP_UNARY_MINUS}, true);
+        ASTNode node = ASTNode_new((Token){.type = OP_UNARY_MINUS}, true);
         ASTNode_add_child(node, unary_res.node);
         FINISH_PARSE(node);
     }
@@ -1774,7 +1771,7 @@ ParseResult parse_unary_not(int idx) {
     START_PARSE {
         MATCH_TOKEN_WITH_TYPE(OP_NOT);
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "value after unary not");
-        ASTNode node = ASTNode_create((Token){.type = OP_NOT}, true);
+        ASTNode node = ASTNode_new((Token){.type = OP_NOT}, true);
         ASTNode_add_child(node, unary_res.node);
         FINISH_PARSE(node);
     }
@@ -1786,7 +1783,7 @@ ParseResult parse_type_conversion_prefix(int idx) {
         MATCH_PARSE(type_res, parse_type(idx, NULL), "type");
         MATCH_TOKEN_WITH_TYPE(RPAREN);
         MATCH_PARSE(unary_res, parse_unary_rule(idx), "value after type conversion prefix");
-        ASTNode node = ASTNode_create((Token){.type = OP_CONVERT_TYPE}, true);
+        ASTNode node = ASTNode_new((Token){.type = OP_CONVERT_TYPE}, true);
         ASTNode_add_child(node, type_res.node);
         ASTNode_add_child(node, unary_res.node);
         FINISH_PARSE(node);
@@ -1820,8 +1817,8 @@ ParseResult _parse_assign(int idx) {
 
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
 
-        ASTNode node = ASTNode_create((Token){.type = OP_ASSIGN}, true);
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+        ASTNode node = ASTNode_new((Token){.type = OP_ASSIGN}, true);
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
         ASTNode_add_child(node, expr_res.node);
 
         FINISH_PARSE(node);
@@ -1832,7 +1829,7 @@ ParseResult parse_assign_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(assign_res, _parse_assign(idx), "assignment");
 
-        ASTNode node = ASTNode_create((Token){.type = ASSIGN_SEQ}, true);
+        ASTNode node = ASTNode_new((Token){.type = ASSIGN_SEQ}, true);
 
         ASTNode_add_child(node, assign_res.node);
 
@@ -1875,8 +1872,8 @@ ParseResult parse_new_rule(int idx) {
         if (assign_seq_res.success) {
             MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-            ASTNode node = ASTNode_create((Token){.type = OP_NEW}, true);
-            ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
+            ASTNode node = ASTNode_new((Token){.type = OP_NEW}, true);
+            ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
             ASTNode_add_child(node, assign_seq_res.node);
 
             FINISH_PARSE(node);
@@ -1884,9 +1881,9 @@ ParseResult parse_new_rule(int idx) {
 
         MATCH_TOKEN_WITH_TYPE(RPAREN);
 
-        ASTNode node = ASTNode_create((Token){.type = OP_NEW}, true);
-        ASTNode_add_child(node, ASTNode_create(get_token(name_idx), true));
-        ASTNode_add_child(node, ASTNode_create((Token){.type = ASSIGN_SEQ}, true));
+        ASTNode node = ASTNode_new((Token){.type = OP_NEW}, true);
+        ASTNode_add_child(node, ASTNode_new(get_token(name_idx), true));
+        ASTNode_add_child(node, ASTNode_new((Token){.type = ASSIGN_SEQ}, true));
 
         FINISH_PARSE(node);
     }
@@ -1899,7 +1896,7 @@ ParseResult parse_delete_stmt(int idx) {
         MATCH_PARSE(primary_res, parse_primary(idx), "variable");
         MATCH_TOKEN_WITH_TYPE(STMT_END);
 
-        ASTNode node = ASTNode_create((Token){.type = DELETE_STMT}, true);
+        ASTNode node = ASTNode_new((Token){.type = DELETE_STMT}, true);
         ASTNode_add_child(node, primary_res.node);
 
         FINISH_PARSE(node);
@@ -1916,10 +1913,10 @@ ParseResult parse_for_stmt(int idx) {
         MATCH_PARSE(update_stmt, parse_stmt(idx), "last statement in for");
         MATCH_TOKEN_WITH_TYPE(RPAREN);
         MATCH_PARSE(code_stmt, parse_stmt(idx), "statement after for");
-        ASTNode node = ASTNode_create((Token){.type = BLOCK}, true);
+        ASTNode node = ASTNode_new((Token){.type = BLOCK}, true);
         ASTNode_add_child(node, init_stmt.node);
 
-        ASTNode while_node = ASTNode_create((Token){.type = WHILE_STMT}, true);
+        ASTNode while_node = ASTNode_new((Token){.type = WHILE_STMT}, true);
         ASTNode_add_child(while_node, cond_expr.node);
 
         if (code_stmt.node.token.type != BLOCK) {
@@ -1942,11 +1939,11 @@ ParseResult parse_array_literal(int idx) {
         TRY_MATCH_PARSE(val_seq_res, parse_val_seq(idx));
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
         
-        ASTNode node = ASTNode_create((Token){.type = ARRAY_LITERAL}, true);
+        ASTNode node = ASTNode_new((Token){.type = ARRAY_LITERAL}, true);
         if (val_seq_res.success) {
             ASTNode_add_child(node, val_seq_res.node);
         } else {
-            ASTNode_add_child(node, ASTNode_create((Token){.type = VAL_SEQ}, true));
+            ASTNode_add_child(node, ASTNode_new((Token){.type = VAL_SEQ}, true));
         }
 
         FINISH_PARSE(node);
@@ -1957,7 +1954,7 @@ ParseResult parse_dimension_seq(int idx) {
     START_PARSE {
         MATCH_PARSE(expr_res, parse_expr(idx), "expression in dimension sequence");
         
-        ASTNode node = ASTNode_create((Token){.type = DIMENSION_SEQ}, true);
+        ASTNode node = ASTNode_new((Token){.type = DIMENSION_SEQ}, true);
 
         ASTNode_add_child(node, expr_res.node);
 
@@ -1986,7 +1983,7 @@ ParseResult parse_array_initializer(int idx) {
         MATCH_PARSE(dim_seq_res, parse_dimension_seq(idx), "sequence of dimensions");
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
 
-        ASTNode node = ASTNode_create((Token){.type = ARRAY_INITIALIZER}, false);
+        ASTNode node = ASTNode_new((Token){.type = ARRAY_INITIALIZER}, false);
         ASTNode_add_child(node, dim_seq_res.node);
 
 
@@ -2099,7 +2096,11 @@ SUB
 STACK_STORE
 */
 
+VarHeader *lookup_var_safe(LinkedList *var_map_list, String name, bool *global);
 
+VarHeader *lookup_var(LinkedList *var_map_list, String name, bool *global);
+
+void add_varheader_to_map_list(LinkedList *var_map_list, VarHeader *vh);
 
 // Types will convert to the highest precedence type in a collision
 int get_type_precedence(Type *type) {
@@ -2231,98 +2232,6 @@ int validate_return_paths(ASTNode *ast) {
 
     return _validate_return_paths(&ast->children[3], target_type);
 }
-
-int get_match_score_for_types(Type *t1, Type *t2) {
-    if (is_reference_typekind(t1->kind) || is_reference_typekind(t2->kind)) {
-        return types_are_equal(t1, t2) ? 4 : 0;
-    }
-
-    if (t1->kind == t2->kind) return 4;
-
-    if (t1->kind == TYPE_int) {
-        if (t2->kind == TYPE_float) return 3;
-        if (t2->kind == TYPE_bool) return 2;
-        if (t2->kind == TYPE_str) return 1;
-    }
-    if (t1->kind == TYPE_float) {
-        if (t2->kind == TYPE_int) return 3;
-        if (t2->kind == TYPE_bool) return 2;
-        if (t2->kind == TYPE_str) return 1;
-    }
-    if (t1->kind == TYPE_bool) {
-        if (t2->kind == TYPE_int) return 3;
-        if (t2->kind == TYPE_float) return 2;
-        if (t2->kind == TYPE_str) return 1;
-    }
-    if (t1->kind == TYPE_str) {
-        if (t2->kind == TYPE_int) return 1;
-        if (t2->kind == TYPE_float) return 1;
-        if (t2->kind == TYPE_bool) return 1;
-    }
-
-    return 0;
-}
-
-int get_overload_match_score(VarHeader *func_args, ASTNode *call_args_ast) {
-    
-    assert(
-        array_length(func_args) == array_length(call_args_ast->children)
-    );
-
-    int score = 0;
-
-    for (int i = 0; i < array_length(func_args); i++) {
-        score += get_match_score_for_types(call_args_ast->children[i].expected_return_type, func_args[i].var_type);
-    }
-
-    return score;
-}
-
-VarHeader *get_best_overload(VarHeader *overloads, ASTNode *call_args_ast) {
-
-    VarHeader *best_match = NULL;
-    bool ambiguous = false;
-    int best_score = 0;
-
-    for (int i = 0; i < array_length(overloads->funcs); i++) {
-        VarHeader *func = &overloads->funcs[i];
-
-        if (array_length(func->func_args) != array_length(call_args_ast->children)) continue;
-
-        if (array_length(func->func_args) == 0) return func;
-
-        int current_score = get_overload_match_score(func->func_args, call_args_ast);
-
-        if (current_score == best_score) {
-            ambiguous = true;
-        }
-        if (current_score > best_score) {
-            best_score = current_score;
-            best_match = func;
-            ambiguous = false;
-        }
-
-    }
-
-    if (!best_match) {
-        print_err("Tried to call function '%s()' with invalid arguments!", overloads->name.data);
-
-        printf("Argument types: ");
-        for (int i = 0; i < array_length(call_args_ast->children); i++) {
-            printf("%s, ", type_kind_names[call_args_ast->children[i].expected_return_type->kind]);
-        }
-    }
-
-    if (ambiguous) {
-        print_err("Tried to call function '%s()', but the call is ambiguous (function cannot be inferred by the argument types)!"
-                        , overloads->name.data);
-        exit(1); // unrecoverable
-    }
-
-    return best_match;
-    
-}
-
 bool _func_vh_args_equal(VarHeader *args1, VarHeader *args2) {
     if (array_length(args1) != array_length(args2)) return false;
 
@@ -2333,59 +2242,32 @@ bool _func_vh_args_equal(VarHeader *args1, VarHeader *args2) {
     return true;
 }
 
-void add_func_vh_to_overloads(VarHeader *overloads_vh, VarHeader vh) {
-
-    for (int i = 0; i < array_length(overloads_vh->funcs); i++) {
-        if (_func_vh_args_equal(overloads_vh->funcs[i].func_args, vh.func_args))
-            return_err("Tried to define '%s()' twice with the same signature! ", vh.name.data);
-    }
-
-    array_append(overloads_vh->funcs, vh);
-
-}
-
-
 void try_set_temp_array_subtype(ASTNode *node, Type *target_type) {
     if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;
     ASTNode_insert_child(
         (*node), 
-        ASTNode_create((Token){.type = TYPE, .var_type = copy_type(target_type)}, true),
+        ASTNode_new((Token){.type = TYPE, .var_type = copy_type(target_type)}, true),
         0
     );
     node->complete = true;
 }
 
-void try_infer_array_literal_type_from_overloads(ASTNode *node, VarHeader *overloads, int arg_idx) {
-    if (node->token.type != ARRAY_LITERAL) return;    
-    bool found = false;
-    Type *t = NULL;
-
-    for (int i = 0; i < array_length(overloads->funcs); i++) {
-
-        if (arg_idx >= array_length(overloads->funcs[i].func_args)) continue;
-
-        VarHeader *arg = &overloads->funcs[i].func_args[arg_idx];
-        if (arg->var_type->kind == TYPE_array) {
-            if (!found) {
-                found = true;
-                t = arg->var_type;
-            } else return_err(
-                "Cannot infer array type from function, overloads are ambiguous! Try to cast the array into the wanted type."
-            );
-        }
-    }
-
-    if (!found) return_err(
-        "Tried to call a function with invalid arguments! Passed in an array in place of another type!"
+void try_infer_temp_array_type_from_func_arg(ASTNode *node, VarHeader *arg) {
+    if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;    
+    
+    if (arg->var_type->kind != TYPE_array) return_err(
+        "Couldn't infer array literal type from function argument, argument type: %s",
+        type_get_name(arg->var_type)
     );
 
-    Type *subtype = t->array_data.type;
-
-    ASTNode_insert_child(
+    ASTNode_add_child(
         (*node), 
-        ASTNode_create((Token){.type = TYPE, .var_type = copy_type(subtype)}, true),
-        0
+        ASTNode_new(
+            (Token){.type = TYPE, .var_type = copy_type(arg->var_type->array_data.type)}, 
+            true
+        )
     );
+
 }
 
 
@@ -2424,9 +2306,9 @@ int get_intrinsic_by_name(String name) {
 }
 
 
-void typeify_tree(ASTNode *node, HashMap *var_map);
+void typeify_tree(ASTNode *node, LinkedList *var_map_list);
 
-void typeify_intrinsic(ASTNode *node, HashMap *var_map) {    
+void typeify_intrinsic(ASTNode *node, LinkedList *var_map_list) {    
     
     String func_name = node->children[0].token.text;
     
@@ -2435,7 +2317,7 @@ void typeify_intrinsic(ASTNode *node, HashMap *var_map) {
     int arg_count = array_length(node->children[1].children);
     
     for (int i = 0; i < arg_count; i++) {
-        typeify_tree(&node->children[1].children[i], var_map);
+        typeify_tree(&node->children[1].children[i], var_map_list);
     }
     
 
@@ -2490,20 +2372,22 @@ void typeify_intrinsic(ASTNode *node, HashMap *var_map) {
 }
 // anything this function doesn't touch is meant to return void
 
-void typeify_tree(ASTNode *node, HashMap *var_map) {
+void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
     static ASTNode *current_func = NULL;
 
 
     match (node->token.type) {
         case(BLOCK) {
-            HashMap *copy = HashMap_copy(var_map);
+
+            LL_prepend(var_map_list, LLNode_new(HashMap(VarHeader)));
 
             for (int i = 0; i < array_length(node->children); i++) {
-                typeify_tree(&node->children[i], copy);
+                typeify_tree(&node->children[i], var_map_list);
             }
 
-            HashMap_free(copy);
+            HashMap *vm = LL_pop_head(var_map_list);
+            HashMap_free(vm);
         }
         case(DECL_STMT, DECL_ASSIGN_STMT) {
 
@@ -2512,13 +2396,13 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             ASTNode *expr_node = &node->children[2];
             
             VarHeader vh = create_var_header(var_name, type, -1);
-            HashMap_put(var_map, var_name, &vh);
+            add_varheader_to_map_list(var_map_list, &vh);
 
             if (node->token.type == DECL_ASSIGN_STMT && type->kind == TYPE_array)
                 try_set_temp_array_subtype(expr_node, type->array_data.type);
 
             for (int i = 0; i < array_length(node->children); i++) {
-                typeify_tree(&node->children[i], var_map);
+                typeify_tree(&node->children[i], var_map_list);
             }
         }
         case(INTEGER) {
@@ -2540,7 +2424,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             node->expected_return_type = make_type(TYPE_null_ref);
         }
         case(NAME) {
-            VarHeader *vh = HashMap_get_safe(var_map, node->token.text, NULL);
+            VarHeader *vh = lookup_var(var_map_list, node->token.text, NULL);
             if (!vh) 
                 return_err("Identifier '%s' Doesn't exist within the current scope!", node->token.text.data);
             
@@ -2557,6 +2441,11 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 func_name.data
             );
 
+            if (lookup_var_safe(var_map_list, func_name, NULL)) return_err(
+                "Tried to redefine function '%s'!",
+                func_name
+            );
+
             VarHeader vh = create_func_header(
                 func_name, 
                 node->children[0].token.var_type, 
@@ -2564,17 +2453,12 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 get_args_from_func_decl_ast(&func_args)
             );
 
-            VarHeader *overloads_ptr = HashMap_get_safe(var_map, func_name, NULL);
-            if (overloads_ptr) {
-                add_func_vh_to_overloads(overloads_ptr, vh);
-            } else {
-                VarHeader overloads = create_funcs_header(func_name, array(VarHeader, 2));
-                array_append(overloads.funcs, vh);
-                
-                HashMap_put(var_map, func_name, &overloads);
-            }
+            // Functions are allowed to be redefined by the standard I just made up.
+            // I changed my mind shortly after.
 
-            var_map = HashMap_copy(var_map);
+            add_varheader_to_map_list(var_map_list, &vh);
+
+            LL_prepend(var_map_list, LLNode_new(HashMap(VarHeader)));
             
             int len = array_length(func_args.children);
             for (int i = 0; i < len; i++) {
@@ -2584,8 +2468,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 Type *type = func_args.children[i].children[0].token.var_type;
                 
                 VarHeader vh = create_var_header(var_name, type, -1);
-                
-                HashMap_put(var_map, var_name, &vh);
+
+                add_varheader_to_map_list(var_map_list, &vh);
             }
 
 
@@ -2596,12 +2480,13 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             // this ensures we don't copy the hashmap twice because of the scope
             for (int i = 0; i < array_length(func_scope->children); i++) {
-                typeify_tree(&func_scope->children[i], var_map);
+                typeify_tree(&func_scope->children[i], var_map_list);
             }
 
             current_func = prev_func;
 
-            HashMap_free(var_map);
+            HashMap *vm = LL_pop_head(var_map_list);
+            HashMap_free(vm);
 
             int result = validate_return_paths(node);
             
@@ -2648,7 +2533,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
     
             VarHeader vh = create_struct_header(name, arr, offset, -1);
     
-            HashMap_put(var_map, name, &vh);    
+            add_varheader_to_map_list(var_map_list, &vh);
         }
         case (ATTR_ACCESS) {
             
@@ -2659,7 +2544,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 "Cannot access attribute of ambiguous array literal!"
             );
             
-            typeify_tree(left_side, var_map);
+            typeify_tree(left_side, var_map_list);
             Type *left_type = left_side->expected_return_type;
 
             if (left_type->kind == TYPE_array) {
@@ -2685,7 +2570,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
             String struct_name = type_get_name(left_type);
 
-            VarHeader *struct_header = HashMap_get_safe(var_map, struct_name, NULL);
+            VarHeader *struct_header = lookup_var_safe(var_map_list, struct_name, NULL);
 
             if (!struct_header) return_err(
                 "Tried accessing attribute of struct '%s' which is not defined!", 
@@ -2700,7 +2585,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
 
         case (OP_NEW) {
             String struct_name = node->children[0].token.text;
-            VarHeader *struct_vh = HashMap_get_safe(var_map, struct_name, NULL);
+            VarHeader *struct_vh = lookup_var_safe(var_map_list, struct_name, NULL);
             if (!struct_vh) return_err(
                 "can't create new '%s', as that struct is not defined!", 
                 struct_name.data
@@ -2725,12 +2610,12 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 }
 
                 
-                typeify_tree(expr, var_map);
+                typeify_tree(expr, var_map_list);
             }
         }
 
         case (OP_UNARY_MINUS) {
-            typeify_tree(&node->children[0], var_map);
+            typeify_tree(&node->children[0], var_map_list);
             node->expected_return_type = node->children[0].expected_return_type;    
         }
 
@@ -2739,26 +2624,23 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             String func_name = node->children[0].token.text;
             
             if (get_intrinsic_by_name(func_name) != INTR_NONE) {
-                typeify_intrinsic(node, var_map);
+                typeify_intrinsic(node, var_map_list);
                 return;
             }
                 
 
-            VarHeader *overloads = HashMap_get_safe(var_map, func_name, NULL);
-            if (!overloads) return_err("Tried to call function '%s()' which doesn't exist!", node->children[0].token.text.data);
-    
+            VarHeader *vh = lookup_var_safe(var_map_list, func_name, NULL);
+
             (&node->children[0])->expected_return_type = make_type(TYPE_void);
     
             ASTNode *args_ast = &node->children[1];
     
             for (int i = 0; i < array_length(args_ast->children); i++) {
                 ASTNode *child = &args_ast->children[i];
-                try_infer_array_literal_type_from_overloads(child, overloads, i);
-                typeify_tree(child, var_map);
+                try_infer_temp_array_type_from_func_arg(child, &vh->func_args[i]);
+                typeify_tree(child, var_map_list);
             }
-    
-            VarHeader *vh = get_best_overload(overloads, args_ast);
-    
+
             node->expected_return_type = copy_type(vh->func_return_type);
         }
 
@@ -2775,7 +2657,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 ASTNode *child = &values_node->children[i];
                 if (type_node->token.var_type->kind == TYPE_array)
                     try_set_temp_array_subtype(child, type_node->token.var_type->array_data.type);
-                typeify_tree(child, var_map);
+                typeify_tree(child, var_map_list);
             }
 
 
@@ -2784,7 +2666,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             ASTNode *dims = &node->children[1];
             Type *t = make_array_type(copy_type(node->children[0].token.var_type));
             for (int i = 0; i < array_length(dims->children); i++) {
-                typeify_tree(&dims->children[i], var_map);
+                typeify_tree(&dims->children[i], var_map_list);
                 if (dims->children[i].expected_return_type->kind != TYPE_int)
                     return_err("Dimension value must be of type int!");
             }
@@ -2799,8 +2681,8 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             );
             
 
-            typeify_tree(&node->children[0], var_map);
-            typeify_tree(&node->children[1], var_map);
+            typeify_tree(&node->children[0], var_map_list);
+            typeify_tree(&node->children[1], var_map_list);
 
             ASTNode *left = &node->children[0];
             ASTNode *subscript_expr = &node->children[1];
@@ -2829,7 +2711,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             if (return_type->kind == TYPE_array)
                 try_set_temp_array_subtype(&node->children[0], return_type->array_data.type);
             
-            typeify_tree(&node->children[0], var_map);
+            typeify_tree(&node->children[0], var_map_list);
         }
         case (OP_CONVERT_TYPE) {
             
@@ -2838,7 +2720,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
             if (node->expected_return_type->kind == TYPE_array)
                 try_set_temp_array_subtype(&node->children[1], node->expected_return_type->array_data.type);
 
-            typeify_tree(&node->children[1], var_map);
+            typeify_tree(&node->children[1], var_map_list);
             
         
         }
@@ -2848,7 +2730,7 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
                 Type *highest_precedence_type = NULL;
                 int len = array_length(node->children);
                 for (int i = 0; i < len; i++) {
-                    typeify_tree(&node->children[i], var_map);
+                    typeify_tree(&node->children[i], var_map_list);
                     if (get_type_precedence(node->children[i].expected_return_type) > get_type_precedence(highest_precedence_type)) {
                         highest_precedence_type = node->children[i].expected_return_type;
                     }
@@ -2860,24 +2742,18 @@ void typeify_tree(ASTNode *node, HashMap *var_map) {
         
                 int len = array_length(node->children);
                 for (int i = 0; i < len; i++) {
-                    typeify_tree(&node->children[i], var_map);
+                    typeify_tree(&node->children[i], var_map_list);
                 }
             } else {
                 int len = array_length(node->children);
                 for (int i = 0; i < len; i++) {
-                    typeify_tree(&node->children[i], var_map);
+                    typeify_tree(&node->children[i], var_map_list);
                 }
             } 
         }
     }
 }
 
-void typeify_tree_wrapper(ASTNode *node) {
-    HashMap *var_map = HashMap(VarHeader);
-    typeify_tree(node, var_map);
-    
-    HashMap_free(var_map);
-}
 
 // very simple defer, TODO: make it return-aware (and breaks/continues should work when i add them)
 void move_defers_to_end(ASTNode *node) {
@@ -3024,7 +2900,15 @@ void apply_constant_folding(ASTNode *node) {
 }
 
 void preprocess_ast(ASTNode *ast) {
-    typeify_tree_wrapper(ast);
+
+    LinkedList *vm_list = LL_new();
+    LL_prepend(vm_list, LLNode_new(HashMap(VarHeader)));
+
+    typeify_tree(ast, vm_list);
+
+    _HashMap_free(LL_pop_head(vm_list));
+    LL_free(vm_list);
+
     move_defers_to_end(ast);
     apply_constant_folding(ast);
     // and anything else i might wanna do
@@ -3447,7 +3331,7 @@ int gi_label_idx = 0;
 ASTNode *gi_current_function = NULL;
 
 
-VarHeader *get_varheader_from_map_list_safe(LinkedList *var_map_list, String name, bool *global) {
+VarHeader *lookup_var_safe(LinkedList *var_map_list, String name, bool *global) {
     if (global) *global = false;
     LLNode *current = var_map_list->head;
     while (current != NULL) {
@@ -3461,8 +3345,8 @@ VarHeader *get_varheader_from_map_list_safe(LinkedList *var_map_list, String nam
     return NULL;
 }
 
-VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bool *global) {
-    VarHeader *result = get_varheader_from_map_list_safe(var_map_list, name, global);
+VarHeader *lookup_var(LinkedList *var_map_list, String name, bool *global) {
+    VarHeader *result = lookup_var_safe(var_map_list, name, global);
     if (!result) 
         print_err("Identifier '%s' doesn't exist within the current scope!", name.data);
     
@@ -3470,9 +3354,9 @@ VarHeader *get_varheader_from_map_list(LinkedList *var_map_list, String name, bo
 }
 
 
-void add_varheader_to_map_list(LinkedList *var_map_list, String key, VarHeader *vh) {
+void add_varheader_to_map_list(LinkedList *var_map_list, VarHeader *vh) {
     HashMap *map = var_map_list->head->val;
-    HashMap_put(map, key, vh);
+    HashMap_put(map, vh->name, vh);
 }
 
 
@@ -3529,7 +3413,7 @@ void generate_instructions_for_vardecl(ASTNode *ast, Inst **instructions, Linked
     
     VarHeader vh = create_var_header(var_name, type, gi_stack_pos);
 
-    add_varheader_to_map_list(var_map_list, var_name, &vh);
+    add_varheader_to_map_list(var_map_list, &vh);
     
     int size = get_vartype_size(type);
 
@@ -3598,7 +3482,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
             
         bool isglobal;
         
-        VarHeader *vh = get_varheader_from_map_list(var_map_list, var_name, &isglobal);
+        VarHeader *vh = lookup_var(var_map_list, var_name, &isglobal);
 
         generate_instructions_for_node(right_side, instructions, var_map_list);
 
@@ -3856,7 +3740,7 @@ void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedLi
 
     bool isglobal;
 
-    VarHeader *vh = get_varheader_from_map_list(var_map_list, ast->children[0].token.text, &isglobal);
+    VarHeader *vh = lookup_var(var_map_list, ast->children[0].token.text, &isglobal);
 
     array_append(*instructions, create_inst(isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE, Val_int(get_vartype_size(goal_type)), Val_int(vh->var_pos)));
 
@@ -3884,7 +3768,7 @@ bool _get_all_vardecls_before_return(ASTNode *node, ASTNode *return_node, VarHea
             match (child->token.type) {
                 case (DECL_ASSIGN_STMT, DECL_STMT);
                     String name = child->children[1].token.text;
-                    array_append(*arr_ptr, get_varheader_from_map_list(var_map_list, name, NULL));
+                    array_append(*arr_ptr, lookup_var(var_map_list, name, NULL));
             }
         }
     }
@@ -3902,7 +3786,7 @@ VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_n
         ASTNode *arg = &func_args_node->children[i];
         String arg_name = arg->children[1].token.text;
 
-        array_append(arr, get_varheader_from_map_list(var_map_list, arg_name, NULL));
+        array_append(arr, lookup_var(var_map_list, arg_name, NULL));
     }
 
     // int:
@@ -3940,16 +3824,9 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
         get_args_from_func_decl_ast(&var_args)
     );
 
-    VarHeader *overloads = get_varheader_from_map_list_safe(var_map_list, func_name, NULL);
-    if (overloads) {
-        add_func_vh_to_overloads(overloads, vh);
-    } else {
-        VarHeader new_overloads = create_funcs_header(func_name, array(VarHeader, 2));
-        array_append(new_overloads.funcs, vh);
-        add_varheader_to_map_list(var_map_list, func_name, &new_overloads);
-    }
+    add_varheader_to_map_list(var_map_list, &vh);
 
-    LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));
+    LL_prepend(var_map_list, LLNode_new(HashMap(VarHeader)));
     int prev_gi_stack_pos = gi_stack_pos;
     ASTNode *gi_prev_function = gi_current_function;
     gi_stack_pos = 0;
@@ -3970,7 +3847,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
         Type *type = var_args.children[i].children[0].token.var_type;
         array_append(*instructions, create_inst_I_STACK_STORE(Val_int(get_vartype_size(type)), Val_int(gi_stack_pos)));
         VarHeader vh = create_var_header(var_name, type, gi_stack_pos);
-        add_varheader_to_map_list(var_map_list, var_name, &vh);
+        add_varheader_to_map_list(var_map_list, &vh);
         gi_stack_pos += get_vartype_size(type);
         size += get_vartype_size(type);
     }
@@ -4010,8 +3887,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
 
     gi_current_function = gi_prev_function;
     gi_stack_pos = prev_gi_stack_pos;
-    HashMap_free(var_map_list->head->val);
-    LL_pop_head(var_map_list);
+    _HashMap_free(LL_pop_head(var_map_list));
 
     if ((*instructions)[array_length(*instructions) - 1].type != I_RETURN)
         array_append(*instructions, create_inst_I_RETURN(Val_null));
@@ -4091,14 +3967,10 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
     
     int len = array_length(func_args.children);
     
-
-    VarHeader *overloads_vh = get_varheader_from_map_list(var_map_list, func_name, NULL);
+    VarHeader *func_vh = lookup_var(var_map_list, func_name, NULL);
     
-    if (!overloads_vh) return_err("Tried to call function '%s' which doesn't exist!", func_name.data);
+    if (!func_vh) return_err("Tried to call function '%s' which doesn't exist!", func_name.data);
     
-    VarHeader *func_vh = get_best_overload(overloads_vh, &func_args);
-
-
     for (int i = 0; i < len; i++) {
         ASTNode *arg = &func_args.children[i];
         generate_instructions_for_node(arg, instructions, var_map_list);
@@ -4183,7 +4055,7 @@ void generate_instructions_for_struct_decl(ASTNode *ast, LinkedList *var_map_lis
 
     VarHeader vh = create_struct_header(name, arr, offset, struct_metadata_ptr - 1);
 
-    add_varheader_to_map_list(var_map_list, name, &vh);
+    add_varheader_to_map_list(var_map_list, &vh);
 
 }
 
@@ -4243,7 +4115,7 @@ void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, Li
     }
 
     // find member offset
-    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, type_get_name(ast->children[0].expected_return_type), NULL);
+    VarHeader *struct_vh = lookup_var(var_map_list, type_get_name(ast->children[0].expected_return_type), NULL);
 
     VarHeader *member_vh = find_attr_in_struct(struct_vh, ast->children[1].token.text);
 
@@ -4259,7 +4131,7 @@ void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, Link
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
     // find member offset
-    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, type_get_name(ast->children[0].expected_return_type), NULL);
+    VarHeader *struct_vh = lookup_var(var_map_list, type_get_name(ast->children[0].expected_return_type), NULL);
 
     VarHeader *member_vh = find_attr_in_struct(struct_vh, ast->children[1].token.text);
 
@@ -4269,7 +4141,7 @@ void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, Link
 
 void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    VarHeader *struct_vh = get_varheader_from_map_list(var_map_list, ast->children[0].token.text, NULL);
+    VarHeader *struct_vh = lookup_var(var_map_list, ast->children[0].token.text, NULL);
 
     array_append(*instructions, create_inst_I_ALLOC(Val_int(struct_vh->struct_size)));
 
@@ -4670,7 +4542,7 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         
         case (BLOCK) 
             temp_stack_ptr = gi_stack_pos;
-            LL_prepend(var_map_list, LLNode_create(HashMap(VarHeader)));    
+            LL_prepend(var_map_list, LLNode_new(HashMap(VarHeader)));    
     }
         
     for (int i = 0; i < array_length(ast->children); i++) {
@@ -4746,7 +4618,7 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         
         case (NAME)  ;
             bool isglobal;
-            VarHeader *vh = get_varheader_from_map_list(var_map_list, ast->token.text, &isglobal);
+            VarHeader *vh = lookup_var(var_map_list, ast->token.text, &isglobal);
             array_append(*instructions, create_inst(isglobal ? I_READ_GLOBAL : I_READ,
                 (Val){.as_int = get_vartype_size(vh->var_type), .type = TYPE_int},
                 (Val){.as_int = vh->var_pos, .type = TYPE_int}));
@@ -4754,12 +4626,10 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         case (BLOCK) 
 
             generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, false);
-
-            HashMap_free(var_map_list->head->val);
-            LL_pop_head(var_map_list);
+            _HashMap_free(LL_pop_head(var_map_list));
             gi_stack_pos = temp_stack_ptr;
         
-        case (STMT_SEQ) 
+        case (STMT_SEQ)
             generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, true);
         
         default ()
@@ -4775,8 +4645,8 @@ Inst *generate_instructions(ASTNode *ast) {
     clear_struct_metadata();
 
     Inst *res = array(Inst, 20);
-    LinkedList *var_map_list = LL_create();
-    LL_append(var_map_list, LLNode_create(HashMap(VarHeader)));
+    LinkedList *var_map_list = LL_new();
+    LL_append(var_map_list, LLNode_new(HashMap(VarHeader)));
 
     gi_stack_pos = 0;
     gi_label_idx = 0;
@@ -4784,7 +4654,7 @@ Inst *generate_instructions(ASTNode *ast) {
 
     HashMap_free(var_map_list->head->val);
 
-    LL_delete(var_map_list);
+    LL_free(var_map_list);
 
     return res;
 }
@@ -5800,7 +5670,10 @@ void print_token(Token token, int level) {
         default();
     }
 
-    printf("] line: %d \n", token.line);
+    if (token.line)
+        printf("] line: %d \n", token.line);
+    else
+        printf("] \n");        
 }
 
 void print_tokens(Token *tokens) {

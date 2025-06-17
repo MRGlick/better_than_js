@@ -145,7 +145,6 @@ typedef struct Inst {
 
 typedef enum VHType {
     VH_FUNC,
-    VH_FUNCS,
     VH_VAR,
     VH_STRUCT
 } VHType;
@@ -162,9 +161,6 @@ typedef struct VarHeader {
             Type *func_return_type;
             i32 func_pos;
             struct VarHeader *func_args;
-        };
-        struct { // VH_FUNCS
-            struct VarHeader *funcs;
         };
         struct { // VH_STRUCT
             struct VarHeader *struct_members;
@@ -195,7 +191,7 @@ const char *token_type_to_pretty_str(TokenType type) {
         case NAME:                return "name";
         case VARIABLE:            return "var";
         case STRING_LITERAL:      return "string literal";
-        case CHAR:        return "char";
+        case CHAR:                return "char";
         case INTEGER:             return "integer";
         case FLOAT:               return "float";
         case NULL_REF:            return "null";
