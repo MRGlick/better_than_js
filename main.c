@@ -12,10 +12,10 @@
 
 #define PREPROCESS_AST 1
 
-#define LEXER_PRINT 1
-#define TOKENIZER_PRINT 1
-#define PARSER_PRINT 1
-#define IR_PRINT 1
+#define LEXER_PRINT 0
+#define TOKENIZER_PRINT 0
+#define PARSER_PRINT 0
+#define IR_PRINT 0
 // #FLAGS END
 
 
@@ -2630,6 +2630,11 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
                 
 
             VarHeader *vh = lookup_var_safe(var_map_list, func_name, NULL);
+
+            if (!vh) return_err(
+                "Function '%s' is not defined (yet?)",
+                func_name.data
+            );
 
             (&node->children[0])->expected_return_type = make_type(TYPE_void);
     
@@ -5544,12 +5549,25 @@ Lexeme *lex(StringRef text) {
 
     char current_literal_bound = 0;
 
+    bool in_comment = false;
+
     int line = 1;
 
 
     for (int i = 0; i < text.len - 1; i++) {
         
         char c = text.data[i];
+
+        if (c == '#' && !current_literal_bound) {
+            if (pos > 0) {
+                array_append(Ls, Lexeme_new(String_ncopy_from_literal(buf, pos), line));
+                pos = 0;
+            }
+            in_comment = true;
+        }
+        else if (c == '\n') in_comment = false;
+
+        if (in_comment) continue;
 
         if (c == '"' || c == '\'') {
             if (!current_literal_bound) {
