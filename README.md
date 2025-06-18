@@ -14,7 +14,7 @@ The language currently supports:
 * Control flow: `if`/`else`, `while`, `for`
 * Functions: Declaration and calls similar to C or Java, with the only difference being support for one line functions (e.g. `int square(int a) return a * a`).
 * Structs: Definition (`struct Foo {int x; float y;}`), heap allocation (`Foo f = new Foo(x = 2); // unmentioned members are default initialized (y = 0.0)`), attribute access (`print f.x;`) automatic deallocation via Reference Counting
-* Arrays: Support for heap allocated arrays with type inference for literals. Initialization: `int[] arr = [1, 2, 3]` access: `int val = arr[0] * arr[1];`
+* Arrays: Support for heap allocated arrays with type inference for literals. Initialization: `int[] arr = [1, 2, 3]` `int[][] board = [8; 8]; ` access: `int val = arr[0] * arr[1];`
 * I/O: `print`, `write`, `input`.
 * `defer` for deferred execution of statements (scuffed).
 * Standard arithmetic, relational, and logical expressions and operations.
@@ -35,7 +35,7 @@ The language currently supports:
 
 ## Examples:
 
-# mandlebrot_ultra_hd.fanta
+# mandlebrot4.fanta
 
 A script to render an ascii representation of the mandlebrot set.
 ```
@@ -69,36 +69,27 @@ void c_mul_inplace(Complex a, Complex b) {
 float length_squared(Complex a) return a.real * a.real + a.imag * a.imag;
 
 
-bool is_mandlebrot(Complex c) {
+int iters_to_escape_mandlebrot(Complex c, int max_iters) {
 
     float LENGTH_THRESHOLD = 2;
-    int ITER_COUNT = 300; 
 
     # z(0) = 0
     # z(n) = z(n-1)^2 + c
     Complex result = c_new(0, 0);
 
-    for (int i = 0; i < ITER_COUNT; i += 1; ) {
+    for (int i = 0; i < max_iters; i += 1; ) {
         c_mul_inplace(result, result);
         c_add_inplace(result, c);
         float l = length_squared(result);
-        if (l > LENGTH_THRESHOLD * LENGTH_THRESHOLD) return false;
+        if (l > LENGTH_THRESHOLD * LENGTH_THRESHOLD) return i + 1;
     }
 
-    return true;
+    return 99999;
 }
 
-void test_MB(Complex a) {
-    c_write(a);
-    print ": ", is_mandlebrot(a);
-}
-
-char[][] render_mandlebrot(Complex top_left, Complex size, int width, int height) {
+int[][] get_mandlebrot_points(Complex top_left, Complex size, int width, int height, int max_iters) {
     
-    # ts lang is ass
-    char NEWLINE = 10;
-    
-    char[][] screen = [height; width + 1; ]; # width + 1 to include newline
+    int[][] screen = [height; width];
 
     Complex coords;
 
@@ -107,37 +98,65 @@ char[][] render_mandlebrot(Complex top_left, Complex size, int width, int height
             coords = c_new(size.real / width * c, -size.imag / height * r);
             c_add_inplace(coords, top_left);
 
-            bool m = is_mandlebrot(coords);
-
-            if (m) screen[r][c] = '@';
-            else screen[r][c] = '.';
+            screen[r][c] = iters_to_escape_mandlebrot(coords, max_iters);
         }
-        screen[r][width] = NEWLINE;
     }
 
     return screen;
 }
+str NUM_ITERS_TO_CHAR = ":^!?~Y7JP5G&&BB##@@ ";
 
-int size = 400;
+char[] mandlebrot_points_to_string(int[][] points) {
 
-char[][] render = render_mandlebrot(
-    c_new(-1.75, 1.5),
-    c_new(2.5, 2.5),
-    size,
-    size
-);
+    int width = points[0].length * 4; # Triple character plus newline
+    int height = points.length;
 
-for (int i = 0; i < render.length; i += 1; ) {
-    for (int j = 0; j < render[i].length; j += 1; ) {
-        write render[i][j], "  ";
+    char[] res = [width * height + 1; ];
+    int res_idx = 0; # Too lazy
+
+    for (int r = 0; r < points.length; r += 1; ) {
+        for (int c = 0; c < points[r].length; c += 1; ) {
+            int idx = points[r][c];
+            if (idx > NUM_ITERS_TO_CHAR.length) idx = NUM_ITERS_TO_CHAR.length;
+            char ch = NUM_ITERS_TO_CHAR[idx - 1];
+            
+            for (int i = 0; i < 3; i += 1; ) {
+                res[res_idx] = ch;
+                res_idx += 1;
+            }
+        }
+        res[res_idx] = 10; # newline
+        res_idx += 1;
     }
+
+    return res;
 }
 
+while (true) {
+    int iters;
+    write "Enter number of iterations: ";
+    input iters;
 
+    int size = 400;
+
+    char[] res = mandlebrot_points_to_string(
+        get_mandlebrot_points(
+            c_new(-1.75, 1.5),
+            c_new(2.5, 2.5),
+            size,
+            size,
+            iters
+        )
+    );
+
+    print res;
+}
 ```
-Output (Rendered in ~20s): 
+Output (Rendered in ~20s, inputted 400 iterations bc at this low resolution there isn't much difference): 
 
-![{2139B469-72E0-4C8C-9960-47305A655E8D}](https://github.com/user-attachments/assets/8825dbf5-a55d-4986-b13a-60075c0fcd56)
+![{440CDBEA-A0FC-44E0-B87B-2A577C948C0F}](https://github.com/user-attachments/assets/e23ede6c-b931-4b8a-91ea-f3503c126e49)
+
+
 
 
 
