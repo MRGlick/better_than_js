@@ -14,7 +14,7 @@
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 0
+#define PARSER_PRINT 1
 #define IR_PRINT 0
 // #FLAGS END
 
@@ -2701,7 +2701,10 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
                 return_err("Can't subscript a value of type '%s'! maybe later with traits..", type_get_name(left->expected_return_type).data);
             
             if (subscript_expr->expected_return_type->kind != TYPE_int) 
-                return_err("Array subscript expression must be of type 'int'!");
+                return_err(
+                    "Array subscript expression must be of type 'int'! found '%s' instead!",
+                    type_get_name(subscript_expr->expected_return_type).data
+                );
             
             node->expected_return_type = copy_type(left->expected_return_type->array_data.type);            
             
