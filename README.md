@@ -20,7 +20,7 @@ The language currently supports:
 * Standard arithmetic, relational, and logical expressions and operations.
 * Constant folding optimization during compilation.
 * Runtime memory leak detection.
-* 
+  
 ## Future Goals
 
 * **Explicit Type coercion** Self explanatory.
@@ -29,13 +29,13 @@ The language currently supports:
 * **Generic Types:** I might add them later on.
 * **Graphics Support:** Add capabilities for graphical output.
 * **Input Handling:** Allow real time input handling (mainly for graphical applications).
-* **Web support** (Maybe) compile the language to WASM (if it's not on the web, does it even exist?).
+* **Web support** (Very unlikely) compile the language to WASM.
 * **Compilation:** Potentially compile the language to x86_64 Assembly.
 * **Garbage Collection:** Automatic Reference Counting. ([Cyclic References](https://en.wikipedia.org/wiki/Reference_counting#Advantages_and_disadvantages)? What are those?)
 
 ## Examples:
 
-# mandlebrot_hd.fanta
+# mandlebrot_ultra_hd.fanta
 
 A script to render an ascii representation of the mandlebrot set.
 ```
@@ -88,9 +88,14 @@ bool is_mandlebrot(Complex c) {
     return true;
 }
 
-char[][] render_mandlebrot(Complex top_left, Complex size, int width, int height) {
+void test_MB(Complex a) {
+    c_write(a);
+    print ": ", is_mandlebrot(a);
+}
 
-    # No support for escape stuff in strings yet, may or may not add
+char[][] render_mandlebrot(Complex top_left, Complex size, int width, int height) {
+    
+    # ts lang is ass
     char NEWLINE = 10;
     
     char[][] screen = [height; width + 1; ]; # width + 1 to include newline
@@ -104,7 +109,7 @@ char[][] render_mandlebrot(Complex top_left, Complex size, int width, int height
 
             bool m = is_mandlebrot(coords);
 
-            if (m) screen[r][c] = '#';
+            if (m) screen[r][c] = '@';
             else screen[r][c] = '.';
         }
         screen[r][width] = NEWLINE;
@@ -113,7 +118,7 @@ char[][] render_mandlebrot(Complex top_left, Complex size, int width, int height
     return screen;
 }
 
-int size = 200;
+int size = 400;
 
 char[][] render = render_mandlebrot(
     c_new(-1.75, 1.5),
@@ -124,14 +129,16 @@ char[][] render = render_mandlebrot(
 
 for (int i = 0; i < render.length; i += 1; ) {
     for (int j = 0; j < render[i].length; j += 1; ) {
-        write render[i][j], " ";
+        write render[i][j], "  ";
     }
 }
+
 
 ```
 Output (Rendered in ~5s): 
 
-![{69F580F2-61D8-425C-803E-9040A78ED70D}](https://github.com/user-attachments/assets/026ea7d4-fa5f-428e-9d6c-00f9a62fd560)
+![{2139B469-72E0-4C8C-9960-47305A655E8D}](https://github.com/user-attachments/assets/8825dbf5-a55d-4986-b13a-60075c0fcd56)
+
 
 
 ## How to Build and Run
