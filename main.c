@@ -18,8 +18,8 @@
 #define IR_PRINT 1
 
 
-#define TRACK_ALLOCS
-#define GUARD_DOUBLE_FREE
+// #define TRACK_ALLOCS
+// #define GUARD_DOUBLE_FREE
 
 // #FLAGS END
 
@@ -2327,12 +2327,13 @@ void try_infer_temp_array_type(ASTNode *node, Type *t) {
         type_get_name(t)
     );
 
-    ASTNode_add_child(
+    ASTNode_insert_child(
         (*node), 
         ASTNode_new(
             (Token){.type = TYPE, .var_type = copy_type(t->array_data.type)}, 
             true
-        )
+        ),
+        0
     );
 
 }
@@ -4078,16 +4079,27 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
 
     ASTNode *args_node = &ast->children[1];
 
-    for (int i = 0; i < array_length(args_node->children); i++) {
-        generate_instructions_for_node(&args_node->children[i], instructions, var_map_list);
+    int len = array_length(args_node->children);
 
-        Type *expected_type = func_type->func_data.arg_types[i];
-        
-        if (!types_are_equal(args_node->children[i].expected_return_type, expected_type)) {
-            bool res = generate_cvt_inst_for_types(args_node->children[i].expected_return_type
-                , expected_type, instructions);
-            if (!res) return_err(
-                "Tried to call a function with invalid arguments!"
+    for (int i = 0; i < len; i++) {
+        ASTNode *arg = &args_node->children[i];
+        generate_instructions_for_node(arg, instructions, var_map_list);
+
+        // RC
+        if (is_nontemporary_reference(arg)) {
+            array_append(*instructions, create_inst_I_DUP());
+            array_append(*instructions, create_inst_I_INC_REFCOUNT());            
+        }
+
+
+        Type *goal_type = func_type->func_data.arg_types[i];
+        if (!types_are_equal(arg->expected_return_type, goal_type)) {
+            bool result = generate_cvt_inst_for_types(arg->expected_return_type, goal_type, instructions);
+            if (!result) return_err(
+                "Function argument #%d expected type '%s' but got '%s'!",
+                i,
+                type_get_name(goal_type).data,
+                type_get_name(arg->expected_return_type).data
             );
         }
     }
@@ -4939,11 +4951,11 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
 
-    printf("bytecode: \n");
-    for (int i = 0; i < array_length(byte_arr); i++) {
-        printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
-    }
-    printf("\n");
+    // printf("bytecode: \n");
+    // for (int i = 0; i < array_length(byte_arr); i++) {
+    //     printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
+    // }
+    // printf("\n");
 
     // #EXECUTE
     
@@ -5184,9 +5196,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 int size = *(int *)&byte_arr[inst_ptr];
                 inst_ptr += sizeof(int) - 1;
                 void *addr = alloc_object(size);
-                if (!is_tracked_alloc(addr)) {
-                    print_err("I_ALLOC is a failure! <%p> isn't tracked!", addr);
-                }
                 append(&addr, sizeof(addr));
             }
             case (I_FREE) {
@@ -5494,12 +5503,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
             }
         }
-
-        void *test = malloc(1);
-
-        if (!test) print_err("Heap is corrupted HERE! inst_ptr: %d inst: '%s'\n", inst_ptr, inst_names[byte_arr[inst_ptr]]);
-        else free(test);
-
     }
 
     double end = get_current_process_time_seconds();
@@ -5994,7 +5997,7 @@ int main() {
             continue;
         }
 
-        // place for chaos. increment when this made you want to kys: 2
+        // place for chaos. increment when this made you want to kys: 3
         if (benchmark) {
             run_benchmark(instructions);
         } else {

@@ -4,20 +4,3 @@ struct Node {
     Node next;
 }
 
-
-Node print_node(Node n) {
-    if (n != null) print "hey";
-    return null;
-}
-
-
-Node lst = new Node(
-    val = 1,
-    next = new Node(
-        val = 2
-    )
-);
-
-Node bruh = print_node(lst);
-
-
