@@ -2800,10 +2800,14 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
             if (!current_func) return_err(
                 "Tried to return outside of a function!"
             );
+
+            if (array_length(node->children) == 0) return;
+
             Type *return_type = current_func->children[0].token.var_type;
 
             if (return_type->kind == TYPE_array)
                 try_set_temp_array_subtype(&node->children[0], return_type->array_data.type);
+            
             
             typeify_tree(&node->children[0], var_map_list);
         }
@@ -3916,17 +3920,37 @@ VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_n
 
 void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
+    int func_start_idx = array_length(*instructions) + 2; // current is store_func_addr, +1 is jump, +2 is label
+    
+    array_append(*instructions, create_inst_I_STACK_STORE_FUNC_ADDR(Val_int(func_start_idx), Val_int(gi_stack_pos)));
+
+
+
     array_append(*instructions, create_inst_I_JUMP(Val_int(-1)));
     int jump_inst_idx = array_length(*instructions) - 1;
 
 
-    int func_start_idx = array_length(*instructions);
 
     array_append(*instructions, create_inst_I_LABEL());
 
-    ASTNode var_args = ast->children[2];
-
+    
     String func_name = ast->children[1].token.text;
+    
+    
+    VarHeader vh = create_var_header(
+        func_name,
+        get_func_type_from_ast(ast),
+        gi_stack_pos
+    );
+    
+    int var_size = get_typekind_size(TYPE_func);
+    
+    gi_stack_pos += var_size;
+    
+    add_varheader_to_map_list(var_map_list, &vh);
+    
+    
+    ASTNode var_args = ast->children[2];
 
     Type *type = ast->children[0].token.var_type;
     
@@ -3997,19 +4021,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     
     (*instructions)[jump_inst_idx].arg1.as_int = array_length(*instructions);
     
-    VarHeader vh = create_var_header(
-        func_name,
-        get_func_type_from_ast(ast),
-        gi_stack_pos
-    );
-
-    int var_size = get_typekind_size(TYPE_func);
-
-    array_append(*instructions, create_inst_I_STACK_STORE_FUNC_ADDR(Val_int(func_start_idx), Val_int(gi_stack_pos)));
-
-    gi_stack_pos += var_size;
-
-    add_varheader_to_map_list(var_map_list, &vh);
+    
 }
 
 

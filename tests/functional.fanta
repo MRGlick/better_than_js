@@ -1,0 +1,84 @@
+
+
+int[] map(int[] arr, int(int) f) {
+    int[] res = [arr.length; ];
+    for (int i = 0; i < arr.length; i += 1; ) {
+        res[i] = f(arr[i]);
+    }
+    return res;
+}
+
+int reduce(int[] arr, int(int, int) f) {
+    if (arr.length == 0) {
+        print "cant reduce empty array!";
+        return -1;
+    }
+    int res = arr[0];
+    for (int i = 1; i < arr.length; i += 1; ) {
+        res = f(res, arr[i]);
+    }
+    return res;
+}
+
+int[] filter(int[] arr, bool(int) f) {
+    int len = 0;
+    for (int i = 0; i < arr.length; i += 1; ) {
+        if (f(arr[i])) len += 1;
+    }
+
+    int[] res = [len; ];
+    int idx = 0;
+
+    for (int i = 0; i < arr.length; i += 1; ) {
+        if (f(arr[i])) {
+            res[idx] = arr[i];
+            idx += 1;
+        }
+    }
+
+    return res;
+}
+
+int double(int a) return a * 2;
+
+int add(int a, int b) return a + b;
+
+bool even(int a) return a % 2 == 0;
+
+void _print_arr(int[] arr, int idx) {
+    if (idx >= arr.length) return;
+    if (idx > 0) write ", ";
+    write arr[idx];
+    _print_arr(arr, idx + 1);
+}
+
+void print_arr(int[] arr) {
+    write "[";
+    _print_arr(arr, 0);
+    write "]";
+}
+
+int[] range(int start, int end) {
+    int len = end - start;
+    int[] res = [len; ];
+
+    for (int i = 0; i < len; i += 1; ) {
+        res[i] = i;
+    }
+
+    return res;
+}
+
+# 0, 1, 2, 3... 99
+# 0, 2, 4... 98
+# 0, 4, 8... 196
+# 0 + 4 + 8... + 196
+# -> 4(1 + 2 + 3 + 4... + 49)
+# -> 4(49 * 50 / 2)
+# -> 2(49 * 50)
+# -> 49 * 100
+# -> 4900
+
+int final = reduce(map(filter(range(0, 100), even), double), add);
+
+print final;
