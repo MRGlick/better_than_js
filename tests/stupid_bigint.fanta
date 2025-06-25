@@ -1,150 +1,23 @@
+
 struct Node {
     int val;
     Node next;
 }
 
-struct BigInt {
-    Node head;
-    Node tail;
-}
 
-BigInt BigInt_create(int num) {
-    Node first = new Node(val = num % 10 + 0.0);
-    BigInt big_int = new BigInt(head = first, tail = first);
-
-    num /= 10;
-
-    while (num > 0) {
-        big_int.tail.next = new Node(val = num % 10);
-        big_int.tail = big_int.tail.next;
-        num /= 10;
-    }
-
-    return big_int;
-}
-
-void delete_list(Node lst) {
-    if (lst == null) return;
-    delete_list(lst.next);
-    delete lst;
-}
-
-void BigInt_delete(BigInt a) {
-    delete_list(a.head);
-    delete a;
-}
-
-BigInt BigInt_add(BigInt a, BigInt b) {
-
-    BigInt result = BigInt_create(0);
-
-    int carry = 0;
-    Node n1 = a.head;
-    Node n2 = b.head;
-    while (n1 != null && n2 != null) {
-        int sum = n1.val + n2.val + carry;
-        result.tail.next = new Node(val = sum % 10);
-        result.tail = result.tail.next;
-
-        carry = sum / 10;
-
-        n1 = n1.next;
-        n2 = n2.next;
-    }
-    while (n1 != null) {
-        int sum = n1.val + carry;
-        result.tail.next = new Node(val = sum % 10);
-        result.tail = result.tail.next;
-
-        carry = sum / 10;
-        n1 = n1.next;
-    }
-    while (n2 != null) {
-        int sum = n2.val + carry;
-        result.tail.next = new Node(val = sum % 10);
-        result.tail = result.tail.next;
-
-        carry = sum / 10;
-        n2 = n2.next;
-    }
-
-    while (carry > 0) {
-
-        result.tail.next = new Node(val = carry % 10);
-        result.tail = result.tail.next;
-
-        carry /= 10;
-    }
-
-    Node temp = result.head;
-    result.head = result.head.next;
-    delete temp;
-    return result;
-}
-
-Node reversed_list(Node lst) {
-    Node res = new Node(val = -1);
-    Node tail = null;
-    Node curr = lst;
-    while (curr != null) {
-        Node temp = res;
-        res = new Node(val = curr.val);
-        res.next = temp;
-
-        if (tail == null) tail = res;
-        curr = curr.next;
-    }
-
-    delete tail.next;
-    tail.next = null;
-
-    return res;
+Node print_node(Node n) {
+    if (n != null) print "hey";
+    return null;
 }
 
 
+Node lst = new Node(
+    val = 1,
+    next = new Node(
+        val = 2
+    )
+);
 
-void BigInt_print(BigInt a) {
-    
-    Node reversed = reversed_list(a.head);
-    defer delete_list(reversed);
-    Node curr = reversed;
-
-    int len = 0;
-    while (curr != null) {
-        len += 1;
-        curr = curr.next;
-    }
-    curr = reversed;
-
-    while (curr != null) {
-        if (len % 3 == 0 && curr != reversed) write ",";
-        write curr.val;
-        len -= 1;
-        curr = curr.next;
-    }
-    
-}
-
-BigInt a = BigInt_create(1);
-BigInt b = BigInt_create(0);
-defer BigInt_delete(a);
-defer BigInt_delete(b);
-
-int limit = 100;
-int i = 0;
-
-
-
-while (i < limit) {
-    BigInt c = BigInt_add(a, b);
-    write "#", i + 1, ": ";
-    BigInt_print(c);
-    print "";
-    BigInt_delete(a);
-    a = b;
-    b = c;
-
-    i += 1;
-}
+Node bruh = print_node(lst);
 
 

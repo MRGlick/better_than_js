@@ -118,7 +118,8 @@ char *KEYWORDS[] = {
     X(DIMENSION_SEQ) \
     X(ARRAY_SUBSCRIPT) \
     X(OP_CONVERT_TYPE) \
-    X(TOKEN_TYPE_COUNT) 
+    X(TYPE_SEQ) \
+    X(TOKEN_TYPE_COUNT)
 
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)
@@ -269,6 +270,7 @@ const char *token_type_to_pretty_str(TokenType type) {
         case ARRAY:               return "array";
         case ARRAY_SUBSCRIPT:     return "array subscript";
         case OP_CONVERT_TYPE:     return "type conversion";
+        case TYPE_SEQ:            return "type sequence";
     }
 
     return "<unknown>";

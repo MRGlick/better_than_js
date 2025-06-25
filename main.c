@@ -14,8 +14,13 @@
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 0
-#define IR_PRINT 0
+#define PARSER_PRINT 1
+#define IR_PRINT 1
+
+
+#define TRACK_ALLOCS
+#define GUARD_DOUBLE_FREE
+
 // #FLAGS END
 
 
@@ -131,9 +136,7 @@ bool is_keyword(String part) {
 bool str_is_type(String part) {
     if (part.len == 0) return false;
 
-    int len = sizeof(type_kind_names) / sizeof (char *);
-
-    for (int i = 0; i < len; i++) {
+    for (int i = named_types_start(); i < named_types_end(); i++) {
         if (String_equal(part, StringRef(type_kind_names[i]))) {
             return true;
         }
@@ -1245,7 +1248,54 @@ ParseResult parse_array_type_postfix(int idx) {
         MATCH_TOKEN_WITH_TYPE(LBRACKET);
         MATCH_TOKEN_WITH_TYPE(RBRACKET);
 
-        FINISH_PARSE(ASTNode_new((Token){.type = TYPE, .var_type = make_array_type(NULL)}, true));
+        FINISH_PARSE(ASTNode_new((Token){.type = TYPE, .var_type = make_array_type(NULL)}, false));
+    }
+}
+
+ParseResult parse_type(int idx, bool *is_struct_out);
+
+ParseResult parse_type_seq(int idx) {
+    START_PARSE {
+        MATCH_PARSE(type_res, parse_type(idx, NULL), "type in type sequence");
+
+        ASTNode node = ASTNode_new((Token){.type = TYPE_SEQ}, true);
+
+        ASTNode_add_child(node, type_res.node);
+
+        while (true) {
+
+            if (get_token(idx).type != COMMA) break;
+            MATCH_TOKEN_WITH_TYPE(COMMA);
+
+            TRY_MATCH_PARSE(res, parse_type(idx, NULL));
+            if (!res.success) break;
+
+            ASTNode_add_child(node, res.node);
+        }
+
+
+        FINISH_PARSE(node);
+    }
+}
+
+ParseResult parse_func_type_postfix(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LPAREN);
+        TRY_MATCH_PARSE(type_seq, parse_type_seq(idx));
+        MATCH_TOKEN_WITH_TYPE(RPAREN);
+
+        ASTNode node = ASTNode_new(
+            (Token){.type = TYPE, .var_type = make_func_type(NULL, array(Type *, 0))}, 
+            false
+        );
+
+        if (type_seq.success) {
+            ASTNode_add_child(node, type_seq.node);
+        } else {
+            ASTNode_add_child(node, ASTNode_new((Token){.type = TYPE_SEQ}, true));
+        }
+
+        FINISH_PARSE(node);
     }
 }
 
@@ -1253,6 +1303,7 @@ ParseResult parse_type_postfix(int idx) {
     START_PARSE {
         // .. different types go here
         MATCH_RETURN_IF_PARSED(parse_array_type_postfix(idx));
+        MATCH_RETURN_IF_PARSED(parse_func_type_postfix(idx));
 
         MATCH_TOKEN(false);
     }
@@ -1288,7 +1339,19 @@ Type *make_type_from_tree(ASTNode *ast) {
     match (ast->token.var_type->kind) {
         case (TYPE_array) 
             return make_array_type(make_type_from_tree(&ast->children[0]));
-        // more cases later i promise
+
+        case (TYPE_func) {
+            Type *return_type = make_type_from_tree(&ast->children[0]);
+            
+            ASTNode *args_node = &ast->children[1];
+            int len = array_length(args_node->children);
+            Type **arg_types = array(Type *, len);
+            for (int i = 0; i < len; i++) {
+                array_append(arg_types, copy_type(args_node->children[i].token.var_type));
+            }
+
+            return make_func_type(move(return_type), move(arg_types));
+        }
 
         default () 
             return copy_type(ast->token.var_type);
@@ -1316,9 +1379,12 @@ ParseResult parse_type(int idx, bool *is_struct_out) {
         if (postfix_seq_res.success) {
         
             ASTNode leaf = postfix_seq_res.node;
-            while (array_length(leaf.children) != 0) leaf = leaf.children[0];
+            while (array_length(leaf.children) != 0 && !leaf.children[0].complete) {
+                leaf.children[0].complete = true;
+                leaf = leaf.children[0];
+            }
 
-            ASTNode_add_child(leaf, ASTNode_new((Token){.type = TYPE, .var_type = move(base_type)}, true));
+            ASTNode_insert_child(leaf, ASTNode_new((Token){.type = TYPE, .var_type = move(base_type)}, true), 0);
 
             t = make_type_from_tree(&postfix_seq_res.node);
 
@@ -2187,6 +2253,7 @@ int _validate_return_paths(ASTNode *ast, Type *return_type) {
     }
     for (int i = 0; i < array_length(ast->children); i++) {
         ASTNode *child = &ast->children[i];
+        if (child->token.type == WHILE_STMT) continue;
         if (child->token.type == RETURN_STMT && is_valid_type_conversion(child->children[0].expected_return_type, return_type)) {
             if (i < array_length(ast->children) - 1) return UNREACHABLE_CODE;
             return RETURN_PATHS_OK;
@@ -2194,7 +2261,7 @@ int _validate_return_paths(ASTNode *ast, Type *return_type) {
         if (child->token.type == IF_ELSE_STMT) {
 
             int r_if = _validate_return_paths(&child->children[1], return_type);
-            int r_else = _validate_return_paths(&child->children[2], return_type);  
+            int r_else = _validate_return_paths(&child->children[2], return_type);
 
             int m = min(r_if, r_else);
             if (m > MISSING_RETURN_PATHS) {
@@ -2252,18 +2319,18 @@ void try_set_temp_array_subtype(ASTNode *node, Type *target_type) {
     node->complete = true;
 }
 
-void try_infer_temp_array_type_from_func_arg(ASTNode *node, VarHeader *arg) {
+void try_infer_temp_array_type(ASTNode *node, Type *t) {
     if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;    
     
-    if (arg->var_type->kind != TYPE_array) return_err(
+    if (t->kind != TYPE_array) return_err(
         "Couldn't infer array literal type from function argument, argument type: %s",
-        type_get_name(arg->var_type)
+        type_get_name(t)
     );
 
     ASTNode_add_child(
         (*node), 
         ASTNode_new(
-            (Token){.type = TYPE, .var_type = copy_type(arg->var_type->array_data.type)}, 
+            (Token){.type = TYPE, .var_type = copy_type(t->array_data.type)}, 
             true
         )
     );
@@ -2275,14 +2342,20 @@ void try_infer_temp_array_type_from_func_arg(ASTNode *node, VarHeader *arg) {
 // #INTRINSICS
 
 #define INTRINSICS \
+    X(none_) \
     X(clear_terminal_lines) \
     X(rand) \
-    X(sleep)
+    X(sleep) \
+    X(end_)
+    
+    
+#define intr_start() (INTR_none_ + 1)
+
+#define intr_end() (INTR_end_)
+
+#define intr_count() (INTR_end_ - 1)
 
 typedef enum {
-
-    INTR_NONE = -1,
-
     #define X(a) INTR_##a,
     INTRINSICS
     #undef X
@@ -2294,6 +2367,57 @@ char *intrinsic_names[] = {
     #undef X
 };
 
+Type *intrinsic_func_types[intr_count()] = {0};
+
+void init_intrinsic_func_types() {
+    intrinsic_func_types[INTR_clear_terminal_lines] = make_func_type(
+        make_type(TYPE_void),
+        array_from_literal(Type *, {
+            make_type(TYPE_int)
+        })
+    );
+    intrinsic_func_types[INTR_rand] = make_func_type(
+        make_type(TYPE_int),
+        array(Type *, 0)
+    );
+    intrinsic_func_types[INTR_sleep] = make_func_type(
+        make_type(TYPE_void),
+        array_from_literal(Type *, {
+            make_type(TYPE_int)
+        })
+    );
+
+    for (int i = intr_start(); i < intr_end(); i++) {
+        if (!intrinsic_func_types[i]) {
+            print_err("Type not initialized for intrinsic '%s'!", intrinsic_names[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+}
+
+void free_intrinsic_func_types() {
+    for (int i = intr_start(); i < intr_end(); i++) {
+        free_type(intrinsic_func_types[i]);
+    }
+}
+
+VarHeader *get_intrinsic_varheaders() {
+    VarHeader *res = array(VarHeader, intr_count());
+
+    for (int i = intr_start(); i < intr_end(); i++) {
+        VarHeader vh = create_var_header(
+            StringRef(intrinsic_names[i]),
+            intrinsic_func_types[i],
+            -i
+        );
+
+        array_append(res, vh);
+    }
+
+    return res;
+}
+
 int get_intrinsic_by_name(String name) {
 
     int len = sizeof(intrinsic_names) / sizeof(char *);
@@ -2302,76 +2426,30 @@ int get_intrinsic_by_name(String name) {
         if (String_equal(name, StringRef(intrinsic_names[i])))
             return i;
 
-    return INTR_NONE;
+    return INTR_none_;
 }
 
+Type *get_func_type_from_ast(ASTNode *node) {
 
-void typeify_tree(ASTNode *node, LinkedList *var_map_list);
-
-void typeify_intrinsic(ASTNode *node, LinkedList *var_map_list) {    
-    
-    String func_name = node->children[0].token.text;
-    
-    IntrKind intr = get_intrinsic_by_name(func_name);
-    
-    int arg_count = array_length(node->children[1].children);
-    
-    for (int i = 0; i < arg_count; i++) {
-        typeify_tree(&node->children[1].children[i], var_map_list);
-    }
-    
-
-    #define expect_arg_count(n) \
-        if (arg_count != n) return_err( \
-            "Expected %d arguments for intrinsic function '%s', got %d!", \
-            n, \
-            intrinsic_names[intr], \
-            arg_count \
-        )
-    
-    #define check_arg(arg_idx, expected_type_kind) \
-        { \
-            ASTNode *arg = &node->children[1].children[arg_idx]; \
-            bool res = is_valid_type_conversion(arg->expected_return_type, &_const_types[expected_type_kind]); \
-            if (!res) return_err( \
-                "Invalid arguments in call to '%s' intrinsic! Argument %d is supposed to be of type '%s', but it is of type '%s'!", \
-                intrinsic_names[intr], \
-                arg_idx, \
-                type_kind_names[expected_type_kind], \
-                type_get_name(arg->expected_return_type).data \
-            ) \
-        }
-
-    match (intr) {
-
-        case (INTR_rand) {
-            expect_arg_count(0);
-            node->expected_return_type = make_type(TYPE_int);
-        }
-
-        case (INTR_clear_terminal_lines) {
-            expect_arg_count(1);
-            node->expected_return_type = make_type(TYPE_void);
-
-            check_arg(0, TYPE_int);
-        }
-
-        case (INTR_sleep) {
-            expect_arg_count(1);
-            node->expected_return_type = make_type(TYPE_void);
-
-            check_arg(0, TYPE_float);
-        }
-
-        default() print_err("typeify_intrinsic(): '%s' is unimplemented", intrinsic_names[intr]);
+    if (node->token.type != FUNC_DECL_STMT) {
+        print_err("Tried to get func type from a non-function declaration!");
+        return NULL;
     }
 
+    ASTNode *type_node = &node->children[0];
+    ASTNode *func_args = &node->children[2];
 
-    #undef expect_arg_count
-    #undef check_arg
+    Type **arg_types = array(Type *, 3);
+    for (int i = 0; i < array_length(func_args->children); i++) {
+        array_append(arg_types, copy_type(func_args->children[i].children[0].token.var_type));
+    }
+
+    Type *return_type = copy_type(type_node->token.var_type);
+
+    return make_func_type(move(return_type), move(arg_types));
 }
+
 // anything this function doesn't touch is meant to return void
-
 void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
     static ASTNode *current_func = NULL;
@@ -2428,7 +2506,6 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
             if (!vh) 
                 return_err("Identifier '%s' Doesn't exist within the current scope!", node->token.text.data);
             
-            
             node->expected_return_type = copy_type(vh->var_type);
         }
         case(FUNC_DECL_STMT) {
@@ -2436,7 +2513,7 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
             String func_name = node->children[1].token.text;
 
-            if (get_intrinsic_by_name(func_name) != -1) return_err(
+            if (get_intrinsic_by_name(func_name) != INTR_none_) return_err(
                 "Can't declare function '%s', as that is an intrinsic function!",
                 func_name.data
             );
@@ -2446,15 +2523,13 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
                 func_name
             );
 
-            VarHeader vh = create_func_header(
-                func_name, 
-                node->children[0].token.var_type, 
-                -1, 
-                get_args_from_func_decl_ast(&func_args)
-            );
+            Type *t = get_func_type_from_ast(node);
 
-            // Functions are allowed to be redefined by the standard I just made up.
-            // I changed my mind shortly after.
+            VarHeader vh = create_var_header(
+                func_name,
+                move(t),
+                -1
+            );
 
             add_varheader_to_map_list(var_map_list, &vh);
 
@@ -2621,32 +2696,42 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
         case (FUNC_CALL) {
 
-            String func_name = node->children[0].token.text;
-            
-            if (get_intrinsic_by_name(func_name) != INTR_NONE) {
-                typeify_intrinsic(node, var_map_list);
-                return;
-            }
-                
+            typeify_tree(&node->children[0], var_map_list);
 
-            VarHeader *vh = lookup_var_safe(var_map_list, func_name, NULL);
+            ASTNode *func_node = &node->children[0];
 
-            if (!vh) return_err(
-                "Function '%s' is not defined (yet?)",
-                func_name.data
+            if (func_node->expected_return_type->kind != TYPE_func) return_err(
+                "Tried to call a non-function! Expected func type, got '%s'",
+                type_get_name(func_node->expected_return_type).data
             );
-
-            (&node->children[0])->expected_return_type = make_type(TYPE_void);
-    
+            
+            Type *func_type = func_node->expected_return_type;
+            
             ASTNode *args_ast = &node->children[1];
     
-            for (int i = 0; i < array_length(args_ast->children); i++) {
+            int arg_count = array_length(args_ast->children);
+
+            if (arg_count != array_length(func_type->func_data.arg_types)) return_err(
+                "Passed invalid number of arguments to function! Expected %d arguments, found %d",
+                array_length(func_type->func_data.arg_types),
+                arg_count
+            );
+
+            for (int i = 0; i < arg_count; i++) {
                 ASTNode *child = &args_ast->children[i];
-                try_infer_temp_array_type_from_func_arg(child, &vh->func_args[i]);
+                try_infer_temp_array_type(child, func_type->func_data.arg_types[i]);
                 typeify_tree(child, var_map_list);
+
+                if (!is_valid_type_conversion(child->expected_return_type, func_type->func_data.arg_types[i]))
+                    return_err(
+                        "Passed invalid argument to function! Expected arg %d to be of type '%s', but found type '%s'",
+                        i,
+                        type_get_name(func_type->func_data.arg_types[i]).data,
+                        type_get_name(child->expected_return_type).data
+                    );
             }
 
-            node->expected_return_type = copy_type(vh->func_return_type);
+            node->expected_return_type = copy_type(func_type->func_data.return_type);
         }
 
         case (ARRAY_LITERAL) {
@@ -2909,9 +2994,19 @@ void preprocess_ast(ASTNode *ast) {
     LinkedList *vm_list = LL_new();
     LL_prepend(vm_list, LLNode_new(HashMap(VarHeader)));
 
+    VarHeader *intrinsics = get_intrinsic_varheaders();
+
+    for (int i = 0; i < intr_count(); i++) {
+        add_varheader_to_map_list(vm_list, &intrinsics[i]);
+    }
+
+    array_free(intrinsics);
+
     typeify_tree(ast, vm_list);
 
-    _HashMap_free(LL_pop_head(vm_list));
+
+    HashMap_free(vm_list->head->val);
+    LL_pop_head(vm_list);
     LL_free(vm_list);
 
     move_defers_to_end(ast);
@@ -3011,6 +3106,7 @@ X(I_INIT_ARRAY_HEADER) \
 X(I_TUCK) \
 X(I_POP_BOTTOM) \
 X(I_NOP) \
+X(I_STACK_STORE_FUNC_ADDR) \
 X(I_ARRAY_SUBSCRIPT) \
 X(I_ARRAY_SUBSCRIPT_ADDR) \
 X(I_STR_SUBSCRIPT) \
@@ -3032,7 +3128,7 @@ X(INST_COUNT)
         return _call_create_inst(inst, __VA_ARGS__, Val_null); \
     } 
 #define DEF_CREATE_INST_NOARGS(inst) \
-    Inst create_inst_##inst() { \
+    Inst create_inst_##inst(void) { \
         return _call_create_inst(inst, Val_null, Val_null); \
     } 
 
@@ -3119,7 +3215,7 @@ DEF_CREATE_INST(I_STACK_STORE_GLOBAL, size, pos)
 DEF_CREATE_INST(I_HEAP_STORE, size)
 DEF_CREATE_INST(I_STACK_PTR_ADD, n)
 DEF_CREATE_INST_NOARGS(I_RETURN)
-DEF_CREATE_INST(I_CALL, pos)
+DEF_CREATE_INST_NOARGS(I_CALL)
 DEF_CREATE_INST(I_READ_ATTR, size, offset)
 DEF_CREATE_INST(I_GET_ATTR_ADDR, offset)
 DEF_CREATE_INST(I_ALLOC, bytes)
@@ -3139,6 +3235,7 @@ DEF_CREATE_INST_NOARGS(I_STR_SUBSCRIPT)
 DEF_CREATE_INST(I_INIT_N_DIM_ARRAY, n_dims)
 DEF_CREATE_INST_NOARGS(I_CLEAR_TERMI_LINES)
 DEF_CREATE_INST_NOARGS(I_SLEEP)
+DEF_CREATE_INST(I_STACK_STORE_FUNC_ADDR, addr, pos)
 
 void print_val(Val val) {
     printf("(%s, ", type_kind_names[val.type]);
@@ -3166,11 +3263,15 @@ void print_instruction(Inst inst) {
     printf("[%s", inst_names[inst.type]);
     
     switch (inst.type) {
+
+        case (I_STACK_STORE_FUNC_ADDR) {
+            printf(", func_idx: #%d, pos: %d", inst.arg1.as_int, inst.arg2.as_int);
+        }
         case (I_PUSH)
             printf(", ");
             print_val(inst.arg2);
 
-        case (I_JUMP_NOT, I_JUMP_IF, I_JUMP, I_CALL)
+        case (I_JUMP_NOT, I_JUMP_IF, I_JUMP)
             printf(", #%d", inst.arg1.as_int);
 
         case (I_STACK_PTR_ADD)
@@ -3325,6 +3426,7 @@ InstType get_dec_ref_inst_by_typekind(TypeKind kind) {
         case (TYPE_array) return I_DEC_REFCOUNT_ARRAY;
         case (TYPE_struct) return I_DEC_REFCOUNT;
         default() print_err("There is no dec refcount instruction for typekind '%s'!", type_kind_names[kind]);
+                  *(int *)0 = 1;
     }
     return I_INVALID;
 }
@@ -3369,7 +3471,7 @@ void add_varheader_to_map_list(LinkedList *var_map_list, VarHeader *vh) {
 
 int calc_stack_space_for_scope(ASTNode *ast) {
     if (ast->token.type == DECL_ASSIGN_STMT || ast->token.type == DECL_STMT) return get_vartype_size(ast->children[0].token.var_type);
-    if (ast->token.type == FUNC_DECL_STMT) return 0; // because thats a seperate scope
+    if (ast->token.type == FUNC_DECL_STMT) return get_typekind_size(TYPE_func); // because thats a seperate scope
 
     int sum = 0;
     int len = array_length(ast->children);
@@ -3454,7 +3556,7 @@ void generate_instructions_for_vardecl(ASTNode *ast, Inst **instructions, Linked
 
 
     if (inc_refcounter) {
-        array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
+        array_append(*instructions, create_inst_I_INC_REFCOUNT());
     }
 
 
@@ -3477,7 +3579,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
     if (dec_refcount_for_left_side) {
         generate_instructions_for_node(left_side, instructions, var_map_list);
-        array_append(*instructions, create_inst_I_TUCK(Val_null)); // decrement always after increment
+        array_append(*instructions, create_inst_I_TUCK()); // decrement always after increment
     }
 
     bool inc_refcount_for_right_side = is_nontemporary_reference(right_side);
@@ -3493,7 +3595,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
         if (inc_refcount_for_right_side) {
             array_append(*instructions, create_inst_I_DUP());
-            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
+            array_append(*instructions, create_inst_I_INC_REFCOUNT());
         }
         
         Type *goal_type = vh->var_type;
@@ -3523,7 +3625,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
 
         if (inc_refcount_for_right_side) {
             array_append(*instructions, create_inst_I_DUP());
-            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
+            array_append(*instructions, create_inst_I_INC_REFCOUNT());
         }
 
 
@@ -3541,7 +3643,7 @@ void generate_instructions_for_assign(ASTNode *ast, Inst **instructions, LinkedL
     }
 
     if (dec_refcount_for_left_side) {
-        array_append(*instructions, create_inst_I_POP_BOTTOM(Val_null));
+        array_append(*instructions, create_inst_I_POP_BOTTOM());
         array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(left_side->expected_return_type->kind), Val_null, Val_null));
     }
     
@@ -3587,7 +3689,6 @@ void generate_instructions_for_binop(ASTNode *ast, Inst **instructions, LinkedLi
             
         }
     }
-
     InstType inst_type = get_inst_type_for_op(ast->token.type, goal_type);
     if (inst_type == I_INVALID) {
         print_err("Invalid operator!");
@@ -3642,7 +3743,7 @@ void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedLi
         }
     }
 
-    if (ast->token.type == PRINT_STMT) array_append(*instructions, create_inst_I_PRINT_NEWLINE(Val_null));
+    if (ast->token.type == PRINT_STMT) array_append(*instructions, create_inst_I_PRINT_NEWLINE());
 }
 
 void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -3681,14 +3782,14 @@ void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList 
         array_append(*instructions, create_inst_I_JUMP(Val_int(end_label_idx)));
 
         else_label_true_idx = array_length(*instructions);
-        array_append(*instructions, create_inst_I_LABEL(Val_null));
+        array_append(*instructions, create_inst_I_LABEL());
 
         // else-body
         generate_instructions_for_node(&ast->children[2], instructions, var_map_list);
     }
 
     end_label_true_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_LABEL(Val_null));
+    array_append(*instructions, create_inst_I_LABEL());
 
     if (ast->token.type == IF_STMT) {
         (*instructions)[first_jump_idx].arg1.as_int = end_label_true_idx;
@@ -3703,7 +3804,7 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
 
     int start_label_idx = array_length(*instructions);
 
-    array_append(*instructions, create_inst_I_LABEL(Val_null));
+    array_append(*instructions, create_inst_I_LABEL());
 
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
@@ -3725,7 +3826,7 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
     array_append(*instructions, create_inst_I_JUMP(Val_int(start_label_idx)));
 
     int end_label_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_LABEL(Val_null));
+    array_append(*instructions, create_inst_I_LABEL());
 
     (*instructions)[jump_not_inst_idx].arg1.as_int = end_label_idx;
 
@@ -3734,7 +3835,7 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
 
 void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    array_append(*instructions, create_inst_I_INPUT(Val_null));
+    array_append(*instructions, create_inst_I_INPUT());
 
     Type *goal_type = ast->children[0].expected_return_type;
 
@@ -3814,29 +3915,23 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     array_append(*instructions, create_inst_I_JUMP(Val_int(-1)));
     int jump_inst_idx = array_length(*instructions) - 1;
 
-    array_append(*instructions, create_inst_I_LABEL(Val_null));
+
+    int func_start_idx = array_length(*instructions);
+
+    array_append(*instructions, create_inst_I_LABEL());
 
     ASTNode var_args = ast->children[2];
 
     String func_name = ast->children[1].token.text;
 
     Type *type = ast->children[0].token.var_type;
-
-    VarHeader vh = create_func_header(
-        func_name, 
-        type, 
-        array_length(*instructions) - 1, 
-        get_args_from_func_decl_ast(&var_args)
-    );
-
-    add_varheader_to_map_list(var_map_list, &vh);
-
+    
     LL_prepend(var_map_list, LLNode_new(HashMap(VarHeader)));
     int prev_gi_stack_pos = gi_stack_pos;
     ASTNode *gi_prev_function = gi_current_function;
     gi_stack_pos = 0;
     gi_current_function = ast;
-
+    
     int size = 0;
     ASTNode scope = ast->children[3];
     
@@ -3846,7 +3941,7 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     }
     size += calc_stack_space_for_scope(&scope);
     array_append(*instructions, create_inst_I_STACK_PTR_ADD(Val_int(size)));
-
+    
     for (int i = array_length(var_args.children) - 1; i >= 0; i--) {
         String var_name = var_args.children[i].children[1].token.text;
         Type *type = var_args.children[i].children[0].token.var_type;
@@ -3856,23 +3951,20 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
         gi_stack_pos += get_vartype_size(type);
         size += get_vartype_size(type);
     }
-
-
-
-
+    
     int len = array_length(scope.children);
-
+    
     for (int i = 0; i < len; i++) {
         generate_instructions_for_node(&scope.children[i], instructions, var_map_list);
     }
-
+    
     // RC
     {
         VarHeader **vardecls = get_all_vardecls_before_return(ast, NULL, var_map_list);
-
+        
         for (int i = 0; i < array_length(vardecls); i++) {
             if (!is_reference_typekind(vardecls[i]->var_type->kind)) continue;
-
+            
             array_append(
                 *instructions, 
                 create_inst(I_READ, 
@@ -3880,33 +3972,48 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
                     Val_int(vardecls[i]->var_pos)
                 )
             );
-
+            
             array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(vardecls[i]->var_type->kind), Val_null, Val_null));
         }
-
+        
         array_free(vardecls);
     }
-
-
-
-
+    
+    
+    
+    
     gi_current_function = gi_prev_function;
     gi_stack_pos = prev_gi_stack_pos;
-    _HashMap_free(LL_pop_head(var_map_list));
-
+    HashMap_free(var_map_list->head->val);
+    LL_pop_head(var_map_list);
+    
     if ((*instructions)[array_length(*instructions) - 1].type != I_RETURN)
-        array_append(*instructions, create_inst_I_RETURN(Val_null));
-
-
+    array_append(*instructions, create_inst_I_RETURN());
+    
+    
     (*instructions)[jump_inst_idx].arg1.as_int = array_length(*instructions);
+    
+    VarHeader vh = create_var_header(
+        func_name,
+        get_func_type_from_ast(ast),
+        gi_stack_pos
+    );
+
+    int var_size = get_typekind_size(TYPE_func);
+
+    array_append(*instructions, create_inst_I_STACK_STORE_FUNC_ADDR(Val_int(func_start_idx), Val_int(gi_stack_pos)));
+
+    gi_stack_pos += var_size;
+
+    add_varheader_to_map_list(var_map_list, &vh);
 }
 
 
 void generate_instructions_for_intrinsic_func_call(IntrKind intr, ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
     #define push_arg(idx, exp_type) \
-        { \
-            generate_instructions_for_node(&ast->children[1].children[idx], instructions, var_map_list); \
+    { \
+        generate_instructions_for_node(&ast->children[1].children[idx], instructions, var_map_list); \
             bool res = generate_cvt_inst_for_types( \
                 ast->children[1].children[idx].expected_return_type, \
                 exp_type, \
@@ -3920,16 +4027,16 @@ void generate_instructions_for_intrinsic_func_call(IntrKind intr, ASTNode *ast, 
         
         case (INTR_clear_terminal_lines) {
             push_arg(0, &_const_types[TYPE_int]);
-            array_append(*instructions, create_inst_I_CLEAR_TERMI_LINES(Val_null));
+            array_append(*instructions, create_inst_I_CLEAR_TERMI_LINES());
         }
         
         case (INTR_rand) {
-            array_append(*instructions, create_inst_I_PUSH_RAND(Val_null));
+            array_append(*instructions, create_inst_I_PUSH_RAND());
         }
 
         case (INTR_sleep) {
             push_arg(0, &_const_types[TYPE_float]);
-            array_append(*instructions, create_inst_I_SLEEP(Val_null));
+            array_append(*instructions, create_inst_I_SLEEP());
         }
         
         default () {
@@ -3951,7 +4058,7 @@ bool try_gen_insts_for_intrinsic(ASTNode *ast, Inst **instructions, LinkedList *
 
     IntrKind kind = get_intrinsic_by_name(func_name);
 
-    if (kind == INTR_NONE) return false;
+    if (kind == INTR_none_) return false;
 
     generate_instructions_for_intrinsic_func_call(kind, ast, instructions, var_map_list);
 
@@ -3963,43 +4070,29 @@ bool try_gen_insts_for_intrinsic(ASTNode *ast, Inst **instructions, LinkedList *
 // #UPDATE FOR STRUCTS
 void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    ASTNode func_args = ast->children[1];
+    ASTNode *func_node = &ast->children[0];
+    Type *func_type = func_node->expected_return_type;
 
-    String func_name = ast->children[0].token.text;
+    ASTNode *args_node = &ast->children[1];
 
-    bool intr_res = try_gen_insts_for_intrinsic(ast, instructions, var_map_list);
-    if (intr_res) return;
-    
-    int len = array_length(func_args.children);
-    
-    VarHeader *func_vh = lookup_var(var_map_list, func_name, NULL);
-    
-    if (!func_vh) return_err("Tried to call function '%s' which doesn't exist!", func_name.data);
-    
-    for (int i = 0; i < len; i++) {
-        ASTNode *arg = &func_args.children[i];
-        generate_instructions_for_node(arg, instructions, var_map_list);
+    for (int i = 0; i < array_length(args_node->children); i++) {
+        generate_instructions_for_node(&args_node->children[i], instructions, var_map_list);
 
-        // RC
-        if (is_nontemporary_reference(arg)) {
-            array_append(*instructions, create_inst_I_DUP());
-            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));            
-        }
-
-
-        Type *goal_type = func_vh->func_args[i].var_type;
-        if (!types_are_equal(arg->expected_return_type, goal_type)) {
-            bool result = generate_cvt_inst_for_types(arg->expected_return_type, goal_type, instructions);
-            if (!result) return_err(
-                "Function argument #%d expected type '%s' but got '%s'!",
-                i,
-                type_get_name(goal_type).data,
-                type_get_name(arg->expected_return_type).data
+        Type *expected_type = func_type->func_data.arg_types[i];
+        
+        if (!types_are_equal(args_node->children[i].expected_return_type, expected_type)) {
+            bool res = generate_cvt_inst_for_types(args_node->children[i].expected_return_type
+                , expected_type, instructions);
+            if (!res) return_err(
+                "Tried to call a function with invalid arguments!"
             );
         }
     }
 
-    array_append(*instructions, create_inst_I_CALL(Val_int(func_vh->func_pos)));
+    generate_instructions_for_node(func_node, instructions, var_map_list);
+
+    array_append(*instructions, create_inst_I_CALL());
+
 }
 
 void generate_instructions_for_unary_minus(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -4008,10 +4101,10 @@ void generate_instructions_for_unary_minus(ASTNode *ast, Inst **instructions, Li
 
     if (ast->expected_return_type->kind == TYPE_int) {
         array_append(*instructions, create_inst_I_PUSH(Val_int(4), Val_int(-1)));
-        array_append(*instructions, create_inst_I_MUL(Val_null));
+        array_append(*instructions, create_inst_I_MUL());
     } else if (ast->expected_return_type->kind == TYPE_float) {
         array_append(*instructions, create_inst_I_PUSH(Val_int(8), Val_double(-1)));
-        array_append(*instructions, create_inst_I_MUL_FLOAT(Val_null));
+        array_append(*instructions, create_inst_I_MUL_FLOAT());
     } else {
         print_err("Cannot apply unary minus to value of type '%s'!", type_get_name(ast->expected_return_type).data);
     }
@@ -4116,7 +4209,7 @@ void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, Li
 
     if (temp_refcount) {
         array_append(*instructions, create_inst_I_DUP());
-        array_append(*instructions, create_inst_I_TUCK(Val_null));
+        array_append(*instructions, create_inst_I_TUCK());
     }
 
     // find member offset
@@ -4127,8 +4220,8 @@ void generate_instructions_for_attr_access(ASTNode *ast, Inst **instructions, Li
     array_append(*instructions, create_inst_I_READ_ATTR(Val_int(get_vartype_size(member_vh->var_type)), Val_int(member_vh->var_pos)));
 
     if (temp_refcount) {
-        array_append(*instructions, create_inst_I_POP_BOTTOM(Val_null));
-        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(member_vh->var_type->kind), Val_null, Val_null));
+        array_append(*instructions, create_inst_I_POP_BOTTOM());
+        array_append(*instructions, create_inst_I_DEC_REFCOUNT());
     }
 }
 void generate_instructions_for_attr_addr(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
@@ -4170,7 +4263,7 @@ void generate_instructions_for_new(ASTNode *ast, Inst **instructions, LinkedList
 
         if (is_nontemporary_reference(expr)) {
             array_append(*instructions, create_inst_I_DUP());
-            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
+            array_append(*instructions, create_inst_I_INC_REFCOUNT());
         }
 
         Type *goal_type = member_vh->var_type;
@@ -4240,7 +4333,7 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
     
         if (is_nontemporary_reference(&ast->children[0])) {
             array_append(*instructions, create_inst_I_DUP());
-            array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));
+            array_append(*instructions, create_inst_I_INC_REFCOUNT());
         }
     }
 
@@ -4287,7 +4380,7 @@ void generate_instructions_for_return_stmt(ASTNode *ast, Inst **instructions, Li
     }
 
 
-    array_append(*instructions, create_inst_I_RETURN(Val_null));
+    array_append(*instructions, create_inst_I_RETURN());
 }
 
 // ARRAY STRUCTURE
@@ -4350,7 +4443,7 @@ void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions
 
     if (dec_ref) {
         array_append(*instructions, create_inst_I_DUP());
-        array_append(*instructions, create_inst_I_TUCK(Val_null));
+        array_append(*instructions, create_inst_I_TUCK());
     }
 
     generate_instructions_for_node(attr_node, instructions, var_map_list);
@@ -4359,10 +4452,10 @@ void generate_instructions_for_array_subscript(ASTNode *ast, Inst **instructions
 
 
     if (dec_ref) {
-        array_append(*instructions, create_inst_I_POP_BOTTOM(Val_null));
+        array_append(*instructions, create_inst_I_POP_BOTTOM());
 
         //                                        VVV its always an array for an array subscript duh
-        array_append(*instructions, create_inst_I_DEC_REFCOUNT_ARRAY(Val_null));
+        array_append(*instructions, create_inst_I_DEC_REFCOUNT_ARRAY());
     }
 }
 
@@ -4453,7 +4546,7 @@ void generate_instructions_for_type_conversion(ASTNode *ast, Inst **instructions
 
     if (inc_ref) {
         array_append(*instructions, create_inst_I_DUP());
-        array_append(*instructions, create_inst_I_INC_REFCOUNT(Val_null));        
+        array_append(*instructions, create_inst_I_INC_REFCOUNT());        
     }
 
     bool res = generate_cvt_inst_for_types(value->expected_return_type, ast->expected_return_type, instructions);
@@ -4571,7 +4664,7 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         
         case (BOOL) 
             if (ast->token.as_int == MAYBE) {
-                array_append(*instructions, create_inst_I_PUSH_MAYBE(Val_null));
+                array_append(*instructions, create_inst_I_PUSH_MAYBE());
             } else {
                 array_append(*instructions, create_inst(I_PUSH, Val_int(1), 
                                                         Val_bool(ast->token.as_int)));
@@ -4586,44 +4679,47 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
                                                     Val_str(ast->token.text.data)));
         
         case (OP_ADD) 
-            array_append(*instructions, create_inst_I_ADD(Val_null));
+            array_append(*instructions, create_inst_I_ADD());
         
         case (OP_SUB) 
-            array_append(*instructions, create_inst_I_SUB(Val_null));
+            array_append(*instructions, create_inst_I_SUB());
         
         case (OP_MUL) 
-            array_append(*instructions, create_inst_I_MUL(Val_null));
+            array_append(*instructions, create_inst_I_MUL());
         
         case (OP_DIV) 
-            array_append(*instructions, create_inst_I_DIV(Val_null));
+            array_append(*instructions, create_inst_I_DIV());
         
         case (OP_MOD) 
-            array_append(*instructions, create_inst_I_MOD(Val_null));
+            array_append(*instructions, create_inst_I_MOD());
         
         case (OP_GREATER) 
-            array_append(*instructions, create_inst_I_GREATER(Val_null));
+            array_append(*instructions, create_inst_I_GREATER());
         
         case (OP_GREATEREQ) 
-            array_append(*instructions, create_inst_I_GREATER_EQUAL(Val_null));
+            array_append(*instructions, create_inst_I_GREATER_EQUAL());
         
         case (OP_LESS) 
-            array_append(*instructions, create_inst_I_LESS(Val_null));
+            array_append(*instructions, create_inst_I_LESS());
         
         case (OP_LESSEQ) 
-            array_append(*instructions, create_inst_I_LESS_EQUAL(Val_null));
+            array_append(*instructions, create_inst_I_LESS_EQUAL());
         
         case (OP_EQ) 
-            array_append(*instructions, create_inst_I_EQUAL(Val_null));
+            array_append(*instructions, create_inst_I_EQUAL());
         
         case (OP_NOTEQ) 
-            array_append(*instructions, create_inst_I_NOT_EQUAL(Val_null));
+            array_append(*instructions, create_inst_I_NOT_EQUAL());
         
         case (OP_NOT) 
-            array_append(*instructions, create_inst_I_NOT(Val_null));
+            array_append(*instructions, create_inst_I_NOT());
         
         case (NAME)  ;
             bool isglobal;
             VarHeader *vh = lookup_var(var_map_list, ast->token.text, &isglobal);
+
+            if (!vh) return;
+
             array_append(*instructions, create_inst(isglobal ? I_READ_GLOBAL : I_READ,
                 (Val){.as_int = get_vartype_size(vh->var_type), .type = TYPE_int},
                 (Val){.as_int = vh->var_pos, .type = TYPE_int}));
@@ -4631,7 +4727,8 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
         case (BLOCK) 
 
             generate_instructions_for_scope_ref_dec(var_map_list->head->val, instructions, false);
-            _HashMap_free(LL_pop_head(var_map_list));
+            HashMap_free(var_map_list->head->val);
+            LL_pop_head(var_map_list);
             gi_stack_pos = temp_stack_ptr;
         
         case (STMT_SEQ)
@@ -4796,7 +4893,8 @@ char *convert_insts_to_byte_arr(const Inst *instructions) {
             if (instructions[i].type == I_JUMP 
                 || instructions[i].type == I_JUMP_NOT 
                 || instructions[i].type == I_JUMP_IF
-                || instructions[i].type == I_CALL) {
+                || instructions[i].type == I_STACK_STORE_FUNC_ADDR) {
+                
                 *(int *)value = new_indicies[instructions[i].arg1.as_int];
             }
 
@@ -4826,9 +4924,9 @@ char *convert_insts_to_byte_arr(const Inst *instructions) {
 void run_bytecode_instructions(Inst *instructions, double *time) {
     memset(temp_stack, 0, STACK_SIZE);
     temp_stack_ptr = 0;
-    memset(var_stack, 0, STACK_SIZE);
     memset(text_buffer, 0, TEXT_BUF_SIZE);
     text_buffer_ptr = 0;
+    memset(var_stack, 0, STACK_SIZE);
     stack_ptr = 0;
     frame_ptr = 0;
     runtime_frees = 0;
@@ -4838,11 +4936,11 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
 
-    // printf("bytecode: \n");
-    // for (int i = 0; i < array_length(byte_arr); i++) {
-    //     printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
-    // }
-    // printf("\n");
+    printf("bytecode: \n");
+    for (int i = 0; i < array_length(byte_arr); i++) {
+        printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
+    }
+    printf("\n");
 
     // #EXECUTE
     
@@ -4854,6 +4952,16 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
         match (byte_arr[inst_ptr]) {
 
+            case (I_STACK_STORE_FUNC_ADDR) {
+
+                int addr = *(int *)&byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+                int pos = *(int *)&byte_arr[++inst_ptr];
+                inst_ptr += sizeof(int) - 1;
+
+                my_memcpy(var_stack + frame_ptr + pos, &addr, sizeof(int));
+            }
+        
             case (I_PRINT_CHAR_ARRAY) {
 
                 
@@ -5066,13 +5174,16 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 inst_ptr += sizeof(int) - 1;
                 u64 value = pop(u64);
                 char *addr = pop(char *);
-                memcpy(addr, &value, size);
+                my_memcpy(addr, &value, size);
             }
             case (I_ALLOC) {
                 inst_ptr += 1;
                 int size = *(int *)&byte_arr[inst_ptr];
                 inst_ptr += sizeof(int) - 1;
                 void *addr = alloc_object(size);
+                if (!is_tracked_alloc(addr)) {
+                    print_err("I_ALLOC is a failure! <%p> isn't tracked!", addr);
+                }
                 append(&addr, sizeof(addr));
             }
             case (I_FREE) {
@@ -5095,8 +5206,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 else inst_ptr += sizeof(int) - 1;
             }
             case (I_CALL) {
-                int callpos = *(int *)&byte_arr[++inst_ptr];
-                inst_ptr += sizeof(int) - 1;
+                int callpos = pop(int);
                 int val = inst_ptr + 1;
                 tuck(&frame_ptr, sizeof(int));
                 tuck(&stack_ptr, sizeof(int));
@@ -5381,6 +5491,11 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
             }
         }
+
+        void *test = malloc(1);
+
+        if (!test) print_err("Heap is corrupted HERE! inst_ptr: %d inst: '%s'\n", inst_ptr, inst_names[byte_arr[inst_ptr]]);
+        else free(test);
 
     }
 
@@ -5790,7 +5905,20 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 
 int main() {
     
+    Type *t = make_func_type(
+        make_type(TYPE_int),
+        array_from_literal(Type *, {
+            make_type(TYPE_bool)
+        })
+    );
+
+    printf("hello '%s' \n", type_get_name(t));
+
+
+    init_intrinsic_func_types();
+
     while (true) {
+
 
 
         char buf[CODE_MAX_LEN] = {0};
@@ -5877,7 +6005,7 @@ int main() {
         free_lexemes(Ls);
     }
 
-    
+    free_intrinsic_func_types();
 
     return 0;
 }

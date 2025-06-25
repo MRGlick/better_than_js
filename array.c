@@ -81,6 +81,10 @@ void array_remove(void *array, int i) {
 }
 
 void _array_free(void *array) {
+    if (!array) {
+        printf("Tried to free null array!");
+        return;
+    }
     free(array_header(array));
 }
 
@@ -113,7 +117,17 @@ void _array_ensure_capacity(void **array) {
 
 // PASS ME AROUND AND I WILL BITE
 #define array(type, size) _create_array(sizeof(type), size)
-
+#define array_from_literal(type, ...) \
+    ({ \
+        type __arr__[] = __VA_ARGS__; \
+        int __len__ = sizeof(__arr__) / sizeof(type); \
+        type *result = _create_array(sizeof(type), __len__); \
+        array_header(result)->length = __len__; \
+        for (int i = 0; i < __len__; i++) { \
+            result[i] = __arr__[i]; \
+        } \
+        result; \
+    })
 
 // MIGHT CHANGE THE ADDRESS OF THE ARRAY
 #define array_append(array, val) { \

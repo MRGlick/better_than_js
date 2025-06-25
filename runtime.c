@@ -19,6 +19,51 @@
 #define TEXT_BUF_SIZE 8192
 #define REFCOUNTER_START_VALUE 1
 
+#ifdef TRACK_ALLOCS
+typedef struct Allocation {
+    void *ptr;
+    size_t size;
+} Allocation;
+
+#define ALLOC_MAX 1024
+
+Allocation allocs[ALLOC_MAX] = {0};
+int alloc_count = 0;
+
+bool is_tracked_alloc(void *ptr) {
+
+    for (int i = 0; i < alloc_count; i++) {
+        if (ptr >= allocs[i].ptr 
+            && ptr <= (allocs[i].ptr + allocs[i].size)) {
+            return true;
+        }
+    }
+
+    return false;
+    
+}
+
+#endif
+
+#ifdef GUARD_DOUBLE_FREE
+
+#define FREE_LIST_MAX 1024
+
+void *freed_addrs[FREE_LIST_MAX] = {0};
+int freed_addrs_count = 0;
+
+
+bool is_freed(void *ptr) {
+    for (int i = 0; i < freed_addrs_count; i++) 
+        if (ptr == freed_addrs[i]) 
+            return true;
+
+    return false;
+}
+
+#endif
+
+
 typedef struct RefOffset {
     u16 offset;
     bool is_array;
@@ -61,11 +106,28 @@ void print_struct_meta(StructMetadata sm) {
 
 void *tracked_malloc(size_t size) {
     runtime_mallocs++;
-    return calloc(size, 1); // this works stop hating
+    void *res = calloc(size, 1);
+
+#ifdef TRACK_ALLOCS
+    allocs[alloc_count++] = (Allocation){.ptr = res, .size = size};
+#endif
+
+    return res;
 }
 
 void tracked_free(void *ptr) {
     runtime_frees++;
+
+#ifdef GUARD_DOUBLE_FREE
+
+    if (is_freed(ptr)) {
+        print_err("TRIED TO DOUBLE FREE AN OBJECT! ptr: <%p>", ptr);
+    } else {
+        freed_addrs[freed_addrs_count++] = ptr;
+    }
+
+#endif
+
     free(ptr);
 }
 
@@ -148,7 +210,7 @@ static inline void object_dec_ref(void *obj, bool is_array) {
     header->data = ((header->data - 1) & COUNTER_BITMASK) | (header->data & METADATA_BITMASK);
     // debug printf("<%p>: dec refcount to %d \n", obj, _object_get_refcount(obj));
 
-    if ((header->data & COUNTER_BITMASK) == 0) {
+    if (_object_get_refcount(obj) == 0) {
         if (is_array) free_object_array(obj);
         else free_object(obj);
     }
