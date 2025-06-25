@@ -1,0 +1,115 @@
+
+struct Complex {
+    float real;
+    float imag;
+}
+
+void c_write(Complex a)
+    write a.real, " + ", a.imag, "i";
+
+Complex c_new(float r, float i) return new Complex (
+    real = r,
+    imag = i
+);
+
+void c_add_inplace(Complex a, Complex b) {
+    a.real = a.real + b.real;
+    a.imag = a.imag + b.imag;
+}
+
+void c_mul_inplace(Complex a, Complex b) {
+    float real = a.real * b.real - a.imag * b.imag;
+    float imag = a.real * b.imag + b.real * a.imag;
+    a.real = real;
+    a.imag = imag;
+}
+
+
+float length_squared(Complex a) return a.real * a.real + a.imag * a.imag;
+
+
+int iters_to_escape_mandlebrot(Complex c, int max_iters) {
+
+    float LENGTH_THRESHOLD = 2;
+
+    # z(0) = 0
+    # z(n) = z(n-1)^2 + c
+    Complex result = c_new(0.8, -0.8);
+
+    for (int i = 0; i < max_iters; i += 1; ) {
+        c_mul_inplace(result, result);
+        c_add_inplace(result, c);
+        float l = length_squared(result);
+        if (l > LENGTH_THRESHOLD * LENGTH_THRESHOLD) return i + 1;
+    }
+
+    return 99999;
+}
+
+int[][] get_mandlebrot_points(Complex top_left, Complex size, int width, int height, int max_iters) {
+    
+    int[][] screen = [height; width];
+
+    Complex coords;
+
+    for (int r = 0; r < height; r += 1; ) {
+        for (int c = 0; c < width; c += 1; ) {
+            coords = c_new(size.real / width * c, -size.imag / height * r);
+            c_add_inplace(coords, top_left);
+
+            screen[r][c] = iters_to_escape_mandlebrot(coords, max_iters);
+        }
+    }
+
+    return screen;
+}
+str NUM_ITERS_TO_CHAR = ":^!?~Y7JP5G&&BB##@@ ";
+
+char[] mandlebrot_points_to_string(int[][] points) {
+
+    int width = points[0].length * 4; # Triple character plus newline
+    int height = points.length;
+
+    char[] res = [width * height + 1; ];
+    int res_idx = 0; # Too lazy
+
+    for (int r = 0; r < points.length; r += 1; ) {
+        for (int c = 0; c < points[r].length; c += 1; ) {
+            int idx = points[r][c];
+            if (idx > NUM_ITERS_TO_CHAR.length) idx = NUM_ITERS_TO_CHAR.length;
+            char ch = NUM_ITERS_TO_CHAR[idx - 1];
+            
+            for (int i = 0; i < 3; i += 1; ) {
+                res[res_idx] = ch;
+                res_idx += 1;
+            }
+        }
+        res[res_idx] = 10; # newline
+        res_idx += 1;
+    }
+
+    return res;
+}
+
+
+int iters;
+write "Enter number of iterations: ";
+input iters;
+
+int size = 400;
+
+char[] res = mandlebrot_points_to_string(
+    get_mandlebrot_points(
+        c_new(-1.75, 1.5),
+        c_new(2.5, 2.5),
+        size,
+        size,
+        iters
+    )
+);
+
+print res;
+
+
+
+
