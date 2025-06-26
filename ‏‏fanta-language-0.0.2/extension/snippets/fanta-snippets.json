@@ -1,0 +1,77 @@
+{
+	"Input": {
+		"prefix": "input",
+		"body": [
+			"input"
+		],
+		"description": "input"
+	},
+  
+
+	"While": {
+		"prefix": "while",
+		"body": [
+		  "while (${1}) {",
+		  "",
+		  "}"
+		],
+		"description": "while"
+	  },
+	  "If": {
+		
+		"prefix": "if",
+		"body": [
+		  "if (${1}) {",
+		  "",
+		  "}"
+		],
+		"description": "if"
+	  },
+
+	  "Print": {
+		
+		"prefix": "print",
+		"body": [
+			"print"
+		],
+		"description": "print"
+		},
+	
+		"Maybe": {
+		
+		"prefix": "maybe",
+		"body": [
+			"maybe"
+		],
+		"description": "Randomly becomes true or false on runtime"
+		},
+		"ture": {
+		
+		"prefix": "true",
+		"body": [
+			"true"
+		],
+		"description": "true"
+		},
+		"false": {
+		
+		"prefix": "false",
+		"body": [
+			"false"
+		],
+		"description": "false"
+		},
+		"Mabye": {
+		
+		"prefix": "mabye",
+		"body": [
+			"mabye"
+		],
+		"description": "Like MAYBE but misspelled"
+		}
+	
+
+	
+
+}
+

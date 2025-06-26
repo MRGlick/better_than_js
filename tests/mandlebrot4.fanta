@@ -67,11 +67,11 @@ str NUM_ITERS_TO_CHAR = ":^!?~Y7JP5G&&BB##@@ ";
 
 char[] mandlebrot_points_to_string(int[][] points) {
 
-    int width = points[0].length * 4; # Triple character plus newline
+    int width = points[0].length * 4; # Triple character plus newline for each line
     int height = points.length;
 
     char[] res = [width * height + 1; ];
-    int res_idx = 0; # Too lazy
+    int res_idx = 0;
 
     for (int r = 0; r < points.length; r += 1; ) {
         for (int c = 0; c < points[r].length; c += 1; ) {

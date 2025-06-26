@@ -1,0 +1,70 @@
+{
+  "name": "Fanta",
+  "fileTypes": ["fanta"],
+  "patterns": [
+    {
+      "name": "keyword.control.fanta",
+      "match": "\\b(if|while|print|input|return|else|for|write|defer|struct|new)\\b"
+    },
+    {
+      "name": "storage.type.fanta",
+      "match": "\\b(int|float|char|str|bool|void|true|false|mabye|maybe)\\b"
+    },
+    {
+      "name": "constant.numeric.fanta",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    {
+      "name": "keyword.operator.logical.fanta",
+      "match": "&&|\\|\\|"
+    },
+    {
+      "name": "variable.fanta",
+      "match": "\\b(int|float|str|bool|void)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "2": {
+          "name": "variable.other.fanta"
+        }
+      }
+    },
+    {
+      "name": "entity.name.function.fanta",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+    },
+    {
+      "name": "meta.function.declaration.fanta",
+      "match": "\\b(int|float|str|bool|void)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\([^\\)]*\\)",
+      "captures": {
+        "1": { "name": "storage.type.fanta" },
+        "2": { "name": "entity.name.function.fanta" }
+      }
+    },
+    {
+      "name": "string.quoted.double.fanta",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.fanta",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.single.fanta",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.fanta",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "comment.line.hash.fanta",
+      "match": "#.*$"
+    }
+  ],
+  "scopeName": "source.fanta"
+}

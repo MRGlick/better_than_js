@@ -1,0 +1,46 @@
+{
+  "name": "fanta-language",
+  "publisher": "voblyboo",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "icon": "icon.png",
+  "main": "extension.js",
+  "activationEvents": [
+    "onLanguage:fanta"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "fanta",
+        "aliases": ["Fanta"],
+        "extensions": [".fanta"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "fanta",
+        "path": "./snippets/fanta-snippets.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fanta",
+        "scopeName": "source.fanta",
+        "path": "./syntaxes/fanta.tmLanguage.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "fanta-file-icons",
+        "label": "Fanta File Icons",
+        "path": "./icons/fanta-icon-theme.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "vscode": "^1.70.0"
+  }
+}

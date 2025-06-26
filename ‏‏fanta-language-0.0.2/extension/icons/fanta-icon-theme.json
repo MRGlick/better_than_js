@@ -1,0 +1,11 @@
+{
+    "iconDefinitions": {
+      "fanta-file-icon": {
+        "iconPath": "./fanta-file-icon.png"
+      }
+    },
+    "fileExtensions": {
+      "fanta": "fanta-file-icon"
+    }
+  }
+  
