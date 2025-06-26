@@ -8,12 +8,12 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_RUN_CODE
+#define COMPILATION_STAGE STAGE_PARSER
 
-#define PREPROCESS_AST 1
+#define PREPROCESS_AST 0
 
-#define LEXER_PRINT 0
-#define TOKENIZER_PRINT 0
+#define LEXER_PRINT 1
+#define TOKENIZER_PRINT 1
 #define PARSER_PRINT 1
 #define IR_PRINT 1
 
@@ -403,6 +403,11 @@ Token *tokenize(Lexeme *Ls) {
             array_append(tokens, tk);
             continue;
         }
+        if (String_equal(Ls[i].text, StringRef("->"))) {
+            Token tk = {.type = ARROW, .line = Ls[i].line};
+            array_append(tokens, tk);
+            continue;
+        }
         // only need to check the first because at this point it's guranteed to be a valid literal
         // also this leaks but who gives a shit
         if (Ls[i].text.data[0] == '"') { 
@@ -701,6 +706,8 @@ ParseResult parse_array_literal(int idx);
 
 ParseResult parse_array_initializer(int idx);
 
+ParseResult parse_lambda(int idx);
+
 void print_ast(ASTNode node, int level);
 
 
@@ -730,6 +737,7 @@ ParseResult parse_base_rule(int idx) {
         MATCH_RETURN_IF_PARSED(parse_new_rule(idx));
         MATCH_RETURN_IF_PARSED(parse_array_literal(idx));
         MATCH_RETURN_IF_PARSED(parse_array_initializer(idx));
+        MATCH_RETURN_IF_PARSED(parse_lambda(idx));
         MATCH_TOKEN_WITH_TYPE(LPAREN);
         MATCH_PARSE(expr_res, parse_expr(idx), "expression");
         MATCH_TOKEN_WITH_TYPE(RPAREN);
@@ -2054,6 +2062,57 @@ ParseResult parse_array_initializer(int idx) {
 
 
         FINISH_PARSE(node);
+    }
+}
+
+ParseResult parse_name_seq(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(NAME);
+        ASTNode node = ASTNode_new((Token){.type = NAME_SEQ}, true);
+
+        ASTNode_add_child(node, ASTNode_new(get_token(idx - 1), true));
+
+        while (true) {
+
+            if (get_token(idx).type != COMMA) break;
+            MATCH_TOKEN_WITH_TYPE(COMMA);
+
+            if (get_token(idx).type != NAME) break;
+            MATCH_TOKEN_WITH_TYPE(NAME);
+
+            ASTNode_add_child(node, ASTNode_new(get_token(idx - 1), true));
+        }
+
+        FINISH_PARSE(node);
+    }
+
+}
+
+ParseResult parse_lambda(int idx) {
+    START_PARSE {
+        MATCH_TOKEN_WITH_TYPE(LPAREN);
+        TRY_MATCH_PARSE(name_seq, parse_name_seq(idx));
+        MATCH_TOKEN_WITH_TYPE(RPAREN);
+        MATCH_TOKEN_WITH_TYPE(ARROW);
+        TRY_MATCH_PARSE(expr_res, parse_expr(idx));
+        
+        ASTNode node = ASTNode_new((Token){.type = LAMBDA}, true);
+
+        if (name_seq.success) {
+            ASTNode_add_child(node, name_seq.node);
+        } else {
+            ASTNode_add_child(node, ASTNode_new((Token){.type = NAME_SEQ}, true));
+        }
+
+        if (expr_res.success) {
+            ASTNode_add_child(node, expr_res.node);
+        } else {
+            MATCH_PARSE(block_res, parse_block(idx), "a block or an expression");
+            ASTNode_add_child(node, block_res.node);
+        }
+
+        FINISH_PARSE(node);
+
     }
 }
 
@@ -5753,6 +5812,7 @@ Lexeme *lex(StringRef text) {
             || check('*', '=')
             || check('/', '=')
             || check('%', '=')
+            || check('-', '>')
         );
 
         #undef check
@@ -5787,7 +5847,7 @@ Lexeme *lex(StringRef text) {
 
     return Ls;
 
-}
+} 
 
 void print_token(Token token, int level) {
     for (int i = 0; i < level; i++) {

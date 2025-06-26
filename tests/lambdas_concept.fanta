@@ -1,0 +1,15 @@
+
+
+int(int, int) add = (x, y) -> x + y;
+int(int) arr = (n) -> {
+    int[] res = [n; ];
+    return res;
+};
+
+
+
+# Step 1: parsing
+# Step 2: converting expr lambdas to block lambdas
+# Step 3: type inference
+# Step 4: Conversion to anonymous functions / Replacing lambda mentions with the names of the anonymous functions
+# Step 5: profit

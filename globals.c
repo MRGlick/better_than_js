@@ -119,8 +119,10 @@ char *KEYWORDS[] = {
     X(ARRAY_SUBSCRIPT) \
     X(OP_CONVERT_TYPE) \
     X(TYPE_SEQ) \
+    X(ARROW) \
+    X(LAMBDA) \
+    X(NAME_SEQ) \
     X(TOKEN_TYPE_COUNT)
-
 //              term i made up VVV
 // sorted by bin-op conversion precedence (least to most)
 typedef struct Val {
@@ -271,6 +273,7 @@ const char *token_type_to_pretty_str(TokenType type) {
         case ARRAY_SUBSCRIPT:     return "array subscript";
         case OP_CONVERT_TYPE:     return "type conversion";
         case TYPE_SEQ:            return "type sequence";
+        case ARROW:               return "->";
     }
 
     return "<unknown>";
