@@ -8,8 +8,9 @@ int(int) arr = (n) -> {
 
 
 
-# Step 1: parsing
-# Step 2: converting expr lambdas to block lambdas
-# Step 3: type inference
-# Step 4: Conversion to anonymous functions / Replacing lambda mentions with the names of the anonymous functions
+# Step 1: parsing - V
+# Step 1.5: in parsing -  converting expr lambdas to block lambdas - V
+# Step 2: type inference
+# Step 3: Conversion to anonymous functions
+# Step 4: replacing lambda mentions with the names of the anonymous functions
 # Step 5: profit

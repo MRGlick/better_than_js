@@ -10,7 +10,7 @@
 
 #define COMPILATION_STAGE STAGE_PARSER
 
-#define PREPROCESS_AST 0
+#define PREPROCESS_AST 1
 
 #define LEXER_PRINT 1
 #define TOKENIZER_PRINT 1
@@ -2105,7 +2105,11 @@ ParseResult parse_lambda(int idx) {
         }
 
         if (expr_res.success) {
-            ASTNode_add_child(node, expr_res.node);
+            ASTNode return_stmt = ASTNode_new((Token){.type = RETURN_STMT}, true);
+            ASTNode_add_child(return_stmt, expr_res.node);
+            ASTNode block = ASTNode_new((Token){.type = BLOCK}, true);
+            ASTNode_add_child(block, return_stmt);
+            ASTNode_add_child(node, block);
         } else {
             MATCH_PARSE(block_res, parse_block(idx), "a block or an expression");
             ASTNode_add_child(node, block_res.node);
@@ -2368,33 +2372,44 @@ bool _func_vh_args_equal(VarHeader *args1, VarHeader *args2) {
     return true;
 }
 
-void try_set_temp_array_subtype(ASTNode *node, Type *target_type) {
+void try_set_temp_array_subtype(ASTNode *node, Type *subtype) {
     if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;
+
     ASTNode_insert_child(
         (*node), 
-        ASTNode_new((Token){.type = TYPE, .var_type = copy_type(target_type)}, true),
+        ASTNode_new((Token){.type = TYPE, .var_type = copy_type(subtype)}, true),
         0
     );
     node->complete = true;
 }
 
-void try_infer_temp_array_type(ASTNode *node, Type *t) {
-    if (node->token.type != ARRAY_LITERAL && node->token.type != ARRAY_INITIALIZER) return;    
-    
-    if (t->kind != TYPE_array) return_err(
-        "Couldn't infer array literal type from function argument, argument type: %s",
-        type_get_name(t)
+void try_set_lambda_type(ASTNode *node, Type *target_type) {
+
+    assert(target_type->kind == TYPE_func);
+
+    if (node->token.type != LAMBDA) return;
+
+    int expected_arg_count = array_length(target_type->func_data.arg_types);
+    int arg_count = array_length(node->children[0].children);
+
+    if (expected_arg_count != arg_count) return_err(
+        "Lambda args don't match its type's args! Expected %d arguments, found %d",
+        expected_arg_count,
+        arg_count
     );
 
-    ASTNode_insert_child(
-        (*node), 
-        ASTNode_new(
-            (Token){.type = TYPE, .var_type = copy_type(t->array_data.type)}, 
-            true
-        ),
-        0
-    );
+    node->expected_return_type = copy_type(target_type);
+}
 
+void apply_type_inference(ASTNode *node, Type *target_type) {
+    match(target_type->kind) {
+        case (TYPE_array) {
+            try_set_temp_array_subtype(node, target_type->array_data.type);
+        }
+        case (TYPE_func) {
+            try_set_lambda_type(node, target_type);
+        }
+    }
 }
 
 
@@ -2536,8 +2551,9 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
             VarHeader vh = create_var_header(var_name, type, -1);
             add_varheader_to_map_list(var_map_list, &vh);
 
-            if (node->token.type == DECL_ASSIGN_STMT && type->kind == TYPE_array)
-                try_set_temp_array_subtype(expr_node, type->array_data.type);
+            if (node->token.type == DECL_ASSIGN_STMT) {
+                apply_type_inference(expr_node, type);
+            }
 
             for (int i = 0; i < array_length(node->children); i++) {
                 typeify_tree(&node->children[i], var_map_list);
@@ -2739,11 +2755,7 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
                 member->expected_return_type = copy_type(member_vh->var_type);
 
-                if (member->expected_return_type->kind == TYPE_array) {
-                    Type *subtype = member->expected_return_type->array_data.type;
-                    try_set_temp_array_subtype(expr, subtype);
-                }
-
+                apply_type_inference(expr, member->expected_return_type);
                 
                 typeify_tree(expr, var_map_list);
             }
@@ -2779,7 +2791,7 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
             for (int i = 0; i < arg_count; i++) {
                 ASTNode *child = &args_ast->children[i];
-                try_infer_temp_array_type(child, func_type->func_data.arg_types[i]);
+                apply_type_inference(child, func_type->func_data.arg_types[i]);
                 typeify_tree(child, var_map_list);
 
                 if (!is_valid_type_conversion(child->expected_return_type, func_type->func_data.arg_types[i]))
@@ -2805,8 +2817,7 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
             for (int i = 0; i < array_length(values_node->children); i++) {
                 ASTNode *child = &values_node->children[i];
-                if (type_node->token.var_type->kind == TYPE_array)
-                    try_set_temp_array_subtype(child, type_node->token.var_type->array_data.type);
+                apply_type_inference(child, type_node->token.var_type);
                 typeify_tree(child, var_map_list);
             }
 
@@ -2862,11 +2873,15 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
             if (array_length(node->children) == 0) return;
 
-            Type *return_type = current_func->children[0].token.var_type;
+            Type *return_type;
 
-            if (return_type->kind == TYPE_array)
-                try_set_temp_array_subtype(&node->children[0], return_type->array_data.type);
-            
+            if (current_func->token.type == FUNC_DECL_STMT) {
+                return_type = current_func->children[0].token.var_type;
+            } else { // lambda
+                return_type = current_func->expected_return_type->func_data.return_type;
+            }
+
+            apply_type_inference(&node->children[0], return_type);            
             
             typeify_tree(&node->children[0], var_map_list);
         }
@@ -2874,12 +2889,53 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
             
             node->expected_return_type = copy_type(node->children[0].token.var_type);
 
-            if (node->expected_return_type->kind == TYPE_array)
-                try_set_temp_array_subtype(&node->children[1], node->expected_return_type->array_data.type);
+            apply_type_inference(&node->children[1], node->expected_return_type);
 
             typeify_tree(&node->children[1], var_map_list);
             
         
+        }
+
+        case (LAMBDA) {
+
+            ASTNode *prev_func = current_func;
+            current_func = node;
+
+            LL_prepend(var_map_list, LLNode_new(HashMap(VarHeader)));
+
+            ASTNode *block = &node->children[1];
+            ASTNode *args = &node->children[0];
+
+            for (int i = 0; i < array_length(args->children); i++) {
+                ASTNode *arg = &args->children[i];
+                Type *t = node->expected_return_type->func_data.arg_types[i];
+
+                VarHeader vh = create_var_header(arg->token.text, t, -1);
+
+                add_varheader_to_map_list(var_map_list, &vh);
+            }
+
+
+            // Since lambdas have to be pure to keep them static and avoid the need for closures, they have a declaration scope seperate from the rest
+
+            LinkedList *limited_list = LL_new();
+            LL_prepend(limited_list, LLNode_new(HashMap_copy(var_map_list->head->val)));
+
+            for (int i = 0; i < array_length(block->children); i++) {
+                ASTNode *child = &block->children[i];
+
+                typeify_tree(child, limited_list);
+
+            }
+
+            _HashMap_free(LL_pop_head(limited_list));
+
+            LL_free(limited_list);
+
+
+            _HashMap_free(LL_pop_head(var_map_list));
+
+            current_func = prev_func;
         }
 
         default() {
@@ -3055,6 +3111,7 @@ void apply_constant_folding(ASTNode *node) {
         apply_constant_folding(&node->children[i]);
     }
 }
+
 
 void preprocess_ast(ASTNode *ast) {
 
