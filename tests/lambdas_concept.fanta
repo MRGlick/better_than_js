@@ -1,16 +1,13 @@
 
 
-int(int, int) add = (x, y) -> x + y;
-int(int) arr = (n) -> {
-    int[] res = [n; ];
-    return res;
-};
+int(int) add1 = (x) -> x + 1;
+int(int) add2 = (x) -> x + 2;
 
-
+print add1(add2(1));
 
 # Step 1: parsing - V
 # Step 1.5: in parsing -  converting expr lambdas to block lambdas - V
-# Step 2: type inference
+# Step 2: type inference - V 
 # Step 3: Conversion to anonymous functions
 # Step 4: replacing lambda mentions with the names of the anonymous functions
 # Step 5: profit

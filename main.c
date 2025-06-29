@@ -8,12 +8,12 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_PARSER
+#define COMPILATION_STAGE STAGE_RUN_CODE
 
 #define PREPROCESS_AST 1
 
-#define LEXER_PRINT 1
-#define TOKENIZER_PRINT 1
+#define LEXER_PRINT 0
+#define TOKENIZER_PRINT 0
 #define PARSER_PRINT 1
 #define IR_PRINT 1
 
@@ -2898,6 +2898,11 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
         case (LAMBDA) {
 
+            if (node->expected_return_type->kind == TYPE_void) return_err(
+                "Ambiguous use of lambda expression! Try converting it to a type first."
+            );
+            
+
             ASTNode *prev_func = current_func;
             current_func = node;
 
@@ -2920,6 +2925,8 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
 
             LinkedList *limited_list = LL_new();
             LL_prepend(limited_list, LLNode_new(HashMap_copy(var_map_list->head->val)));
+            limited_list->head->next = NULL;
+            limited_list->tail = limited_list->head;
 
             for (int i = 0; i < array_length(block->children); i++) {
                 ASTNode *child = &block->children[i];
@@ -3112,6 +3119,93 @@ void apply_constant_folding(ASTNode *node) {
     }
 }
 
+typedef struct {
+    ASTNode *parent;
+    int child_idx;
+} LambdaRef;
+
+void _get_lambdas_in_tree(ASTNode *node, LambdaRef **refs) {
+    for (int i = 0; i < array_length(node->children); i++) {
+        ASTNode *child = &node->children[i];
+        if (child->token.type == LAMBDA) {
+            LambdaRef ref = {.child_idx = i, .parent = node};
+            array_append(*refs, ref);
+        } else {
+            _get_lambdas_in_tree(child, refs);
+        }
+    }
+}
+
+ASTNode make_func_decl_from_lambda(ASTNode *lambda, String func_name) {
+    ASTNode node = ASTNode_new((Token){.type = FUNC_DECL_STMT}, true);
+
+    Type *return_type = lambda->expected_return_type->func_data.return_type;
+    Type **arg_types = lambda->expected_return_type->func_data.arg_types;
+
+    ASTNode_add_child(node, ASTNode_new((Token){.type = TYPE, .var_type = copy_type(move(return_type))}, true));
+
+    ASTNode_add_child(node, ASTNode_new((Token){.type = NAME, .text = func_name}, true));
+
+    ASTNode_add_child(node, ASTNode_new((Token){.type = FUNC_ARGS_SEQ}, true));
+
+    ASTNode func_args_seq = node.children[2];
+
+    int len = array_length(lambda->children[0].children);
+    assert(len == array_length(arg_types));
+
+    for (int i = 0; i < len; i++) {
+        ASTNode func_arg = ASTNode_new((Token){.type = FUNC_ARG}, true);
+
+        ASTNode_add_child(func_arg, ASTNode_new((Token){.type = TYPE, .var_type = copy_type(arg_types[i])}, true));
+
+        ASTNode name = ASTNode_new((Token){.type = NAME, .text = lambda->children[0].children[i].token.text}, true);
+        ASTNode_add_child(func_arg, name);
+
+        ASTNode_add_child(func_args_seq, func_arg);
+    }
+
+    ASTNode_add_child(node, ASTNode_copy(&lambda->children[1]));
+
+    return node;
+}
+
+void convert_lambdas_to_anonymous_funcs(ASTNode *node) {
+    // 1. find all lambdas recursively, store them in a list
+    // 2. for each lambda store its parent and index (so it can be removed)
+    // 3. iterate over lambdas, add a function for each one, give it a name, 
+    //    go to the lambda mention and replace it with a reference to the anonymous func
+
+    LambdaRef *refs = array(LambdaRef, 10);
+
+    ASTNode *func_decls = array(ASTNode, 10);
+
+    _get_lambdas_in_tree(node, &refs);
+
+    for (int i = 0; i < array_length(refs); i++) {
+        String name = String_concatf(String("$"), String_from_int(i));
+
+        LambdaRef ref = refs[i];
+        ASTNode lambda = ref.parent->children[ref.child_idx];
+        ASTNode func_decl_ast = make_func_decl_from_lambda(&lambda, name);
+
+        // insert the func decls later so we don't mess with the indices
+        array_append(func_decls, func_decl_ast);
+
+        ASTNode ident = ASTNode_new((Token){.type = NAME, .text = name}, true);
+        ident.expected_return_type = copy_type(lambda.expected_return_type);
+
+        ref.parent->children[ref.child_idx] = ident;
+
+        free_ast(lambda);
+    }
+
+    // do it in reverse so the func decls are ordered
+    for (int i = array_length(func_decls) - 1; i >= 0; i--) {
+        ASTNode_insert_child((*node), func_decls[i], 0);
+    }
+
+}
+
 
 void preprocess_ast(ASTNode *ast) {
 
@@ -3132,6 +3226,8 @@ void preprocess_ast(ASTNode *ast) {
     HashMap_free(vm_list->head->val);
     LL_pop_head(vm_list);
     LL_free(vm_list);
+
+    convert_lambdas_to_anonymous_funcs(ast);
 
     move_defers_to_end(ast);
     apply_constant_folding(ast);
@@ -6039,16 +6135,6 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 // #MAIN
 
 int main() {
-    
-    Type *t = make_func_type(
-        make_type(TYPE_int),
-        array_from_literal(Type *, {
-            make_type(TYPE_bool)
-        })
-    );
-
-    printf("hello '%s' \n", type_get_name(t));
-
 
     init_intrinsic_func_types();
 

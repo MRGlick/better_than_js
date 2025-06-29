@@ -39,14 +39,6 @@ int[] filter(int[] arr, bool(int) f) {
     return res;
 }
 
-
-
-int double(int a) return a * 2;
-
-int add(int a, int b) return a + b;
-
-bool even(int a) return a % 2 == 0;
-
 void _print_arr(int[] arr, int idx) {
     if (idx >= arr.length) return;
     if (idx > 0) write ", ";
@@ -81,6 +73,10 @@ int[] range(int start, int end) {
 # -> 49 * 100
 # -> 4900
 
-int final = reduce(map(filter(range(0, 100), even), double), add);
+int[] arr = range(0, 100);
 
-print final;
+arr = filter(arr, (x) -> x % 2 == 0);
+arr = map(arr, (x) -> x * 2);
+int res = reduce(arr, (x, y) -> x + y);
+
+print res;
