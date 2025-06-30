@@ -2559,6 +2559,14 @@ void typeify_tree(ASTNode *node, LinkedList *var_map_list) {
                 typeify_tree(&node->children[i], var_map_list);
             }
         }
+        case (ASSIGN_STMT) {
+            ASTNode *left_side = &node->children[0];
+            ASTNode *right_side = &node->children[1];
+            typeify_tree(left_side, var_map_list);
+
+            apply_type_inference(right_side, left_side->expected_return_type);
+            typeify_tree(right_side, var_map_list);
+        }
         case(INTEGER) {
             node->expected_return_type = make_type(TYPE_int);
         }
