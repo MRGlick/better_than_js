@@ -1,0 +1,27 @@
+
+
+<A>
+struct Node {
+    A val;
+    Node<A>[] children;
+}
+
+# becomes
+
+#struct Node$int {
+#    int val;
+#    Node$int[] children;
+#}
+
+#struct Node$str {
+#    str val;
+#    Node$str[] children;
+#}
+
+# etc..
+
+<T, U>
+U foo(T a, U b) {
+    a.x = 2;
+    b.y = 3;
+}
