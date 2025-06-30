@@ -1,0 +1,15 @@
+struct Vec2 {
+    float x;
+    float y;
+}
+
+Vec2(float, float) v2_new = (x, y) -> new Vec2(x = x, y = y);
+
+Vec2(Vec2, Vec2) v2_add = (v1, v2) -> new Vec2(x = v1.x + v2.x, y = v1.y + v2.y);
+
+void(Vec2) v2_print = (v1) -> {
+    print "(", v1.x, ", ", v1.y, ")";
+};
+
+v2_print(v2_add(v2_new(1, 2), v2_new(3, 4)));
+

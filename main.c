@@ -4055,21 +4055,66 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
 
 void generate_instructions_for_input(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    array_append(*instructions, create_inst_I_INPUT());
+    ASTNode *left_side = &ast->children[0];
 
-    Type *goal_type = ast->children[0].expected_return_type;
+    // RC
 
-    if (goal_type->kind != TYPE_str) {
-        bool result = generate_cvt_inst_for_types(&_const_types[TYPE_str], goal_type, instructions);
-        if (!result) return_err("Can't convert string to '%s'!", type_get_name(goal_type).data);
+    bool dec_refcount_for_left_side = is_reference(left_side);
+
+    if (dec_refcount_for_left_side) {
+        generate_instructions_for_node(left_side, instructions, var_map_list);
+        array_append(*instructions, create_inst_I_TUCK()); // decrement always after increment
     }
 
-    bool isglobal;
+    if (left_side->token.type == NAME) {
+        String var_name = left_side->token.text;
+            
+        bool isglobal;
+        
+        VarHeader *vh = lookup_var(var_map_list, var_name, &isglobal);
+        
+        Type *goal_type = vh->var_type;
 
-    VarHeader *vh = lookup_var(var_map_list, ast->children[0].token.text, &isglobal);
+        array_append(*instructions, create_inst_I_INPUT());
 
-    array_append(*instructions, create_inst(isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE, Val_int(get_vartype_size(goal_type)), Val_int(vh->var_pos)));
+        if (goal_type->kind != TYPE_str) {
+            bool result = generate_cvt_inst_for_types(&_const_types[TYPE_str], goal_type, instructions);
+            if (!result) return_err(
+                "Invalid conversion on assignment! Tried to convert from type 'str' to '%s'",  
+                type_get_name(goal_type).data
+            );
+        }
 
+        array_append(*instructions, create_inst(isglobal? I_STACK_STORE_GLOBAL : I_STACK_STORE, Val_int(get_vartype_size(vh->var_type)), Val_int(vh->var_pos)));
+
+    } else {
+        Type *goal_type = left_side->expected_return_type;
+
+        match (left_side->token.type) {
+            case (ATTR_ACCESS)
+                generate_instructions_for_attr_addr(left_side, instructions, var_map_list);
+            case (ARRAY_SUBSCRIPT)
+                generate_instructions_for_array_subscript_addr(left_side, instructions, var_map_list);
+        }
+
+        array_append(*instructions, create_inst_I_INPUT());
+
+        if (goal_type->kind != TYPE_str) {
+            bool result = generate_cvt_inst_for_types(&_const_types[TYPE_str], goal_type, instructions);
+            if (!result) return_err(
+                "Invalid conversion on assignment! Tried to convert from type 'str' to '%s'", 
+                type_get_name(goal_type).data
+            );
+        }
+
+        array_append(*instructions, create_inst_I_HEAP_STORE(Val_int(get_vartype_size(left_side->expected_return_type))));
+
+    }
+
+    if (dec_refcount_for_left_side) {
+        array_append(*instructions, create_inst_I_POP_BOTTOM());
+        array_append(*instructions, create_inst(get_dec_ref_inst_by_typekind(left_side->expected_return_type->kind), Val_null, Val_null));
+    }
 }
 
 
@@ -5086,7 +5131,7 @@ void preprocess_string_literals(Inst *instructions) {
     
     for (int i = 0; i < len; i++) {
         Inst *inst = &instructions[i];
-        if (inst->type == I_PUSH && inst->arg2.type == TYPE_str) {
+        if (inst->type == I_PUSH && inst->arg2.type == TYPE_str && inst->arg2.as_str) {
             inst->arg2.as_str = append_to_text_buffer(inst->arg2.as_str, strlen(inst->arg2.as_str));
         }
     }
