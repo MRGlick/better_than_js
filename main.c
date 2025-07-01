@@ -2458,7 +2458,7 @@ void init_intrinsic_func_types() {
     intrinsic_func_types[INTR_sleep] = make_func_type(
         make_type(TYPE_void),
         array_from_literal(Type *, {
-            make_type(TYPE_int)
+            make_type(TYPE_float)
         })
     );
 
@@ -2471,10 +2471,8 @@ void init_intrinsic_func_types() {
 
 }
 
-void free_intrinsic_func_types() {
-    for (int i = intr_start(); i < intr_end(); i++) {
-        free_type(intrinsic_func_types[i]);
-    }
+void reset_intrinsic_func_types() {
+    memset(intrinsic_func_types, 0, sizeof(intrinsic_func_types));
 }
 
 VarHeader *get_intrinsic_varheaders() {
@@ -2493,15 +2491,20 @@ VarHeader *get_intrinsic_varheaders() {
     return res;
 }
 
+
 int get_intrinsic_by_name(String name) {
-
+    
     int len = sizeof(intrinsic_names) / sizeof(char *);
-
+    
     for (int i = 0; i < len; i++)
-        if (String_equal(name, StringRef(intrinsic_names[i])))
-            return i;
-
+    if (String_equal(name, StringRef(intrinsic_names[i])))
+    return i;
+    
     return INTR_none_;
+}
+
+bool is_intrinsic_varheader(VarHeader *vh) {
+    return get_intrinsic_by_name(vh->name) != INTR_none_;
 }
 
 Type *get_func_type_from_ast(ASTNode *node) {
@@ -3214,9 +3217,7 @@ void convert_lambdas_to_anonymous_funcs(ASTNode *node) {
 
 }
 
-
-void preprocess_ast(ASTNode *ast) {
-
+LinkedList *create_vm_list() {
     LinkedList *vm_list = LL_new();
     LL_prepend(vm_list, LLNode_new(HashMap(VarHeader)));
 
@@ -3228,12 +3229,22 @@ void preprocess_ast(ASTNode *ast) {
 
     array_free(intrinsics);
 
+    return vm_list;
+}
+
+void delete_vm_list(LinkedList *vm_list) {
+    while (vm_list->head) {
+        _HashMap_free(LL_pop_head(vm_list));
+    }
+}
+
+void preprocess_ast(ASTNode *ast) {
+
+    LinkedList *vm_list = create_vm_list();
+
     typeify_tree(ast, vm_list);
 
-
-    HashMap_free(vm_list->head->val);
-    LL_pop_head(vm_list);
-    LL_free(vm_list);
+    delete_vm_list(vm_list);
 
     convert_lambdas_to_anonymous_funcs(ast);
 
@@ -4353,6 +4364,7 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
     
     ASTNode *func_node = &ast->children[0];
     Type *func_type = func_node->expected_return_type;
+    print_type(func_type);
 
     ASTNode *args_node = &ast->children[1];
 
@@ -5012,6 +5024,11 @@ void generate_instructions_for_node(ASTNode *ast, Inst **instructions, LinkedLis
 
             if (!vh) return;
 
+            if (is_intrinsic_varheader(vh)) {
+                array_append(*instructions, create_inst_I_PUSH(Val_int(sizeof(int)), Val_int(vh->var_pos)));
+                return;
+            }
+
             array_append(*instructions, create_inst(isglobal ? I_READ_GLOBAL : I_READ,
                 (Val){.as_int = get_vartype_size(vh->var_type), .type = TYPE_int},
                 (Val){.as_int = vh->var_pos, .type = TYPE_int}));
@@ -5039,16 +5056,14 @@ Inst *generate_instructions(ASTNode *ast) {
     clear_struct_metadata();
 
     Inst *res = array(Inst, 20);
-    LinkedList *var_map_list = LL_new();
+    LinkedList *var_map_list = create_vm_list();
     LL_append(var_map_list, LLNode_new(HashMap(VarHeader)));
 
     gi_stack_pos = 0;
     gi_label_idx = 0;
     generate_instructions_for_node(ast, &res, var_map_list);
 
-    HashMap_free(var_map_list->head->val);
-
-    LL_free(var_map_list);
+    delete_vm_list(var_map_list);
 
     return res;
 }
@@ -5496,6 +5511,29 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
             }
             case (I_CALL) {
                 int callpos = pop(int);
+                
+                // INTRINSIC SPECIAL CASE
+                // if (callpos < 0) {
+                //     printf("%d \n", callpos);
+                //     IntrKind kind = -callpos;
+                //     match (kind) {
+                //         case (INTR_clear_terminal_lines) {
+                //             clear_n_lines(pop(int));
+                //         }
+                //         case (INTR_rand) {
+                //             int res = rand();
+                //             append(&res, sizeof(res));
+                //         }
+                //         case (INTR_sleep) {
+                //             sleep(pop(double));
+                //         }
+                //     }
+                //     continue;
+                // } else {
+                //     printf("pepepopo \n");
+                // }
+
+
                 int val = inst_ptr + 1;
                 tuck(&frame_ptr, sizeof(int));
                 tuck(&stack_ptr, sizeof(int));
@@ -5780,6 +5818,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
             }
         }
+        printf("inst ptr: %d \n", inst_ptr);
     }
 
     double end = get_current_process_time_seconds();
@@ -6189,11 +6228,11 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 
 int main() {
 
-    init_intrinsic_func_types();
+    
 
     while (true) {
 
-
+        init_intrinsic_func_types();
 
         char buf[CODE_MAX_LEN] = {0};
         bool benchmark = false;
@@ -6277,9 +6316,12 @@ int main() {
         free_tokens(tokens);
 
         free_lexemes(Ls);
+
+        reset_intrinsic_func_types();
+
     }
 
-    free_intrinsic_func_types();
+    
 
     return 0;
 }
