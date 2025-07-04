@@ -3683,7 +3683,9 @@ VarHeader *lookup_var_safe(LinkedList *var_map_list, String name, bool *global) 
     while (current != NULL) {
         VarHeader *vh = HashMap_get_safe(current->val, name, NULL);
         if (vh != NULL) {
-            if (!current->next && global) *global = true;
+            if (global)
+                *global = !current->next;
+
             return vh;
         }
         current = current->next;
@@ -5057,7 +5059,6 @@ Inst *generate_instructions(ASTNode *ast) {
 
     Inst *res = array(Inst, 20);
     LinkedList *var_map_list = create_vm_list();
-    LL_append(var_map_list, LLNode_new(HashMap(VarHeader)));
 
     gi_stack_pos = 0;
     gi_label_idx = 0;
@@ -5128,11 +5129,6 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
 }
 
 
-#define append(ptr, size) my_memcpy(temp_stack + temp_stack_ptr++, ptr, size);
-#define pop(type) (*(type *)(temp_stack + --temp_stack_ptr))
-#define dup() ({temp_stack[temp_stack_ptr] = temp_stack[temp_stack_ptr - 1]; temp_stack_ptr++;})
-#define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
-#define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr * 8); val;})
 
 void *append_to_text_buffer(const char *text, int len) {
 
@@ -5256,6 +5252,28 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     int len = array_length(byte_arr); // which is not equal to array_length(instructions)
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
+
+        #define append(ptr, size) my_memcpy(temp_stack + temp_stack_ptr++, ptr, size);
+        #define pop(type) (*(type *)(temp_stack + --temp_stack_ptr))
+        #define dup() ({temp_stack[temp_stack_ptr] = temp_stack[temp_stack_ptr - 1]; temp_stack_ptr++;})
+        #define tuck(ptr, size) {memmove(temp_stack + 1, temp_stack, temp_stack_ptr++ * 8); my_memcpy(temp_stack, ptr, size);}
+        #define pop_bottom(type) ({type val = *(type *)temp_stack; memmove(temp_stack, temp_stack + 1, --temp_stack_ptr * 8); val;})
+
+        #define handle_intrinsic_func(kind) \
+            { \
+                match (kind) { \
+                    case (INTR_clear_terminal_lines) { \
+                        clear_n_lines(pop(int)); \
+                    } \
+                    case (INTR_rand) { \
+                        int res = rand(); \
+                        append(&res, sizeof(res)); \
+                    } \
+                    case (INTR_sleep) { \
+                        sleep(pop(double)); \
+                    } \
+                } \
+            }
 
         match (byte_arr[inst_ptr]) {
 
@@ -5513,26 +5531,11 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 int callpos = pop(int);
                 
                 // INTRINSIC SPECIAL CASE
-                // if (callpos < 0) {
-                //     printf("%d \n", callpos);
-                //     IntrKind kind = -callpos;
-                //     match (kind) {
-                //         case (INTR_clear_terminal_lines) {
-                //             clear_n_lines(pop(int));
-                //         }
-                //         case (INTR_rand) {
-                //             int res = rand();
-                //             append(&res, sizeof(res));
-                //         }
-                //         case (INTR_sleep) {
-                //             sleep(pop(double));
-                //         }
-                //     }
-                //     continue;
-                // } else {
-                //     printf("pepepopo \n");
-                // }
-
+                if (callpos < 0) {
+                    IntrKind kind = -callpos;
+                    handle_intrinsic_func(kind);
+                    continue;
+                }
 
                 int val = inst_ptr + 1;
                 tuck(&frame_ptr, sizeof(int));
@@ -5818,7 +5821,14 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
             }
         }
-        printf("inst ptr: %d \n", inst_ptr);
+
+        #undef append
+        #undef pop
+        #undef pop_bottom
+        #undef tuck
+        #undef dup
+        #undef handle_intrinsic_func
+
     }
 
     double end = get_current_process_time_seconds();
