@@ -78,13 +78,6 @@ typedef struct StructMetadata {
 
 StructMetadata struct_metadata[256] = {0};
 int struct_metadata_ptr = 0;
-u64 temp_stack[STACK_SIZE] = {0};
-int temp_stack_ptr = 0;
-char var_stack[STACK_SIZE] = {0};
-char text_buffer[TEXT_BUF_SIZE] = {0};
-int text_buffer_ptr = 0;
-int stack_ptr = 0;
-int frame_ptr = 0;
 int runtime_mallocs = 0;
 int runtime_frees = 0;
 

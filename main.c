@@ -5128,6 +5128,8 @@ static inline void my_memcpy(void *dst, const void *src, u8 size) {
     }
 }
 
+char text_buffer[TEXT_BUF_SIZE] = {0};
+int text_buffer_ptr = 0;
 
 
 void *append_to_text_buffer(const char *text, int len) {
@@ -5225,13 +5227,16 @@ char *convert_insts_to_byte_arr(const Inst *instructions) {
 }
 
 void run_bytecode_instructions(Inst *instructions, double *time) {
-    memset(temp_stack, 0, STACK_SIZE);
-    temp_stack_ptr = 0;
+
+    u64 temp_stack[STACK_SIZE] = {0};
+    int temp_stack_ptr = 0;
+    char var_stack[STACK_SIZE] = {0};
+    int stack_ptr = 0;
+    int frame_ptr = 0;
+
+
     memset(text_buffer, 0, TEXT_BUF_SIZE);
     text_buffer_ptr = 0;
-    memset(var_stack, 0, STACK_SIZE);
-    stack_ptr = 0;
-    frame_ptr = 0;
     runtime_frees = 0;
     runtime_mallocs = 0;
     
