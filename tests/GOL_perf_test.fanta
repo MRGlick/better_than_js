@@ -13,7 +13,7 @@ bool[][] generate_board(int size) {
 }
 
 int get_cell(bool[][] board, int r, int c) {
-    if (r < 0 || r >= board.length || c < 0 || c >= board[r].length) return false;
+    if (r < 0 || r >= board.length || c < 0 || c >= board[0].length) return false;
 
     return board[r][c];
 }
@@ -83,21 +83,15 @@ void print_board(bool[][] board) {
     write buf;
 }
 
-while (true) {    
-    int board_size;
-    write "Enter board size: ";
-    input board_size;
+int board_size = 50;
 
-    int steps;
-    write "Enter iterations: ";
-    input steps;
+int steps = 30;
 
-    bool[][] board = generate_board(board_size);
+bool[][] board = generate_board(board_size);
 
-    for (int i = 0; i < steps; i += 1; ) {
-        if (i > 0) clear_terminal_lines(board_size);
-        print_board(board);
-        board = step(board);
-    }
+for (int i = 0; i < steps; i += 1; ) {
+    if (i > 0) clear_terminal_lines(board_size);
+    print_board(board);
+    board = step(board);
 }
 

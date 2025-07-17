@@ -8,7 +8,7 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_RUN_CODE
+#define COMPILATION_STAGE STAGE_IR_GEN
 
 #define PREPROCESS_AST 1
 
@@ -3350,8 +3350,8 @@ X(I_ARRAY_SUBSCRIPT) \
 X(I_ARRAY_SUBSCRIPT_ADDR) \
 X(I_STR_SUBSCRIPT) \
 X(I_INIT_N_DIM_ARRAY) \
-X(I_CLEAR_TERMI_LINES) \
-X(I_SLEEP) \
+X(I_INC) \
+X(I_INC_GLOBAL) \
 X(INST_COUNT)
 
 
@@ -3388,6 +3388,7 @@ Inst create_inst(InstType type, Val arg1, Val arg2) {
     return (Inst){.type = type, .arg1 = arg1, .arg2 = arg2};
 }
 
+DEF_CREATE_INST_NOARGS(I_INVALID)
 DEF_CREATE_INST(I_PUSH, size, value)
 DEF_CREATE_INST_NOARGS(I_PUSH_MAYBE)
 DEF_CREATE_INST_NOARGS(I_PUSH_RAND)
@@ -3424,7 +3425,7 @@ DEF_CREATE_INST_NOARGS(I_NOT_EQUAL_REF)
 DEF_CREATE_INST_NOARGS(I_AND)
 DEF_CREATE_INST_NOARGS(I_OR)
 DEF_CREATE_INST_NOARGS(I_NOT)
-DEF_CREATE_INST_NOARGS(I_LABEL)
+DEF_CREATE_INST(I_LABEL, id)
 DEF_CREATE_INST(I_JUMP, pos)
 DEF_CREATE_INST(I_JUMP_IF, pos)
 DEF_CREATE_INST(I_JUMP_NOT, pos)
@@ -3472,15 +3473,14 @@ DEF_CREATE_INST(I_ARRAY_SUBSCRIPT, elem_size)
 DEF_CREATE_INST(I_ARRAY_SUBSCRIPT_ADDR, elem_size)
 DEF_CREATE_INST_NOARGS(I_STR_SUBSCRIPT)
 DEF_CREATE_INST(I_INIT_N_DIM_ARRAY, n_dims)
-DEF_CREATE_INST_NOARGS(I_CLEAR_TERMI_LINES)
-DEF_CREATE_INST_NOARGS(I_SLEEP)
 DEF_CREATE_INST(I_STACK_STORE_FUNC_ADDR, addr, pos)
+DEF_CREATE_INST(I_INC, pos)
 
 void print_val(Val val) {
     printf("(%s, ", type_kind_names[val.type]);
     switch (val.type) {
         case (TYPE_int)
-            printf("%d", val.as_int);
+        printf("%d", val.as_int);
         case (TYPE_char)
             printf("'%c'", val.as_char);
         case (TYPE_float)
@@ -3510,16 +3510,16 @@ void print_instruction(Inst inst) {
             printf(", ");
             print_val(inst.arg2);
 
-        case (I_JUMP_NOT, I_JUMP_IF, I_JUMP)
+        case (I_JUMP_NOT, I_JUMP_IF, I_JUMP, I_LABEL)
             printf(", #%d", inst.arg1.as_int);
 
         case (I_STACK_PTR_ADD)
             printf(", %d", inst.arg1.as_int);
 
-        case (I_READ, I_STACK_STORE)
+        case (I_READ, I_STACK_STORE, I_INC)
             printf(", sz: %d, pos: fp + %d", inst.arg1.as_int, inst.arg2.as_int);
 
-        case (I_READ_GLOBAL, I_STACK_STORE_GLOBAL)
+        case (I_READ_GLOBAL, I_STACK_STORE_GLOBAL, I_INC_GLOBAL)
             printf(", sz: %d, pos: %d", inst.arg1.as_int, inst.arg2.as_int);
 
         case (I_READ_ATTR)
@@ -3534,7 +3534,7 @@ void print_instruction(Inst inst) {
     printf("] \n");
 }
 
-void print_instructions(Inst *arr) {
+void print_instructions(const Inst *arr) {
     printf("Instructions: \n");
     for (int i = 0; i < array_length(arr); i++) {
         printf("%d: ", i);
@@ -3989,11 +3989,8 @@ void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedLi
 
 void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    int end_label_idx = gi_label_idx++;
-
-    int end_label_true_idx;
-    int else_label_true_idx;
-    // if (ast->token.type == IF_ELSE_STMT) else_label_idx = gi_label_idx++;
+    int else_label_id = gi_label_idx++;
+    int end_label_id = gi_label_idx++;
 
     // condition
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
@@ -4010,42 +4007,31 @@ void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList 
     }
     
     int first_jump_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(-1)));
+    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(else_label_id)));
 
     // if-body
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
     
-    int if_body_jump_idx = -1;
-
     if (ast->token.type == IF_ELSE_STMT) {
 
-        if_body_jump_idx = array_length(*instructions);
-        array_append(*instructions, create_inst_I_JUMP(Val_int(end_label_idx)));
+        array_append(*instructions, create_inst_I_JUMP(Val_int(end_label_id)));
 
-        else_label_true_idx = array_length(*instructions);
-        array_append(*instructions, create_inst_I_LABEL());
+        array_append(*instructions, create_inst_I_LABEL(Val_int(else_label_id)));
 
         // else-body
         generate_instructions_for_node(&ast->children[2], instructions, var_map_list);
     }
 
-    end_label_true_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_LABEL());
-
-    if (ast->token.type == IF_STMT) {
-        (*instructions)[first_jump_idx].arg1.as_int = end_label_true_idx;
-    } else {
-        (*instructions)[first_jump_idx].arg1.as_int = else_label_true_idx;
-        (*instructions)[if_body_jump_idx].arg1.as_int = end_label_true_idx;
-    }
+    array_append(*instructions, create_inst_I_LABEL(Val_int(end_label_id)));
 
 }
 
 void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
 
-    int start_label_idx = array_length(*instructions);
+    int start_label_id = gi_label_idx++;
+    int end_label_id = gi_label_idx++;
 
-    array_append(*instructions, create_inst_I_LABEL());
+    array_append(*instructions, create_inst_I_LABEL(Val_int(start_label_id)));
 
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
@@ -4059,18 +4045,14 @@ void generate_instructions_for_while(ASTNode *ast, Inst **instructions, LinkedLi
     }
 
     int jump_not_inst_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(-1)));
+    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(end_label_id)));
 
     // while body
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
 
-    array_append(*instructions, create_inst_I_JUMP(Val_int(start_label_idx)));
+    array_append(*instructions, create_inst_I_JUMP(Val_int(start_label_id)));
 
-    int end_label_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_LABEL());
-
-    (*instructions)[jump_not_inst_idx].arg1.as_int = end_label_idx;
-
+    array_append(*instructions, create_inst_I_LABEL(Val_int(end_label_id)));
 
 }
 
@@ -4197,19 +4179,16 @@ VarHeader **get_all_vardecls_before_return(ASTNode *func_node, ASTNode *return_n
 }
 
 void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
+
+
+    int func_start_label_id = gi_label_idx++;
+    int func_end_label_id = gi_label_idx++;
     
-    int func_start_idx = array_length(*instructions) + 2; // current is store_func_addr, +1 is jump, +2 is label
-    
-    array_append(*instructions, create_inst_I_STACK_STORE_FUNC_ADDR(Val_int(func_start_idx), Val_int(gi_stack_pos)));
+    array_append(*instructions, create_inst_I_STACK_STORE_FUNC_ADDR(Val_int(func_start_label_id), Val_int(gi_stack_pos)));
 
+    array_append(*instructions, create_inst_I_JUMP(Val_int(func_end_label_id)));
 
-
-    array_append(*instructions, create_inst_I_JUMP(Val_int(-1)));
-    int jump_inst_idx = array_length(*instructions) - 1;
-
-
-
-    array_append(*instructions, create_inst_I_LABEL());
+    array_append(*instructions, create_inst_I_LABEL(Val_int(func_start_label_id)));
 
     
     String func_name = ast->children[1].token.text;
@@ -4294,69 +4273,12 @@ void generate_instructions_for_func_decl(ASTNode *ast, Inst **instructions, Link
     LL_pop_head(var_map_list);
     
     if ((*instructions)[array_length(*instructions) - 1].type != I_RETURN)
-    array_append(*instructions, create_inst_I_RETURN());
-    
-    
-    (*instructions)[jump_inst_idx].arg1.as_int = array_length(*instructions);
-    
+        array_append(*instructions, create_inst_I_RETURN());
+        
+    array_append(*instructions, create_inst_I_LABEL(Val_int(func_end_label_id)));
     
 }
 
-
-void generate_instructions_for_intrinsic_func_call(IntrKind intr, ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
-    
-    #define push_arg(idx, exp_type) \
-    { \
-        generate_instructions_for_node(&ast->children[1].children[idx], instructions, var_map_list); \
-            bool res = generate_cvt_inst_for_types( \
-                ast->children[1].children[idx].expected_return_type, \
-                exp_type, \
-                instructions \
-            ); \
-            assert(res); \
-        }
-
-
-    match (intr) {
-        
-        case (INTR_clear_terminal_lines) {
-            push_arg(0, &_const_types[TYPE_int]);
-            array_append(*instructions, create_inst_I_CLEAR_TERMI_LINES());
-        }
-        
-        case (INTR_rand) {
-            array_append(*instructions, create_inst_I_PUSH_RAND());
-        }
-
-        case (INTR_sleep) {
-            push_arg(0, &_const_types[TYPE_float]);
-            array_append(*instructions, create_inst_I_SLEEP());
-        }
-        
-        default () {
-            return_err(
-                "Unimplemented intrinsic: %s, doing nothing \n",
-                intrinsic_names[intr]
-            );
-        }
-    }
-
-
-    #undef push_arg
-}
-
-
-bool try_gen_insts_for_intrinsic(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
-
-    String func_name = ast->children[0].token.text;
-
-    IntrKind kind = get_intrinsic_by_name(func_name);
-
-    if (kind == INTR_none_) return false;
-
-    generate_instructions_for_intrinsic_func_call(kind, ast, instructions, var_map_list);
-
-}
 // #INTRINSICS END
 
 
@@ -4366,7 +4288,6 @@ void generate_instructions_for_func_call(ASTNode *ast, Inst **instructions, Link
     
     ASTNode *func_node = &ast->children[0];
     Type *func_type = func_node->expected_return_type;
-    print_type(func_type);
 
     ASTNode *args_node = &ast->children[1];
 
@@ -5064,12 +4985,173 @@ Inst *generate_instructions(ASTNode *ast) {
     gi_label_idx = 0;
     generate_instructions_for_node(ast, &res, var_map_list);
 
-    delete_vm_list(var_map_list);
+    delete_vm_list(move(var_map_list));
 
     return res;
 }
 
 // #INST GEN END
+
+typedef struct TaggedInst {
+    InstType type;
+    int tag;
+    Val arg1, arg2; // optional, will check for them
+} TaggedInst;
+
+TaggedInst TaggedInst_new_specific(InstType type, Val arg1, Val arg2) {
+    return (TaggedInst){.type = type, .arg1 = arg1, .arg2 = arg2};
+}
+
+TaggedInst TaggedInst_new_tagged(InstType type, int tag) {
+    return (TaggedInst){.type = type, .tag = tag};
+}
+TaggedInst TaggedInst_new(InstType type) {
+    return (TaggedInst){.type = type};
+}
+
+bool Inst_equal(Inst i1, Inst i2) {
+    return !memcmp(&i1, &i2, sizeof(Inst));
+}
+
+bool Inst_args_equal(Inst i1, Inst i2) {
+    return !memcmp(&i1.arg1, &i2.arg1, sizeof(Val))
+        && !memcmp(&i1.arg2, &i2.arg2, sizeof(Val));
+}
+
+Inst Inst_from_TaggedInst(TaggedInst ti) {
+    return (Inst){.type = ti.type, .arg1 = ti.arg1, .arg2 = ti.arg2};
+}
+
+typedef struct InstWindow {
+    const TaggedInst *inst_types;
+    int len;
+} InstWindow;
+
+// 'arr' is an 'array.c' array!!
+InstWindow InstWindow_new(const TaggedInst *arr) {
+    return (InstWindow){.inst_types = arr, .len = array_length(arr)};
+}
+
+bool is_window_at_idx(const InstWindow window, Inst **insts, int idx) {
+    if (array_length(*insts) - idx < window.len) return false;
+
+    for (int i = 0; i < window.len; i++) {
+        int inst_idx = idx + i;
+        if (window.inst_types[i].type != (*insts)[inst_idx].type) {
+            return false;
+        }
+        bool has_args = window.inst_types[i].arg1.type || window.inst_types[i].arg2.type;
+
+        if (has_args
+            && !Inst_args_equal(Inst_from_TaggedInst(window.inst_types[i]), (*insts)[inst_idx]))
+            return false;
+    }
+
+    // tag check
+    // chose to do this in the simple way bc its way too small to actually benefit from a map
+    for (int i = 0; i < window.len; i++) {
+        int inst_i = idx + i;
+        if (!window.inst_types[i].tag) continue;
+
+        for (int j = i + 1; j < window.len; j++) {
+
+            int inst_j = idx + j;
+
+            if (window.inst_types[i].tag == window.inst_types[j].tag
+                && !Inst_args_equal((*insts)[inst_i], (*insts)[inst_j])) return false;
+        }
+    }
+
+    return true;
+}
+
+Inst get_inst_by_tag(int idx, const InstWindow *window, Inst **insts, int tag) {
+    for (int i = 0; i < window->len; i++) {
+        int inst_i = idx + i;
+        if (window->inst_types[i].tag == tag) return (*insts)[inst_i];
+    }
+    return create_inst_I_INVALID();
+}
+
+void replace_window(const InstWindow from, const InstWindow to, Inst **insts) {
+    for (int i = 0; i < array_length(*insts); i++) {
+        if (is_window_at_idx(from, insts, i)) {
+
+            Inst *new_pattern = array(Inst, 5);
+            
+            for (int j = 0; j < to.len; j++) {
+                Inst res = create_inst_I_INVALID();
+
+                if (to.inst_types[j].tag) {
+                    res = get_inst_by_tag(i, &to, insts, to.inst_types[j].tag);
+                    res.type = to.inst_types[j].type;
+                }
+
+                Inst inst = res.type != I_INVALID? res : create_inst(to.inst_types[j].type, Val_null, Val_null);
+
+                array_append(new_pattern, inst)
+            }
+
+            for (int j = 0; j < from.len; j++) {
+                array_remove(*insts, i);
+            }
+
+            // since inserting makes it reversed, we correct it by iterating backwards
+            for (int j = array_length(new_pattern) - 1; j >= 0; j--) {
+                
+                array_insert((*insts), new_pattern[j], i);
+            }
+
+            array_free(new_pattern);
+            
+        }
+    }
+}
+
+// read a
+// push 1
+// add
+// store a
+
+void replace_window_inc(InstType read_inst, InstType store_inst, Inst **insts) {
+
+    InstType inc_inst = read_inst == I_READ ? I_INC : I_INC_GLOBAL;
+
+    TaggedInst *from_arr = array_from_literal(TaggedInst, {
+        TaggedInst_new_tagged(read_inst, 1),
+        TaggedInst_new_specific(I_PUSH, Val_int(4), Val_int(1)),
+        TaggedInst_new(I_ADD),
+        TaggedInst_new_tagged(store_inst, 1)
+    });
+
+    TaggedInst *to_arr = array_from_literal(TaggedInst, {
+        TaggedInst_new_tagged(inc_inst, 1)
+    });
+
+    replace_window(
+        InstWindow_new(from_arr),
+        InstWindow_new(to_arr),
+        insts
+    );
+
+    array_free(from_arr);
+    array_free(to_arr);
+}
+
+void optimize_instructions(Inst **insts) {
+
+    // replace adding 1 with increment instruction
+    // is this ugly? yes
+    // is it ugly enough for me to make a whole DSL? hell no
+    replace_window_inc(I_READ, I_STACK_STORE, insts);
+    replace_window_inc(I_READ_GLOBAL, I_STACK_STORE, insts);
+    replace_window_inc(I_READ, I_STACK_STORE_GLOBAL, insts);
+    replace_window_inc(I_READ_GLOBAL, I_STACK_STORE_GLOBAL, insts);
+    
+
+
+}
+
 
 
 
@@ -5158,6 +5240,57 @@ void preprocess_string_literals(Inst *instructions) {
     }
 }
 
+// Returns true if the inst type contains an instruction's index as its first argument
+bool contains_inst_addr(InstType type) {
+    return type == I_JUMP 
+        || type == I_JUMP_NOT 
+        || type == I_JUMP_IF
+        || type == I_STACK_STORE_FUNC_ADDR;
+}
+
+#define MISSING_KEY ((void *)0xFFFFFFFF)
+
+void resolve_labels(Inst *instructions) {
+
+    HashMap *label_idx_map = HashMap(int);
+    String *strs_to_free = array(String, 5);
+
+    for (int i = 0; i < array_length(instructions); i++) {
+        if (instructions[i].type != I_LABEL) continue;
+        String key = String_from_int(instructions[i].arg1.as_int);
+        array_append(strs_to_free, key);
+        HashMap_put(label_idx_map, key, i);
+    }
+
+    for (int i = 0; i < array_length(instructions); i++) {
+        if (!contains_inst_addr(instructions[i].type)) continue;
+
+        String key = String_from_int(instructions[i].arg1.as_int);
+
+        int idx = (int)HashMap_get_safe(label_idx_map, key, MISSING_KEY);
+        if (idx == (int)MISSING_KEY) {
+            
+            HashMap_print(label_idx_map);
+            printf("inst idx: %d \n", i);
+            print_err("Couldn't find a label for key ID '%s'!", key.data);
+            
+            exit(EXIT_FAILURE);
+        }
+
+        instructions[i].arg1.as_int = idx;
+
+        String_delete(&key);
+    }
+
+    HashMap_free(label_idx_map);
+
+    for (int i = 0; i < array_length(strs_to_free); i++) {
+        String_delete(&strs_to_free[i]);
+    }
+
+    array_free(strs_to_free);
+}
+
 char *convert_insts_to_byte_arr(const Inst *instructions) {
 
     int len = array_length(instructions);
@@ -5195,11 +5328,9 @@ char *convert_insts_to_byte_arr(const Inst *instructions) {
 
             my_memcpy(value, &instructions[i].arg1.as_ptr, 8);
 
-            if (instructions[i].type == I_JUMP 
-                || instructions[i].type == I_JUMP_NOT 
-                || instructions[i].type == I_JUMP_IF
+            if (contains_inst_addr(instructions[i].type)
                 || instructions[i].type == I_STACK_STORE_FUNC_ADDR) {
-                
+                    
                 *(int *)value = new_indicies[instructions[i].arg1.as_int];
             }
 
@@ -5282,6 +5413,24 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
         match (byte_arr[inst_ptr]) {
 
+            case (I_INC) {
+                // Not going to use _size, but its still better because then it matches I_READ's structure
+                // so i can tag it in the pattern replacement optimization
+                int _size = *(int *)&byte_arr[++inst_ptr];
+                int pos = *(int *)&byte_arr[inst_ptr += sizeof(int)];
+                inst_ptr += sizeof(int) - 1;
+                (*(int *)(var_stack + frame_ptr + pos))++;
+            }
+
+            case (I_INC_GLOBAL) {
+                // Not going to use _size, but its still better because then it matches I_READ's structure
+                // so i can tag it in the pattern replacement optimization
+                int _size = *(int *)&byte_arr[++inst_ptr];
+                int pos = *(int *)&byte_arr[inst_ptr += sizeof(int)];
+                inst_ptr += sizeof(int) - 1;
+                (*(int *)(var_stack + pos))++;
+            }
+
             case (I_STACK_STORE_FUNC_ADDR) {
 
                 int addr = *(int *)&byte_arr[++inst_ptr];
@@ -5319,15 +5468,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 char final = str[idx];
 
                 append(&final, sizeof(char *));
-            }
-
-            case (I_SLEEP) {
-                double seconds = pop(double);
-                sleep(seconds);
-            }
-            case (I_CLEAR_TERMI_LINES) {
-                int lines = pop(int);
-                clear_n_lines(lines);
             }
             case (I_PUSH_RAND) {
                 int rand_value = rand();
@@ -6309,6 +6449,14 @@ int main() {
 
         Inst *instructions = generate_instructions(&res.node);
 
+        optimize_instructions(&instructions);
+
+        print_instructions(instructions);
+
+        resolve_labels(instructions);
+
+        // after calling resolve_labels() it is unsafe to add or remove instructions from the array
+
         if (IR_PRINT) print_instructions(instructions);
 
         if (COMPILATION_STAGE < STAGE_RUN_CODE) {
@@ -6318,6 +6466,8 @@ int main() {
             free_lexemes(Ls);
             continue;
         }
+
+        
 
         // place for chaos. increment when this made you want to kys: 3
         if (benchmark) {
