@@ -8,7 +8,7 @@
 #define STAGE_IR_GEN 3
 #define STAGE_RUN_CODE 4
 
-#define COMPILATION_STAGE STAGE_IR_GEN
+#define COMPILATION_STAGE STAGE_RUN_CODE
 
 #define PREPROCESS_AST 1
 
@@ -3989,8 +3989,8 @@ void generate_instructions_for_print(ASTNode *ast, Inst **instructions, LinkedLi
 
 void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList *var_map_list) {
     
-    int else_label_id = gi_label_idx++;
     int end_label_id = gi_label_idx++;
+    int else_label_id =  gi_label_idx++;
 
     // condition
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
@@ -4006,8 +4006,7 @@ void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList 
         }
     }
     
-    int first_jump_idx = array_length(*instructions);
-    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(else_label_id)));
+    array_append(*instructions, create_inst_I_JUMP_NOT(Val_int(ast->token.type == IF_ELSE_STMT ? else_label_id : end_label_id)));
 
     // if-body
     generate_instructions_for_node(&ast->children[1], instructions, var_map_list);
@@ -5240,7 +5239,7 @@ void preprocess_string_literals(Inst *instructions) {
     }
 }
 
-// Returns true if the inst type contains an instruction's index as its first argument
+// Returns true if the inst type contains an instruction's index as its first argument, false otherwise
 bool contains_inst_addr(InstType type) {
     return type == I_JUMP 
         || type == I_JUMP_NOT 
@@ -5375,16 +5374,18 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
 
-    // printf("bytecode: \n");
-    // for (int i = 0; i < array_length(byte_arr); i++) {
-    //     printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
-    // }
-    // printf("\n");
+    printf("bytecode: \n");
+    for (int i = 0; i < array_length(byte_arr); i++) {
+        printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
+    }
+    printf("\n");
 
     // #EXECUTE
     
     srand(clock());
     double start = get_current_process_time_seconds();
+
+    debug printf("Reached start \n");
 
     int len = array_length(byte_arr); // which is not equal to array_length(instructions)
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
@@ -5410,6 +5411,10 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                     } \
                 } \
             }
+
+        debug {
+            printf("INST PTR before switch: #%d \n", inst_ptr);
+        }
 
         match (byte_arr[inst_ptr]) {
 
@@ -5697,6 +5702,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 frame_ptr = pop_bottom(int);
             }
             case (I_STACK_PTR_ADD) {
+                debug printf("reached I_STACK_PTR_ADD \n");
                 inst_ptr += 1;
                 int size = *(int *)(byte_arr + inst_ptr);
                 inst_ptr += sizeof(int) - 1;
@@ -5953,6 +5959,7 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 append(&b, 1);
             }
             case (I_INPUT) {
+
                 char *string_im_not_gonna_free = malloc(INPUT_BUFFER_SIZE);
                 fgets(string_im_not_gonna_free, INPUT_BUFFER_SIZE, stdin);
                 string_im_not_gonna_free[strlen(string_im_not_gonna_free) - 1] = 0;
@@ -5965,6 +5972,10 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 print_err("Too stupid. cant.\n");
                 printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
             }
+        }
+
+        debug {
+            printf("INST PTR: #%d \n", inst_ptr);
         }
 
         #undef append
@@ -5995,7 +6006,6 @@ void print_text_buffer() {
 }
 
 void run_program(Inst *instructions) {
-    printf("Running struct array \n");
     printf("Program output: \n");
 
     double time;
@@ -6450,8 +6460,6 @@ int main() {
         Inst *instructions = generate_instructions(&res.node);
 
         optimize_instructions(&instructions);
-
-        print_instructions(instructions);
 
         resolve_labels(instructions);
 
