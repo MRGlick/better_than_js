@@ -38,7 +38,6 @@
 #include "linked_list.c"
 #include "runtime.c"
 #include "globals.c"
-#include "errors.c"
 #include "move.c"
 #include "debug.h"
 #include "map_macro.h"
@@ -6068,6 +6067,7 @@ void run_benchmark(Inst *instructions) {
     print_text_buffer();
 }
 
+
 void print_ast(ASTNode node, int level) {
     if (is_null_ast(node)) {
         printf("---NULL AST--- \n");
@@ -6085,6 +6085,7 @@ void print_ast(ASTNode node, int level) {
         print_ast(node.children[i], level + 1);
     }
 }
+
 
 bool is_stop_char(char c) {
 

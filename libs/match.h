@@ -1,4 +1,8 @@
 
+
+// DISCLAIMER: My ego was too big to use the premade map macro (which works great btw)
+//             so don't hurt your eyes reading this unless you have to
+
 #ifndef MATCH_H
 #define MATCH_H
 
