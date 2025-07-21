@@ -37,21 +37,6 @@ bool is_noble_tree(BinNode bin) {
 
 }
 
-void free_list(Node node) {
-    if (node == null) return;
-    free_list(node.next);
-    delete node;
-}
-
-void free_tree(BinNode bin) {
-    if (bin == null) return;
-    free_tree(bin.left);
-    free_tree(bin.right);
-
-    free_list(bin.val);
-    delete bin;
-}
-
 
 BinNode noble_tree = new BinNode(
     val = new Node(val = 2, next = new Node(val = 5)),
@@ -62,8 +47,6 @@ BinNode noble_tree = new BinNode(
         val = new Node(val = 3, next = new Node(val = 4))
     )
 );
-
-defer free_tree(noble_tree);
 
 
 print is_noble_tree(noble_tree);

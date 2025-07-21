@@ -22,7 +22,7 @@ string[] names = [
     "Michael",
     "Wish",
     "Jack",
-    "Another names which starts with J"
+    "Another name that starts with J"
 ];
 
 print_rand(names);

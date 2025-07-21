@@ -6,6 +6,7 @@ void map(int[] arr, int(int) f) {
 }
 
 int double(int x) return x * 2;
+
 int print_ret(int x) {
     print "Val: ", x;
     return x;

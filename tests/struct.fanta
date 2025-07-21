@@ -6,4 +6,5 @@ struct Vec2 {
 
 Vec2 v = null;
 
+# Should fail
 print v.x;

@@ -1,3 +1,6 @@
+
+# leetcode medium but without the hard part
+
 int reverse_number(int number) {
     int res = 0;
     while (number > 0) {

@@ -15,15 +15,12 @@ Vec2 a = new Vec2(
     x = 5,
     y = 6
 );
-defer delete a;
 
 Vec2 b = new Vec2(
     x = 67,
     y = 1
 );
-defer delete b;
 
 Vec2 c = add(a, b);
-defer delete c;
 
 print_vec(c);

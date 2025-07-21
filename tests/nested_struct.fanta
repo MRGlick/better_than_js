@@ -9,16 +9,12 @@ struct Box {
 }
 
 Vec v = new Vec(x = 2, y = 3);
-defer delete v;
 
 
 Box b = new Box(
     pos = new Vec(x = v.x, y = 0),
     size = new Vec(x = 100, y = 200)
 );
-defer delete b.pos;
-defer delete b.size;
-defer delete b;
 
 
 int s = 1 + b.size.y;

@@ -13,12 +13,6 @@ void print_nodes(Node n) {
     }
 }
 
-void delete_list(Node head) {
-    if (head == null) return;
-    delete_list(head.next);
-    delete head;
-}
-
 Node lst = new Node(
     val = 5, 
     next = new Node(
@@ -34,7 +28,6 @@ Node lst = new Node(
         )
     )
 );
-defer delete_list(lst);
 
 print_nodes(lst);
 
