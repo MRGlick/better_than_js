@@ -13,7 +13,7 @@ bool[][] generate_board(int size) {
 }
 
 int get_cell(bool[][] board, int r, int c) {
-    if (r < 0 || r >= board.length || c < 0 || c >= board[r].length) return false;
+    if (r < 0 || r >= board.length || c < 0 || c >= board[0].length) return false;
 
     return board[r][c];
 }
@@ -75,6 +75,7 @@ void print_board(bool[][] board) {
 
             buf[buf_idx] = ' ';
             buf_idx += 1;
+
         } 
         buf[buf_idx] = 10;
         buf_idx += 1;

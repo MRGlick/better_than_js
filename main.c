@@ -5022,13 +5022,19 @@ Inst Inst_from_TaggedInst(TaggedInst ti) {
 }
 
 typedef struct InstWindow {
-    const TaggedInst *inst_types;
+    TaggedInst *inst_types;
     int len;
 } InstWindow;
 
 // 'arr' is an 'array.c' array!!
-InstWindow InstWindow_new(const TaggedInst *arr) {
+// OWNS: arr
+InstWindow InstWindow_new(TaggedInst *arr) {
     return (InstWindow){.inst_types = arr, .len = array_length(arr)};
+}
+
+void InstWindow_free(InstWindow *window) {
+    array_free(window->inst_types);
+    *window = null(InstWindow);
 }
 
 bool is_window_at_idx(const InstWindow window, Inst **insts, int idx) {
@@ -5072,7 +5078,8 @@ Inst get_inst_by_tag(int idx, const InstWindow *window, Inst **insts, int tag) {
     return create_inst_I_INVALID();
 }
 
-void replace_window(const InstWindow from, const InstWindow to, Inst **insts) {
+// OWNS: from, to
+void replace_window(InstWindow from, InstWindow to, Inst **insts) {
     for (int i = 0; i < array_length(*insts); i++) {
         if (is_window_at_idx(from, insts, i)) {
 
@@ -5105,6 +5112,9 @@ void replace_window(const InstWindow from, const InstWindow to, Inst **insts) {
             
         }
     }
+
+    InstWindow_free(&from);
+    InstWindow_free(&to);
 }
 
 // read a
@@ -5116,26 +5126,21 @@ void replace_window_inc(InstType read_inst, InstType store_inst, Inst **insts) {
 
     InstType inc_inst = read_inst == I_READ ? I_INC : I_INC_GLOBAL;
 
-    TaggedInst *from_arr = array_from_literal(TaggedInst, {
-        TaggedInst_new_tagged(read_inst, 1),
-        TaggedInst_new_specific(I_PUSH, Val_int(4), Val_int(1)),
-        TaggedInst_new(I_ADD),
-        TaggedInst_new_tagged(store_inst, 1)
-    });
-
-    TaggedInst *to_arr = array_from_literal(TaggedInst, {
-        TaggedInst_new_tagged(inc_inst, 1)
-    });
-
     replace_window(
-        InstWindow_new(from_arr),
-        InstWindow_new(to_arr),
+        InstWindow_new(array_from_literal(TaggedInst, {
+            TaggedInst_new_tagged(read_inst, 1),
+            TaggedInst_new_specific(I_PUSH, Val_int(4), Val_int(1)),
+            TaggedInst_new(I_ADD),
+            TaggedInst_new_tagged(store_inst, 1)
+        })),
+        InstWindow_new(array_from_literal(TaggedInst, {
+            TaggedInst_new_tagged(inc_inst, 1)
+        })),
         insts
     );
-
-    array_free(from_arr);
-    array_free(to_arr);
 }
+
+
 
 void optimize_instructions(Inst **insts) {
 
@@ -5147,7 +5152,14 @@ void optimize_instructions(Inst **insts) {
     replace_window_inc(I_READ, I_STACK_STORE_GLOBAL, insts);
     replace_window_inc(I_READ_GLOBAL, I_STACK_STORE_GLOBAL, insts);
     
-
+    replace_window(
+        InstWindow_new(array_from_literal(TaggedInst, {
+            TaggedInst_new_specific(I_PUSH, Val_int(1), Val_bool(true)),
+            TaggedInst_new(I_JUMP_NOT)
+        })),
+        InstWindow_new(array(TaggedInst, 0)),
+        insts
+    );
 
 }
 
@@ -5385,8 +5397,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
     srand(clock());
     double start = get_current_process_time_seconds();
 
-    debug printf("Reached start \n");
-
     int len = array_length(byte_arr); // which is not equal to array_length(instructions)
     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
 
@@ -5412,9 +5422,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 } \
             }
 
-        debug {
-            printf("INST PTR before switch: #%d \n", inst_ptr);
-        }
 
         match (byte_arr[inst_ptr]) {
 
@@ -5702,7 +5709,6 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 frame_ptr = pop_bottom(int);
             }
             case (I_STACK_PTR_ADD) {
-                debug printf("reached I_STACK_PTR_ADD \n");
                 inst_ptr += 1;
                 int size = *(int *)(byte_arr + inst_ptr);
                 inst_ptr += sizeof(int) - 1;
@@ -5967,16 +5973,15 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
                 free(string_im_not_gonna_free);
                 append(&str, 4);
             }
-            case (I_LABEL);
+            case (I_LABEL) {
+                inst_ptr += sizeof(int); // skip the argument
+            }
             default () {
                 print_err("Too stupid. cant.\n");
                 printf("instruction: #%d: %s \n", inst_ptr, inst_names[(int)byte_arr[inst_ptr]]);
             }
         }
 
-        debug {
-            printf("INST PTR: #%d \n", inst_ptr);
-        }
 
         #undef append
         #undef pop

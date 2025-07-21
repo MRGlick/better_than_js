@@ -1,16 +1,7 @@
 
-struct A {
-    int x;
+int N = 32000000;
+
+for (int i = 0; i < N; i += 1; ) {
 }
 
-void foo() {
-    A a = new A(x = 2);
-
-    A a1 = new A(x = 1);
-
-    print a1.x > a.x;
-}
-
-for (int i = 0; i < 100; i += 1; ) {
-    print i;
-}
+print "Done!";
