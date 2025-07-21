@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/build/Debug/outDebug.exe",
+      "cwd": "c:/Users/rahel/Desktop/VSCode/C/better_than_js",
+      "program": "c:/Users/rahel/Desktop/VSCode/C/better_than_js/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

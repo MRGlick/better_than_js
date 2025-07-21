@@ -14,8 +14,8 @@
 
 #define LEXER_PRINT 0
 #define TOKENIZER_PRINT 0
-#define PARSER_PRINT 1
-#define IR_PRINT 1
+#define PARSER_PRINT 0
+#define IR_PRINT 0
 
 
 // #define TRACK_ALLOCS
@@ -5384,11 +5384,11 @@ void run_bytecode_instructions(Inst *instructions, double *time) {
 
     char *byte_arr = convert_insts_to_byte_arr(instructions);
 
-    printf("bytecode: \n");
-    for (int i = 0; i < array_length(byte_arr); i++) {
-        printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
-    }
-    printf("\n");
+    // printf("bytecode: \n");
+    // for (int i = 0; i < array_length(byte_arr); i++) {
+    //     printf("#%d: [%u] (%s) \n", i, byte_arr[i], in_range(byte_arr[i], 0, INST_COUNT) ? inst_names[(int)byte_arr[i]] : "null");
+    // }
+    // printf("\n");
 
     // #EXECUTE
     
@@ -6009,22 +6009,15 @@ void print_text_buffer() {
 }
 
 void run_program(Inst *instructions) {
-    printf("Program output: \n");
 
     double time;
 
-    printf("\n----------------------------------\n");
-
     run_bytecode_instructions(instructions, &time);
-
-    printf("\n----------------------------------\n");
 
     if (runtime_mallocs > runtime_frees) {
         print_err("Detected a memory leak! Where? you figure it out. Mallocs: %d, Frees: %d ", runtime_mallocs, runtime_frees);
     } else if (runtime_frees > runtime_mallocs) {
         print_err("Detected excess memory deletions! How did the program even survive this far?");
-    } else {
-        printf("No memory leaks. \n\tAllocations: %d \n\tDeletions: %d \n", runtime_mallocs, runtime_frees);
     }
 
 
@@ -6033,23 +6026,7 @@ void run_program(Inst *instructions) {
     print_text_buffer();
 }
 
-void run_program_bytes(Inst *instructions) {
-    printf("Running bytecode \n");
-    printf("Program output: \n");
-
-    double time;
-
-    run_bytecode_instructions(instructions, &time);
-
-    printf("Program finished successfully after %.2f seconds! \n", time);
-
-    print_text_buffer();
-}
-
-
 void run_benchmark(Inst *instructions) {
-
-    printf("Program output: \n");
 
     double avg = 0;
     for (int lap = 1; lap <= BENCHMARK_ITERS; lap++) {
@@ -6059,7 +6036,6 @@ void run_benchmark(Inst *instructions) {
         run_bytecode_instructions(instructions, &time);
 
         avg += time;
-        printf("Time of %dth lap: %.3f \n", lap, time);
     }
 
     printf("Finished benchmarking. Average time: %.3f \n", avg / BENCHMARK_ITERS);
@@ -6348,110 +6324,127 @@ int handle_text_interface(char *buf, int bufsize, bool *benchmark) {
 
 // #MAIN
 
-int main() {
+int main(int argc, char *argv[]) {
 
-    
+    bool benchmark = false;
 
-    while (true) {
+    StringRef *args = array(StringRef, argc);
+    for (int i = 0; i < argc; i++) array_append(args, StringRef(argv[i]));
 
-        init_intrinsic_func_types();
+    String file_path = String_null;
 
-        char buf[CODE_MAX_LEN] = {0};
-        bool benchmark = false;
-
-        int result = handle_text_interface(buf, CODE_MAX_LEN, &benchmark);
-
-        match (result) {
-            case (RESULT_COULDNT_OPEN_FILE) 
-                print_err("Couldn't open file! errno: %d", errno);
+    for (int i = 0; i < argc; i++) {
+        if (String_isnull(file_path) && String_ends_with(args[i], StringRef(".fanta"))) {
+            file_path = args[i];
             
-            case (RESULT_INVALID_COMMAND) 
-                print_err("Invalid command! use 'file' to open a file and 'code' to enter raw code.");
+        } else if (String_starts_with(args[i], StringRef("-"))) {
+            StringRef content = String_slice(args[i], 1, args[i].len);
+            if (String_equal(content, StringRef("bench"))) benchmark = true;
         }
-        if (result != RESULT_OK) continue;
+    }
 
-        Lexeme *Ls = lex(StringRef(buf));
+    if (String_isnull(file_path)) print_err(
+        "Please supply a .fanta file path as input!"
+    );
+    
+    char buf[CODE_MAX_LEN + 1] = {0};
+    
+    {
+        FILE *f = fopen(file_path.data, "r");
+        if (!f) print_err(
+            "Couldn't open file! errno: %d", errno
+        );
 
-        if (LEXER_PRINT) print_lexemes(Ls);
+        int bytes_read = fread(buf, 1, CODE_MAX_LEN, f);
 
-        if (COMPILATION_STAGE < STAGE_TOKENIZER) {
-            free_lexemes(Ls);
-            continue;
-        }
+        buf[bytes_read] = '\n';
+        buf[bytes_read + 1] = '\0';
 
-        Token *tokens = tokenize(Ls);
-
-        if (TOKENIZER_PRINT) print_tokens(tokens);
-
-        set_parse_tokens(tokens);
-
-        if (COMPILATION_STAGE < STAGE_PARSER) {
-            free_tokens(tokens);
-            free_lexemes(Ls);
-            continue;
-        }
-
-        ParseResult res = parse_program();        
-        if (!res.success || res.endpos < array_length(tokens)) {
-            printf("%s \n", parse_err);
-            print_err("Invalid program! Failed to parse AST!");
-            free_tokens(tokens);
-            free_lexemes(Ls);
-            continue;
-        }
-        
-        if (PREPROCESS_AST) preprocess_ast(&res.node);
-        
-        if (PARSER_PRINT) {
-            printf(">>> RESULT AST <<<\n");
-            print_ast(res.node, 0);
-        }
-        
-        if (COMPILATION_STAGE < STAGE_IR_GEN) {
-            free_ast(res.node);
-            free_tokens(tokens);
-            free_lexemes(Ls);
-            continue;
-        }
-
-        Inst *instructions = generate_instructions(&res.node);
-
-        optimize_instructions(&instructions);
-
-        resolve_labels(instructions);
-
-        // after calling resolve_labels() it is unsafe to add or remove instructions from the array
-
-        if (IR_PRINT) print_instructions(instructions);
-
-        if (COMPILATION_STAGE < STAGE_RUN_CODE) {
-            array_free(instructions);
-            free_ast(res.node);
-            free_tokens(tokens);
-            free_lexemes(Ls);
-            continue;
-        }
-
-        
-
-        // place for chaos. increment when this made you want to kys: 3
-        if (benchmark) {
-            run_benchmark(instructions);
-        } else {
-            run_program(instructions);
-        }
-
-        array_free(instructions);
-
-        free_tokens(tokens);
-
+        fclose(f);  
+    }
+    
+    
+    
+    Lexeme *Ls = lex(StringRef(buf));
+    
+    if (LEXER_PRINT) print_lexemes(Ls);
+    
+    if (COMPILATION_STAGE < STAGE_TOKENIZER) {
         free_lexemes(Ls);
+        return 0;
+    }
+    
+    Token *tokens = tokenize(Ls);
 
-        reset_intrinsic_func_types();
+    if (TOKENIZER_PRINT) print_tokens(tokens);
+    
+    set_parse_tokens(tokens);
+    
+    if (COMPILATION_STAGE < STAGE_PARSER) {
+        free_tokens(tokens);
+        free_lexemes(Ls);
+        return 0;
+    }
+    
+    init_intrinsic_func_types();
+    
+    ParseResult res = parse_program();        
+    if (!res.success || res.endpos < array_length(tokens)) {
+        printf("%s \n", parse_err);
+        print_err("Invalid program! Failed to parse AST!");
+        free_tokens(tokens);
+        free_lexemes(Ls);
+        return -1;
+    }
+    
+    if (PREPROCESS_AST) preprocess_ast(&res.node);
+    
+    if (PARSER_PRINT) {
+        printf(">>> RESULT AST <<<\n");
+        print_ast(res.node, 0);
+    }
+    
+    if (COMPILATION_STAGE < STAGE_IR_GEN) {
+        free_ast(res.node);
+        free_tokens(tokens);
+        free_lexemes(Ls);
+        return 0;
+    }
 
+    Inst *instructions = generate_instructions(&res.node);
+
+    optimize_instructions(&instructions);
+
+    resolve_labels(instructions);
+
+    // after calling resolve_labels() it is unsafe to insert or remove instructions from the array
+
+    if (IR_PRINT) print_instructions(instructions);
+
+    if (COMPILATION_STAGE < STAGE_RUN_CODE) {
+        array_free(instructions);
+        free_ast(res.node);
+        free_tokens(tokens);
+        free_lexemes(Ls);
+        return 0;
     }
 
     
+
+    if (benchmark) {
+        run_benchmark(instructions);
+    } else {
+        // kys counter: 3
+        run_program(instructions);
+    }
+
+    array_free(instructions);
+
+    free_tokens(tokens);
+
+    free_lexemes(Ls);
+
+    reset_intrinsic_func_types();
 
     return 0;
 }
