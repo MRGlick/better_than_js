@@ -3996,8 +3996,7 @@ void generate_instructions_for_if(ASTNode *ast, Inst **instructions, LinkedList 
     generate_instructions_for_node(&ast->children[0], instructions, var_map_list);
 
     if (ast->children[0].expected_return_type->kind != TYPE_bool) {
-        Type _t_bool = (Type){.kind = TYPE_bool};
-        bool result = generate_cvt_inst_for_types(ast->children[0].expected_return_type, &_t_bool, instructions);
+        bool result = generate_cvt_inst_for_types(ast->children[0].expected_return_type, &_const_types[TYPE_bool], instructions);
         if (!result) {
             return_err(
                 "Type '%s' is ambigous! Cannot be used as an if condition. (you did badly.)",
@@ -6069,53 +6068,6 @@ void run_benchmark(Inst *instructions) {
     print_text_buffer();
 }
 
-// void compile_instructions(Inst *instructions) {
-//     FILE *file = fopen("out.asm", "w");
-
-//     if (file == NULL) {
-//         print_err("Failed to open output file!");
-//         return;
-//     }
-
-//     #define write(...) fprintf(file, __VA_ARGS__)
-
-//     int len = array_length(instructions);
-
-//     write("section .text \n");
-//     write("\tglobal _start \n");
-//     write("_start: \n");
-
-//     for (int inst_ptr = 0; inst_ptr < len; inst_ptr++) {
-//         Inst inst = instructions[inst_ptr];
-
-//         printf("; %s\n", inst_names[inst.type]);
-//         write("; %s\n", inst_names[inst.type]);
-//         switch (inst.type) {
-//             case (I_STACK_PTR_ADD)
-//                 write("\tadd rsp, %d \n", inst.arg1.as_int);
-//                 break;
-//             case (I_PUSH)
-//                 if (inst.arg1.type == TYPE_int) {
-//                     write("\tpush %d \n", inst.arg1.as_int);
-//                 }
-//                 break;
-//             case (I_ADD)
-//                 write("\tpop rax \n\tpop rbx \n\tadd rax, rbx \n\tpush rax \n");
-//                 break;
-//             default:
-//                 break;
-//         }
-//     }
-
-//     fclose(file);
-
-// }
-
-
-
-
-
-
 void print_ast(ASTNode node, int level) {
     if (is_null_ast(node)) {
         printf("---NULL AST--- \n");
@@ -6133,7 +6085,6 @@ void print_ast(ASTNode node, int level) {
         print_ast(node.children[i], level + 1);
     }
 }
-
 
 bool is_stop_char(char c) {
 
