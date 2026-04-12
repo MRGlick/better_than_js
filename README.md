@@ -1,6 +1,4 @@
 
-*Disclaimer: this project is a mess. But it's finished!*
-
 # Yet another high level, statically typed and (currently) interpreted programming language
 
 ## Description
